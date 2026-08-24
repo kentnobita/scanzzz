@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useAuth, useUser, UserButton, SignInButton, SignedIn, SignedOut } from '@clerk/nextjs';
 import {
   IconScan,
   IconCamera,
@@ -26,15 +25,6 @@ import {
   IconExternalLink,
   IconInfo,
 } from '@/components/Icons';
-import {
-  scanSlipBackend,
-  fetchSlipsBackend,
-  saveSlipBackend,
-  updateSlipBackend,
-  deleteSlipBackend,
-  checkBackendHealth,
-  BACKEND_URL,
-} from '@/lib/api';
 
 const COLUMN_DEFS = {
   ten: { label: 'Tên, nhãn hiệu, quy cách phẩm chất vật tư, dụng cụ, sản phẩm, hàng hóa', short: 'Tên / mã hàng' },
@@ -62,19 +52,12 @@ const DEFAULT_FIELD_PROMPTS = {
 const API_LOCAL_LIMIT = 20;
 
 export default function Home() {
-  // Clerk Auth state
-  const { getToken, isSignedIn } = useAuth();
-  const { user } = useUser();
-
   // Toast state
   const [toast, setToast] = useState(null);
   const showToast = useCallback((message, type = '') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 2600);
   }, []);
-
-  // Backend Health status
-  const [backendStatus, setBackendStatus] = useState(null); // null | { status, database_configured, r2_configured }
 
   // Image & Scan state
   const [currentImageBase64, setCurrentImageBase64] = useState(null);
@@ -94,7 +77,6 @@ export default function Home() {
   const [currentHistoryId, setCurrentHistoryId] = useState(null);
   const [resultVisible, setResultVisible] = useState(false);
   const [copiedKey, setCopiedKey] = useState(null);
-  const [imageUrlR2, setImageUrlR2] = useState(null);
 
   // Settings & Storage state
   const [apiKey, setApiKey] = useState('');
@@ -109,7 +91,7 @@ export default function Home() {
 
   // Modals & Tabs state
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState('api'); // 'api' | 'cloud' | 'columns' | 'prompts' | 'view'
+  const [settingsTab, setSettingsTab] = useState('api'); // 'api' | 'columns' | 'prompts' | 'view'
   const [historyOpen, setHistoryOpen] = useState(false);
   const [cropOpen, setCropOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -146,53 +128,6 @@ export default function Home() {
       return '';
     }
   };
-
-  // Check Backend Health & Sync Slips from Neon DB on Mount or User Login
-  useEffect(() => {
-    async function initCloudSync() {
-      const health = await checkBackendHealth();
-      setBackendStatus(health);
-
-      // If backend is active and user is signed in, fetch slips from Neon DB
-      try {
-        const token = isSignedIn ? await getToken() : null;
-        const cloudSlips = await fetchSlipsBackend(token);
-        if (cloudSlips && cloudSlips.length > 0) {
-          // Normalize cloud slips
-          const formatted = cloudSlips.map((s) => ({
-            id: s.id,
-            soPhieu: s.so_phieu,
-            image_url: s.image_url,
-            createdAt: s.created_at,
-            updatedAt: s.updated_at,
-            columns: s.columns_json || DEFAULT_COLUMNS,
-            items: (s.items || []).map((it) => ({
-              ten: it.ten_hang,
-              soOSPO: it.so_os_po,
-              donViTinh: it.don_vi_tinh,
-              soLuongChungTu: it.sl_chung_tu,
-              soLuongThucNhap: it.sl_thuc_nhap,
-              soPallet: it.so_pallet,
-              ghiChu: it.ghi_chu,
-            })),
-          }));
-          setScanHistory(formatted);
-          localStorage.setItem('scan_history', JSON.stringify(formatted));
-          return;
-        }
-      } catch (e) {
-        console.warn('Sync warning:', e);
-      }
-
-      // Local storage fallback
-      try {
-        const localHist = JSON.parse(localStorage.getItem('scan_history') || '[]');
-        setScanHistory(Array.isArray(localHist) ? localHist : []);
-      } catch {}
-    }
-
-    initCloudSync();
-  }, [isSignedIn, getToken]);
 
   // Sync state with localStorage on mount
   useEffect(() => {
@@ -233,6 +168,11 @@ export default function Home() {
     const mode = localStorage.getItem('view_mode') || 'auto';
     setViewMode(mode);
     applyViewMode(mode);
+
+    try {
+      const localHist = JSON.parse(localStorage.getItem('scan_history') || '[]');
+      setScanHistory(Array.isArray(localHist) ? localHist : []);
+    } catch {}
   }, []);
 
   const applyViewMode = (mode) => {
@@ -680,14 +620,14 @@ export default function Home() {
     showToast('↺ Đã đặt lại ảnh gốc', 'success');
   };
 
-  // Client-side fallback OCR when backend is offline
+  // Direct Gemini OCR with Google Generative AI
   const scanClientGemini = async (key) => {
     const schema = selectedColumns.map((k) => `"${k}": "giá trị"`).join(',\n        ');
     const rules = ['soPhieu', ...selectedColumns]
       .map((k) => `- ${k === 'soPhieu' ? 'Số phiếu' : COLUMN_DEFS[k]?.short || k} → trường ${k}: ${fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''}`)
       .join('\n');
 
-    const promptText = `Bạn là hệ thống OCR chuyên đọc phiếu nhập kho/xuất kho Việt Nam. Hãy đọc chính xác phần đầu phiếu và bảng hàng hóa.
+    const promptText = `Bạn là hệ thống OCR chuyên đọc phiếu nhập kho / xuất kho Việt Nam. Hãy đọc chính xác phần đầu phiếu và bảng hàng hóa.
 
 Trích xuất số phiếu và các cột được chọn theo hướng dẫn riêng sau:
 ${rules}
@@ -721,7 +661,8 @@ Không trả markdown hoặc giải thích.`;
     );
 
     if (!res.ok) {
-      const err = new Error(`API Error: ${res.status}`);
+      const errData = await res.json().catch(() => ({}));
+      const err = new Error(errData.error?.message || `API Error: ${res.status}`);
       err.status = res.status;
       throw err;
     }
@@ -729,7 +670,7 @@ Không trả markdown hoặc giải thích.`;
     const data = await res.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) {
-      const err = new Error('Không nhận được kết quả từ Gemini');
+      const err = new Error('Không nhận được kết quả từ Gemini AI');
       err.status = 502;
       throw err;
     }
@@ -794,94 +735,64 @@ Không trả markdown hoặc giải thích.`;
     return { soPhieu: sp, items };
   };
 
-  // Main Scan Dispatcher: Backend Serverless -> Client Gemini Failover -> Tesseract
+  // Main Scan Dispatcher
   const startScan = async () => {
     if (isScanning || !currentImageBase64) return;
     setIsScanning(true);
-    setScanProgress({ active: true, percent: 10, text: 'Đang chuẩn bị...' });
+    setScanProgress({ active: true, percent: 10, text: 'Đang chuẩn bị mô hình AI...' });
     setShowTesseractWarning(false);
 
     try {
       let resultData = null;
-      let usedEngine = 'gemini-3.6-flash';
-      let r2Url = null;
-      let slipId = null;
+      const availableEntries = getApiMonitorEntries().filter((i) => !i.limited && !i.exhausted);
+      const apiKeys = availableEntries.map((i) => i.key);
 
-      // 1. Try Backend API first if reachable
-      if (backendStatus?.status === 'healthy') {
-        setScanProgress({ active: true, percent: 35, text: '🤖 Đang phân tích qua FastAPI Backend...' });
-        const token = isSignedIn ? await getToken() : null;
-
-        const backendRes = await scanSlipBackend({
-          imageBase64: currentImageBase64,
-          mimeType: currentImageMimeType,
-          selectedColumns,
-          customFieldPrompts: fieldPrompts,
-          saveToDb: true,
-          uploadToR2: true,
-          token,
-        });
-
-        resultData = {
-          soPhieu: backendRes.so_phieu,
-          items: backendRes.items,
-        };
-        usedEngine = backendRes.engine_used;
-        r2Url = backendRes.image_url;
-        slipId = backendRes.slip_id;
+      if (apiKeys.length) {
+        setScanProgress({ active: true, percent: 30, text: '🤖 Đang gọi Gemini AI Vision...' });
+        for (let i = 0; i < apiKeys.length; i++) {
+          const key = apiKeys[i];
+          try {
+            resultData = await scanClientGemini(key);
+            recordApiAttempt(key, 'Thành công');
+            setRateLimitedKeys((prev) => {
+              const next = new Set(prev);
+              next.delete(key);
+              return next;
+            });
+            break;
+          } catch (error) {
+            const is429 = error?.status === 429;
+            if (is429) {
+              recordApiAttempt(key, 'Hết 20 lượt', 'Gemini trả về 429', true);
+              setRateLimitedKeys((prev) => new Set(prev).add(key));
+              if (i < apiKeys.length - 1) {
+                setScanProgress({
+                  active: true,
+                  percent: Math.min(85, 30 + (i + 1) * 20),
+                  text: '↪ Đang chuyển sang API dự phòng...',
+                });
+                showToast('↪ Đang dùng API dự phòng', 'success');
+                continue;
+              }
+            } else {
+              recordApiAttempt(key, 'Lỗi', error?.message || 'Lỗi request');
+            }
+            throw error;
+          }
+        }
         setEngineBadge('gemini');
       } else {
-        // 2. Client-side fallback if backend not yet running
-        const availableEntries = getApiMonitorEntries().filter((i) => !i.limited && !i.exhausted);
-        const apiKeys = availableEntries.map((i) => i.key);
-
-        if (apiKeys.length) {
-          setScanProgress({ active: true, percent: 30, text: '🤖 Đang gọi Gemini AI Vision...' });
-          for (let i = 0; i < apiKeys.length; i++) {
-            const key = apiKeys[i];
-            try {
-              resultData = await scanClientGemini(key);
-              recordApiAttempt(key, 'Thành công');
-              setRateLimitedKeys((prev) => {
-                const next = new Set(prev);
-                next.delete(key);
-                return next;
-              });
-              break;
-            } catch (error) {
-              const is429 = error?.status === 429;
-              if (is429) {
-                recordApiAttempt(key, 'Hết 20 lượt', 'Gemini trả về 429', true);
-                setRateLimitedKeys((prev) => new Set(prev).add(key));
-                if (i < apiKeys.length - 1) {
-                  setScanProgress({
-                    active: true,
-                    percent: Math.min(85, 30 + (i + 1) * 20),
-                    text: '↪ Đang chuyển sang API dự phòng...',
-                  });
-                  showToast('↪ Đang dùng API dự phòng', 'success');
-                  continue;
-                }
-              } else {
-                recordApiAttempt(key, 'Lỗi', error?.message || 'Lỗi request');
-              }
-              throw error;
-            }
-          }
-          setEngineBadge('gemini');
-        } else {
-          setShowTesseractWarning(true);
-          setScanProgress({ active: true, percent: 15, text: '📥 Đang tải engine OCR offline...' });
-          resultData = await scanWithTesseract((p) => {
-            const pct = Math.round(p * 100);
-            setScanProgress({
-              active: true,
-              percent: pct,
-              text: p < 0.3 ? '📥 Đang nạp OCR...' : p < 0.9 ? `🔍 Đang nhận diện... ${pct}%` : '✅ Hoàn tất!',
-            });
+        setShowTesseractWarning(true);
+        setScanProgress({ active: true, percent: 15, text: '📥 Đang tải engine OCR offline...' });
+        resultData = await scanWithTesseract((p) => {
+          const pct = Math.round(p * 100);
+          setScanProgress({
+            active: true,
+            percent: pct,
+            text: p < 0.3 ? '📥 Đang nạp OCR...' : p < 0.9 ? `🔍 Đang nhận diện... ${pct}%` : '✅ Hoàn tất!',
           });
-          setEngineBadge('tesseract');
-        }
+        });
+        setEngineBadge('tesseract');
       }
 
       setScanProgress({ active: true, percent: 100, text: '✅ Trích xuất thành công!' });
@@ -892,14 +803,13 @@ Không trả markdown hoặc giải thích.`;
         return out;
       });
 
-      const nextId = slipId || 'h_' + Date.now();
+      const nextId = 'h_' + Date.now();
       setCurrentHistoryId(nextId);
       setSoPhieu(resultData.soPhieu || '');
       setTableItems(normalizedItems);
-      setImageUrlR2(r2Url);
       setResultVisible(true);
 
-      saveHistoryRecord(nextId, resultData.soPhieu || '', normalizedItems, r2Url, true);
+      saveHistoryRecord(nextId, resultData.soPhieu || '', normalizedItems, true);
 
       setTimeout(() => {
         resultRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -914,14 +824,13 @@ Không trả markdown hoặc giải thích.`;
     }
   };
 
-  // History Operations with Neon DB and LocalStorage
-  const saveHistoryRecord = async (id, spVal, itemsVal, r2Url = null, isNew = false) => {
+  // History Operations in LocalStorage
+  const saveHistoryRecord = (id, spVal, itemsVal, isNew = false) => {
     const record = {
       id,
       createdAt: isNew ? new Date().toISOString() : undefined,
       updatedAt: new Date().toISOString(),
       soPhieu: spVal,
-      image_url: r2Url || imageUrlR2,
       items: itemsVal,
       columns: selectedColumns,
     };
@@ -941,32 +850,13 @@ Không trả markdown hoặc giải thích.`;
       return next;
     });
 
-    // Sync update to Neon DB via Backend if available
-    if (backendStatus?.database_configured) {
-      try {
-        const token = isSignedIn ? await getToken() : null;
-        await updateSlipBackend(
-          id,
-          {
-            so_phieu: spVal,
-            columns: selectedColumns,
-            items: itemsVal,
-          },
-          token
-        );
-      } catch (e) {
-        console.warn('Backend update notice:', e);
-      }
-    }
-
-    if (!isNew) showToast('💾 Đã lưu thay đổi vào cơ sở dữ liệu', 'success');
+    if (!isNew) showToast('💾 Đã lưu thay đổi vào lịch sử', 'success');
   };
 
   const loadHistoryItem = (item) => {
     setCurrentHistoryId(item.id);
     setSoPhieu(item.soPhieu || '');
     setTableItems(item.items || []);
-    setImageUrlR2(item.image_url || null);
     setResultVisible(true);
     setHistoryOpen(false);
     setEngineBadge('gemini');
@@ -976,7 +866,7 @@ Không trả markdown hoặc giải thích.`;
     }, 150);
   };
 
-  const deleteHistoryItem = async (id, e) => {
+  const deleteHistoryItem = (id, e) => {
     e?.stopPropagation();
     setScanHistory((prev) => {
       const next = prev.filter((h) => h.id !== id);
@@ -984,17 +874,6 @@ Không trả markdown hoặc giải thích.`;
       return next;
     });
     if (currentHistoryId === id) setCurrentHistoryId(null);
-
-    // Delete in Neon DB
-    if (backendStatus?.database_configured) {
-      try {
-        const token = isSignedIn ? await getToken() : null;
-        await deleteSlipBackend(id, token);
-      } catch (err) {
-        console.warn('Delete warning:', err);
-      }
-    }
-
     showToast('Đã xóa phiếu khỏi lịch sử', 'success');
   };
 
@@ -1048,7 +927,6 @@ Không trả markdown hoặc giải thích.`;
     setSoPhieu('');
     setTableItems([]);
     setCurrentHistoryId(null);
-    setImageUrlR2(null);
     setImageSharpened(false);
     setUnsharpenedSrc(null);
     setCropSourceSrc(null);
@@ -1181,32 +1059,15 @@ Không trả markdown hoặc giải thích.`;
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">Scan Pro Max</h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                  FULL-STACK
+                  v36.0.1
                 </span>
               </div>
-              <p className="text-xs text-slate-400 hidden sm:block">AI OCR • Clerk Auth • Neon DB • Cloudflare R2</p>
+              <p className="text-xs text-slate-400 hidden sm:block">Trích xuất số phiếu & danh mục hàng hóa bằng AI</p>
             </div>
           </div>
 
-          {/* User Auth & Actions */}
+          {/* Action Buttons */}
           <div className="flex items-center gap-2.5">
-            {/* Clerk User Button / Sign In */}
-            <SignedIn>
-              <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-800/80 border border-slate-700/60">
-                <UserButton afterSignOutUrl="/" showName={false} />
-                <span className="text-xs text-slate-300 hidden md:block font-medium">
-                  {user?.firstName || user?.username || 'Tài khoản'}
-                </span>
-              </div>
-            </SignedIn>
-            <SignedOut>
-              <SignInButton mode="modal">
-                <button className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-sm active:scale-95 transition-all">
-                  Đăng nhập
-                </button>
-              </SignInButton>
-            </SignedOut>
-
             <button
               onClick={() => setHistoryOpen(true)}
               className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 active:scale-95 transition-all text-slate-200 hover:text-white border border-slate-700/60 relative"
@@ -1236,16 +1097,12 @@ Không trả markdown hoặc giải thích.`;
           <div className="flex items-center gap-2">
             <span
               className={`inline-block w-2.5 h-2.5 rounded-full ${
-                backendStatus?.status === 'healthy' || availableApiCount > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                availableApiCount > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
               }`}
             />
             <span className="font-semibold text-slate-700">
-              {backendStatus?.status === 'healthy'
-                ? `⚡ FastAPI Backend & Koyeb (${backendStatus.database_configured ? 'Neon DB ✓' : ''} ${
-                    backendStatus.r2_configured ? 'R2 Storage ✓' : ''
-                  })`
-                : totalApiCount > 0
-                ? `${availableApiCount}/${totalApiCount} API Gemini sẵn sàng (Client mode)`
+              {totalApiCount > 0
+                ? `${availableApiCount}/${totalApiCount} API Gemini sẵn sàng (3.6 Flash)`
                 : 'Chế độ OCR Offline (Tesseract)'}
             </span>
           </div>
@@ -1300,7 +1157,7 @@ Không trả markdown hoặc giải thích.`;
             <div className="mt-4 p-3 bg-blue-50/70 border border-blue-100 rounded-xl flex items-start gap-2.5 text-xs text-blue-900 leading-relaxed">
               <IconInfo className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
               <span>
-                <strong>Bảo mật Full-Stack:</strong> Ảnh và dữ liệu trích xuất được lưu tự động trên Cloudflare R2 & Neon PostgreSQL khi đã đăng nhập.
+                <strong>Trình quét tài liệu:</strong> Giữ camera vuông góc mặt phiếu, đủ sáng để AI đọc chính xác cả chữ viết tay.
               </span>
             </div>
 
@@ -1332,7 +1189,7 @@ Không trả markdown hoặc giải thích.`;
             <div className="flex items-center justify-between mb-3.5">
               <div className="flex items-center gap-2">
                 <IconHistory className="w-4 h-4 text-slate-500" />
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">Lịch sử Cloud & Cục bộ</h3>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">Lịch sử phiếu đã quét</h3>
                 <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600">
                   {scanHistory.length}
                 </span>
@@ -1353,9 +1210,8 @@ Không trả markdown hoặc giải thích.`;
                     className="p-3 rounded-xl border border-slate-200/80 hover:border-blue-400 hover:bg-blue-50/40 cursor-pointer transition-all flex items-center justify-between gap-3 group"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="font-mono font-bold text-sm text-slate-800 truncate flex items-center gap-1.5">
-                        <span>{item.soPhieu || 'Chưa có số phiếu'}</span>
-                        {item.image_url && <span className="text-[10px] text-blue-500" title="Đã lưu trên Cloudflare R2">☁</span>}
+                      <div className="font-mono font-bold text-sm text-slate-800 truncate">
+                        {item.soPhieu || 'Chưa có số phiếu'}
                       </div>
                       <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
                         <span>{formatDate(item.updatedAt || item.createdAt)}</span>
@@ -1468,7 +1324,7 @@ Không trả markdown hoặc giải thích.`;
                 <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
                   <IconInfo className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
                   <span>
-                    Đang quét bằng OCR Offline. Hãy triển khai Backend trên Koyeb hoặc nhập API Key trong Cài đặt để nhận dạng chữ viết tay chuẩn xác nhất.
+                    Đang dùng OCR Offline. Kết quả với chữ viết tay có thể giảm độ chuẩn. Hãy nhập API key Gemini trong Cài đặt ⚙️ để nhận dạng tốt nhất.
                   </span>
                 </div>
               )}
@@ -1536,27 +1392,13 @@ Không trả markdown hoặc giải thích.`;
                     className="font-mono text-xl font-extrabold text-blue-900 bg-transparent border-none outline-none focus:ring-0 p-0 w-full"
                   />
                 </div>
-                <div className="flex items-center gap-2 self-start sm:self-center">
-                  {imageUrlR2 && (
-                    <a
-                      href={imageUrlR2}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-1 px-3 py-2 rounded-lg bg-blue-100/70 hover:bg-blue-200/70 text-blue-800 font-semibold text-xs transition-all"
-                      title="Xem ảnh gốc lưu trên Cloudflare R2"
-                    >
-                      <span>Xem file R2</span>
-                      <IconExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  )}
-                  <button
-                    onClick={() => copyToClipboard(soPhieu, 'soPhieu')}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white hover:bg-blue-50 text-blue-700 font-semibold text-xs border border-blue-200 shadow-sm active:scale-95 transition-all"
-                  >
-                    {copiedKey === 'soPhieu' ? <IconCheck className="w-4 h-4 text-emerald-600" /> : <IconCopy className="w-4 h-4" />}
-                    <span>{copiedKey === 'soPhieu' ? 'Đã sao chép' : 'Sao chép số phiếu'}</span>
-                  </button>
-                </div>
+                <button
+                  onClick={() => copyToClipboard(soPhieu, 'soPhieu')}
+                  className="self-start sm:self-center flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white hover:bg-blue-50 text-blue-700 font-semibold text-xs border border-blue-200 shadow-sm active:scale-95 transition-all"
+                >
+                  {copiedKey === 'soPhieu' ? <IconCheck className="w-4 h-4 text-emerald-600" /> : <IconCopy className="w-4 h-4" />}
+                  <span>{copiedKey === 'soPhieu' ? 'Đã sao chép' : 'Sao chép số phiếu'}</span>
+                </button>
               </div>
 
               {/* Dynamic Extracted Table */}
@@ -1652,11 +1494,11 @@ Không trả markdown hoặc giải thích.`;
               {/* Footer Actions */}
               <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
                 <button
-                  onClick={() => saveHistoryRecord(currentHistoryId || 'h_' + Date.now(), soPhieu, tableItems, imageUrlR2, false)}
+                  onClick={() => saveHistoryRecord(currentHistoryId || 'h_' + Date.now(), soPhieu, tableItems, false)}
                   className="flex-1 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-98 transition-all"
                 >
                   <IconSave className="w-4 h-4" />
-                  <span>Lưu Chỉnh Sửa Vào Lịch Sử & Database</span>
+                  <span>Lưu Chỉnh Sửa Vào Lịch Sử</span>
                 </button>
                 <button
                   onClick={resetAll}
@@ -1872,10 +1714,7 @@ Không trả markdown hoặc giải thích.`;
                     className="p-3.5 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/40 cursor-pointer transition-all flex items-center justify-between gap-3"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="font-mono font-bold text-sm text-slate-900 flex items-center gap-1.5">
-                        <span>{item.soPhieu || 'Không có số phiếu'}</span>
-                        {item.image_url && <span className="text-xs text-blue-500" title="Ảnh lưu trên R2">☁</span>}
-                      </div>
+                      <div className="font-mono font-bold text-sm text-slate-900">{item.soPhieu || 'Không có số phiếu'}</div>
                       <div className="text-xs text-slate-500 mt-0.5">
                         {formatDate(item.updatedAt || item.createdAt)} • {item.items?.length || 0} dòng
                       </div>
@@ -1930,7 +1769,7 @@ Không trả markdown hoặc giải thích.`;
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <IconSettings className="w-5 h-5 text-blue-600" />
-                <h3 className="font-bold text-base text-slate-900">Cài Đặt & Cấu Hình Full-Stack</h3>
+                <h3 className="font-bold text-base text-slate-900">Cài Đặt & Cấu Hình Quét</h3>
               </div>
               <button
                 onClick={() => setSettingsOpen(false)}
@@ -1950,7 +1789,7 @@ Không trả markdown hoặc giải thích.`;
                     : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
-                API Gemini & Backend
+                API Gemini & Failover
               </button>
               <button
                 onClick={() => setSettingsTab('columns')}
@@ -1986,55 +1825,13 @@ Không trả markdown hoặc giải thích.`;
 
             {/* Tab Contents */}
             <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs">
-              {/* TAB 1: API & BACKEND */}
+              {/* TAB 1: API GEMINI */}
               {settingsTab === 'api' && (
                 <div className="space-y-4">
-                  {/* Backend Status Card */}
-                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-800">Trạng Thái Backend Máy Chủ (Koyeb)</span>
-                      <span
-                        className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
-                          backendStatus?.status === 'healthy'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}
-                      >
-                        {backendStatus?.status === 'healthy' ? '⚡ Hoạt động' : 'Chưa kết nối Backend'}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500">
-                      Địa chỉ Backend:{' '}
-                      <code className="px-1.5 py-0.5 bg-white rounded border border-slate-200 font-mono text-blue-700">
-                        {BACKEND_URL}
-                      </code>
-                    </p>
-                    <div className="grid grid-cols-3 gap-2 pt-1">
-                      <div className="p-2 rounded-lg bg-white border border-slate-200 text-center">
-                        <div className="text-[10px] text-slate-400 uppercase font-bold">Neon DB</div>
-                        <div className="text-xs font-bold text-slate-700 mt-0.5">
-                          {backendStatus?.database_configured ? '✅ Đã kết nối' : '⚠️ Chưa nạp'}
-                        </div>
-                      </div>
-                      <div className="p-2 rounded-lg bg-white border border-slate-200 text-center">
-                        <div className="text-[10px] text-slate-400 uppercase font-bold">Cloudflare R2</div>
-                        <div className="text-xs font-bold text-slate-700 mt-0.5">
-                          {backendStatus?.r2_configured ? '✅ Đã kết nối' : '⚠️ Chưa nạp'}
-                        </div>
-                      </div>
-                      <div className="p-2 rounded-lg bg-white border border-slate-200 text-center">
-                        <div className="text-[10px] text-slate-400 uppercase font-bold">Gemini OCR</div>
-                        <div className="text-xs font-bold text-slate-700 mt-0.5">
-                          {backendStatus?.gemini_configured ? '✅ Server key' : 'Client fallback'}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Primary Client Key Fallback */}
+                  {/* Primary Key */}
                   <div className="space-y-1.5">
                     <label className="font-bold text-slate-700 flex items-center justify-between">
-                      <span>API Key Gemini Cục Bộ (Client Fallback)</span>
+                      <span>API Key Gemini Chính</span>
                       <a
                         href="https://aistudio.google.com/apikey"
                         target="_blank"
@@ -2049,14 +1846,18 @@ Không trả markdown hoặc giải thích.`;
                       type="password"
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
-                      placeholder="Dán API Key Gemini tại đây nếu chạy client..."
+                      placeholder="Dán API Key Gemini tại đây..."
                       className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 font-mono outline-none"
                     />
+                    <p className="text-[11px] text-slate-400">Key chỉ lưu trên trình duyệt của bạn, không gửi đi máy chủ bên ngoài.</p>
                   </div>
 
                   {/* Backup Keys File */}
                   <div className="space-y-1.5 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
                     <label className="font-bold text-slate-700 block">Nạp Danh Sách API Dự Phòng (.TXT)</label>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      Mỗi dòng 1 key. Tự động luân chuyển khi gặp mã lỗi 429 hoặc chạm hạn mức 20 lượt.
+                    </p>
                     <div className="flex items-center gap-3 pt-1">
                       <button
                         type="button"
@@ -2088,7 +1889,7 @@ Không trả markdown hoặc giải thích.`;
                       </div>
                     </div>
 
-                    <div className="space-y-2 max-h-[140px] overflow-y-auto pr-1">
+                    <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
                       {getApiMonitorEntries().length > 0 ? (
                         getApiMonitorEntries().map((item) => (
                           <div key={item.key} className="p-2.5 rounded-lg border border-slate-200 bg-white flex items-center justify-between gap-2">
@@ -2122,7 +1923,7 @@ Không trả markdown hoặc giải thích.`;
                           </div>
                         ))
                       ) : (
-                        <div className="text-center py-4 text-slate-400">Chưa có API key client nào</div>
+                        <div className="text-center py-4 text-slate-400">Chưa cấu hình API key nào</div>
                       )}
                     </div>
                   </div>
