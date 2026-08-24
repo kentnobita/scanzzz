@@ -24,6 +24,8 @@ import {
   IconFileText,
   IconExternalLink,
   IconInfo,
+  IconLayers,
+  IconEye,
 } from '@/components/Icons';
 
 const COLUMN_DEFS = {
@@ -77,6 +79,12 @@ export default function Home() {
   const [currentHistoryId, setCurrentHistoryId] = useState(null);
   const [resultVisible, setResultVisible] = useState(false);
   const [copiedKey, setCopiedKey] = useState(null);
+
+  // PDF Multi-page state
+  const [pdfModalOpen, setPdfModalOpen] = useState(false);
+  const [pdfPages, setPdfPages] = useState([]); // [{ pageNum, fullUrl, thumbUrl, base64 }]
+  const [selectedPdfIndex, setSelectedPdfIndex] = useState(0);
+  const [isProcessingPdf, setIsProcessingPdf] = useState(false);
 
   // Settings & Storage state
   const [apiKey, setApiKey] = useState('');
@@ -268,9 +276,11 @@ export default function Home() {
     img.src = dataUrl;
   }, []);
 
+  // Multi-page PDF handler
   const handlePDF = useCallback(async (file) => {
     try {
-      showToast('📄 Đang xử lý PDF...');
+      setIsProcessingPdf(true);
+      showToast('📄 Đang tải và phân tích trang PDF...');
       if (!window.pdfjsLib) {
         await new Promise((resolve, reject) => {
           const script = document.createElement('script');
@@ -285,20 +295,62 @@ export default function Home() {
       }
 
       const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
-      const page = await pdf.getPage(1);
-      const viewport = page.getViewport({ scale: 2 });
-      const canvas = document.createElement('canvas');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      const numPages = pdf.numPages;
+      const pagesData = [];
 
-      loadImageFromDataUrl(canvas.toDataURL('image/jpeg', 0.92));
-      showToast(`📄 Đã tải trang 1/${pdf.numPages}`, 'success');
+      for (let i = 1; i <= numPages; i++) {
+        const page = await pdf.getPage(i);
+        
+        // High-res scan version
+        const viewport = page.getViewport({ scale: 2.0 });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+        const fullUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+        // Thumbnail version
+        const thumbViewport = page.getViewport({ scale: 0.45 });
+        const thumbCanvas = document.createElement('canvas');
+        thumbCanvas.width = thumbViewport.width;
+        thumbCanvas.height = thumbViewport.height;
+        await page.render({ canvasContext: thumbCanvas.getContext('2d'), viewport: thumbViewport }).promise;
+        const thumbUrl = thumbCanvas.toDataURL('image/jpeg', 0.7);
+
+        pagesData.push({
+          pageNum: i,
+          fullUrl,
+          thumbUrl,
+          base64: fullUrl.split(',')[1],
+          selected: true,
+        });
+      }
+
+      setPdfPages(pagesData);
+      setSelectedPdfIndex(0);
+
+      if (numPages === 1) {
+        loadImageFromDataUrl(pagesData[0].fullUrl);
+        showToast('📄 Đã nạp file PDF 1 trang', 'success');
+      } else {
+        setPdfModalOpen(true);
+        showToast(`📄 Đã tải ${numPages} trang PDF. Hãy chọn chế độ quét!`, 'success');
+      }
     } catch (e) {
       console.error(e);
-      showToast('❌ Không thể đọc file PDF', 'error');
+      showToast('❌ Không thể đọc file PDF: ' + e.message, 'error');
+    } finally {
+      setIsProcessingPdf(false);
     }
   }, [loadImageFromDataUrl, showToast]);
+
+  const selectSinglePdfPage = (index) => {
+    const page = pdfPages[index];
+    if (!page) return;
+    loadImageFromDataUrl(page.fullUrl);
+    setPdfModalOpen(false);
+    showToast(`📄 Đã chọn Trang ${page.pageNum} để quét`, 'success');
+  };
 
   const processFile = useCallback((file) => {
     if (file.type === 'application/pdf') {
@@ -462,19 +514,41 @@ export default function Home() {
     }
   };
 
+  // Capture with AUTO-CROP to Reticle Bounding Box
   const captureFromCamera = () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth) {
       showToast('Camera chưa sẵn sàng', 'error');
       return;
     }
+
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const cw = video.clientWidth || 360;
+    const ch = video.clientHeight || 480;
+
+    // Calculate visible area due to object-cover CSS scaling
+    const scale = Math.max(cw / vw, ch / vh);
+    const visW = cw / scale;
+    const visH = ch / scale;
+    const visX = (vw - visW) / 2;
+    const visY = (vh - visH) / 2;
+
+    // Reticle frame is 86% width x 78% height centered inside visible region
+    const cropW = Math.round(visW * 0.86);
+    const cropH = Math.round(visH * 0.78);
+    const cropX = Math.round(visX + (visW - cropW) / 2);
+    const cropY = Math.round(visY + (visH - cropH) / 2);
+
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
+    canvas.width = cropW;
+    canvas.height = cropH;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+
     closeCameraScanner();
     loadImageFromDataUrl(canvas.toDataURL('image/jpeg', 0.94));
-    showToast('📷 Đã chụp ảnh, sẵn sàng quét', 'success');
+    showToast('📷 Đã chụp & tự động cắt vừa vặn khung phiếu', 'success');
   };
 
   const rotatePreview = (degrees) => {
@@ -621,7 +695,7 @@ export default function Home() {
   };
 
   // Direct Gemini OCR with Google Generative AI
-  const scanClientGemini = async (key) => {
+  const scanClientGeminiWithBase64 = async (base64Data, mimeType, key) => {
     const schema = selectedColumns.map((k) => `"${k}": "giá trị"`).join(',\n        ');
     const rules = ['soPhieu', ...selectedColumns]
       .map((k) => `- ${k === 'soPhieu' ? 'Số phiếu' : COLUMN_DEFS[k]?.short || k} → trường ${k}: ${fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''}`)
@@ -648,7 +722,7 @@ Không trả markdown hoặc giải thích.`;
         {
           parts: [
             { text: promptText },
-            { inline_data: { mime_type: currentImageMimeType, data: currentImageBase64 } },
+            { inline_data: { mime_type: mimeType, data: base64Data } },
           ],
         },
       ],
@@ -684,7 +758,11 @@ Không trả markdown hoặc giải thích.`;
     }
   };
 
-  const scanWithTesseract = async (onProgress) => {
+  const scanClientGemini = async (key) => {
+    return await scanClientGeminiWithBase64(currentImageBase64, currentImageMimeType, key);
+  };
+
+  const scanWithTesseract = async (base64Data, mimeType, onProgress) => {
     if (!window.Tesseract) {
       await new Promise((resolve, reject) => {
         const s = document.createElement('script');
@@ -696,7 +774,7 @@ Không trả markdown hoặc giải thích.`;
     }
 
     const result = await window.Tesseract.recognize(
-      'data:' + currentImageMimeType + ';base64,' + currentImageBase64,
+      'data:' + mimeType + ';base64,' + base64Data,
       'eng+vie',
       {
         logger: (m) => {
@@ -735,7 +813,57 @@ Không trả markdown hoặc giải thích.`;
     return { soPhieu: sp, items };
   };
 
-  // Main Scan Dispatcher
+  // OCR Single Image Helper with Failover
+  const executeOcrOnImage = async (base64Data, mimeType, progressPrefix = '') => {
+    const availableEntries = getApiMonitorEntries().filter((i) => !i.limited && !i.exhausted);
+    const apiKeys = availableEntries.map((i) => i.key);
+
+    if (apiKeys.length) {
+      for (let i = 0; i < apiKeys.length; i++) {
+        const key = apiKeys[i];
+        try {
+          const res = await scanClientGeminiWithBase64(base64Data, mimeType, key);
+          recordApiAttempt(key, 'Thành công');
+          setRateLimitedKeys((prev) => {
+            const next = new Set(prev);
+            next.delete(key);
+            return next;
+          });
+          return { data: res, engine: 'gemini' };
+        } catch (error) {
+          const is429 = error?.status === 429;
+          if (is429) {
+            recordApiAttempt(key, 'Hết 20 lượt', 'Gemini trả về 429', true);
+            setRateLimitedKeys((prev) => new Set(prev).add(key));
+            if (i < apiKeys.length - 1) {
+              setScanProgress({
+                active: true,
+                percent: 50,
+                text: `${progressPrefix} ↪ Đang chuyển sang API dự phòng...`,
+              });
+              continue;
+            }
+          } else {
+            recordApiAttempt(key, 'Lỗi', error?.message || 'Lỗi request');
+          }
+          throw error;
+        }
+      }
+    } else {
+      setShowTesseractWarning(true);
+      const res = await scanWithTesseract(base64Data, mimeType, (p) => {
+        const pct = Math.round(p * 100);
+        setScanProgress({
+          active: true,
+          percent: pct,
+          text: `${progressPrefix} Đang nhận diện offline... ${pct}%`,
+        });
+      });
+      return { data: res, engine: 'tesseract' };
+    }
+  };
+
+  // Main Single Image Scan Dispatcher
   const startScan = async () => {
     if (isScanning || !currentImageBase64) return;
     setIsScanning(true);
@@ -743,58 +871,8 @@ Không trả markdown hoặc giải thích.`;
     setShowTesseractWarning(false);
 
     try {
-      let resultData = null;
-      const availableEntries = getApiMonitorEntries().filter((i) => !i.limited && !i.exhausted);
-      const apiKeys = availableEntries.map((i) => i.key);
-
-      if (apiKeys.length) {
-        setScanProgress({ active: true, percent: 30, text: '🤖 Đang gọi Gemini AI Vision...' });
-        for (let i = 0; i < apiKeys.length; i++) {
-          const key = apiKeys[i];
-          try {
-            resultData = await scanClientGemini(key);
-            recordApiAttempt(key, 'Thành công');
-            setRateLimitedKeys((prev) => {
-              const next = new Set(prev);
-              next.delete(key);
-              return next;
-            });
-            break;
-          } catch (error) {
-            const is429 = error?.status === 429;
-            if (is429) {
-              recordApiAttempt(key, 'Hết 20 lượt', 'Gemini trả về 429', true);
-              setRateLimitedKeys((prev) => new Set(prev).add(key));
-              if (i < apiKeys.length - 1) {
-                setScanProgress({
-                  active: true,
-                  percent: Math.min(85, 30 + (i + 1) * 20),
-                  text: '↪ Đang chuyển sang API dự phòng...',
-                });
-                showToast('↪ Đang dùng API dự phòng', 'success');
-                continue;
-              }
-            } else {
-              recordApiAttempt(key, 'Lỗi', error?.message || 'Lỗi request');
-            }
-            throw error;
-          }
-        }
-        setEngineBadge('gemini');
-      } else {
-        setShowTesseractWarning(true);
-        setScanProgress({ active: true, percent: 15, text: '📥 Đang tải engine OCR offline...' });
-        resultData = await scanWithTesseract((p) => {
-          const pct = Math.round(p * 100);
-          setScanProgress({
-            active: true,
-            percent: pct,
-            text: p < 0.3 ? '📥 Đang nạp OCR...' : p < 0.9 ? `🔍 Đang nhận diện... ${pct}%` : '✅ Hoàn tất!',
-          });
-        });
-        setEngineBadge('tesseract');
-      }
-
+      const { data: resultData, engine } = await executeOcrOnImage(currentImageBase64, currentImageMimeType);
+      setEngineBadge(engine);
       setScanProgress({ active: true, percent: 100, text: '✅ Trích xuất thành công!' });
 
       const normalizedItems = (Array.isArray(resultData.items) ? resultData.items : []).map((item) => {
@@ -818,6 +896,74 @@ Không trả markdown hoặc giải thích.`;
       console.error(e);
       showToast('❌ Lỗi: ' + e.message, 'error');
       setScanProgress({ active: true, percent: 0, text: 'Lỗi xảy ra, vui lòng thử lại' });
+    } finally {
+      setIsScanning(false);
+      setTimeout(() => setScanProgress((prev) => ({ ...prev, active: false })), 1800);
+    }
+  };
+
+  // Batch Multi-Page PDF Scan
+  const startBatchPdfScan = async () => {
+    if (!pdfPages.length || isScanning) return;
+    setPdfModalOpen(false);
+    setIsScanning(true);
+    setShowTesseractWarning(false);
+
+    const total = pdfPages.length;
+    let accumulatedItems = [];
+    let detectedSoPhieu = '';
+    let usedEngine = 'gemini';
+
+    try {
+      for (let i = 0; i < total; i++) {
+        const page = pdfPages[i];
+        const pctStart = Math.round((i / total) * 100);
+        setScanProgress({
+          active: true,
+          percent: pctStart,
+          text: `📄 Đang quét trang ${page.pageNum}/${total}...`,
+        });
+
+        const { data: pageResult, engine } = await executeOcrOnImage(page.base64, 'image/jpeg', `[Trang ${page.pageNum}/${total}]`);
+        usedEngine = engine;
+
+        if (pageResult.soPhieu && !detectedSoPhieu) {
+          detectedSoPhieu = pageResult.soPhieu;
+        }
+
+        const normalized = (Array.isArray(pageResult.items) ? pageResult.items : []).map((item) => {
+          const out = {};
+          selectedColumns.forEach((k) => (out[k] = item?.[k] ?? ''));
+          return out;
+        });
+
+        accumulatedItems = [...accumulatedItems, ...normalized];
+      }
+
+      setEngineBadge(usedEngine);
+      setScanProgress({ active: true, percent: 100, text: `✅ Đã quét xong toàn bộ ${total} trang!` });
+
+      // Set first page as active preview
+      if (pdfPages[0]) {
+        loadImageFromDataUrl(pdfPages[0].fullUrl);
+      }
+
+      const nextId = 'h_' + Date.now();
+      setCurrentHistoryId(nextId);
+      setSoPhieu(detectedSoPhieu || '');
+      setTableItems(accumulatedItems);
+      setResultVisible(true);
+
+      saveHistoryRecord(nextId, detectedSoPhieu || '', accumulatedItems, true);
+      showToast(`✨ Đã trích xuất ${accumulatedItems.length} dòng hàng từ ${total} trang PDF`, 'success');
+
+      setTimeout(() => {
+        resultRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 200);
+    } catch (e) {
+      console.error(e);
+      showToast('❌ Lỗi quét batch PDF: ' + e.message, 'error');
+      setScanProgress({ active: true, percent: 0, text: 'Lỗi xảy ra trong quá trình quét PDF' });
     } finally {
       setIsScanning(false);
       setTimeout(() => setScanProgress((prev) => ({ ...prev, active: false })), 1800);
@@ -930,6 +1076,7 @@ Không trả markdown hoặc giải thích.`;
     setImageSharpened(false);
     setUnsharpenedSrc(null);
     setCropSourceSrc(null);
+    setPdfPages([]);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     showToast('Đã đặt lại trạng thái', 'success');
   };
@@ -1059,7 +1206,7 @@ Không trả markdown hoặc giải thích.`;
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">Scan Pro Max</h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                  v36.0.1
+                  v36.0.2
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">Trích xuất số phiếu & danh mục hàng hóa bằng AI</p>
@@ -1125,7 +1272,7 @@ Không trả markdown hoặc giải thích.`;
                 <IconCamera className="w-4 h-4 text-blue-600" />
                 Chọn Nguồn Tài Liệu
               </h2>
-              <span className="text-[11px] font-medium text-slate-400">PDF, JPG, PNG</span>
+              <span className="text-[11px] font-medium text-slate-400">PDF Nhiều Trang, JPG, PNG</span>
             </div>
 
             <div className="grid grid-cols-3 gap-2.5">
@@ -1139,9 +1286,14 @@ Không trả markdown hoặc giải thích.`;
 
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="flex flex-col items-center justify-center gap-1.5 py-3.5 px-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold text-xs border border-slate-200/80 active:scale-[0.98] transition-all"
+                disabled={isProcessingPdf}
+                className="flex flex-col items-center justify-center gap-1.5 py-3.5 px-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold text-xs border border-slate-200/80 active:scale-[0.98] transition-all disabled:opacity-50"
               >
-                <IconUpload className="w-5 h-5 text-slate-600" />
+                {isProcessingPdf ? (
+                  <div className="w-5 h-5 border-2 border-slate-600 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <IconUpload className="w-5 h-5 text-slate-600" />
+                )}
                 <span>Chọn File</span>
               </button>
 
@@ -1154,11 +1306,16 @@ Không trả markdown hoặc giải thích.`;
               </button>
             </div>
 
-            <div className="mt-4 p-3 bg-blue-50/70 border border-blue-100 rounded-xl flex items-start gap-2.5 text-xs text-blue-900 leading-relaxed">
-              <IconInfo className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
-              <span>
-                <strong>Trình quét tài liệu:</strong> Giữ camera vuông góc mặt phiếu, đủ sáng để AI đọc chính xác cả chữ viết tay.
-              </span>
+            {/* Feature Badges */}
+            <div className="mt-4 p-3 bg-blue-50/70 border border-blue-100 rounded-xl space-y-1.5 text-xs text-blue-900 leading-relaxed">
+              <div className="flex items-center gap-1.5 font-bold">
+                <IconCheck className="w-3.5 h-3.5 text-blue-600" />
+                <span>Camera tự động cắt viền phiếu không phần thừa</span>
+              </div>
+              <div className="flex items-center gap-1.5 font-bold">
+                <IconLayers className="w-3.5 h-3.5 text-blue-600" />
+                <span>File PDF nhiều trang: Quét 1 trang hoặc tất cả</span>
+              </div>
             </div>
 
             <input
@@ -1245,7 +1402,18 @@ Không trả markdown hoặc giải thích.`;
                   <IconFileText className="w-4 h-4 text-blue-600" />
                   Ảnh Xem Trước & Chỉnh Sửa
                 </h3>
-                <span className="text-xs font-medium text-slate-500 font-mono">Đã sẵn sàng quét</span>
+                <div className="flex items-center gap-2">
+                  {pdfPages.length > 1 && (
+                    <button
+                      onClick={() => setPdfModalOpen(true)}
+                      className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-bold flex items-center gap-1 border border-blue-200"
+                    >
+                      <IconLayers className="w-3.5 h-3.5" />
+                      <span>Xem {pdfPages.length} trang PDF</span>
+                    </button>
+                  )}
+                  <span className="text-xs font-medium text-slate-500 font-mono">Đã sẵn sàng</span>
+                </div>
               </div>
 
               {/* Image Canvas Viewport */}
@@ -1356,7 +1524,7 @@ Không trả markdown hoặc giải thích.`;
               </div>
               <h3 className="text-base font-bold text-slate-800">Chưa có ảnh phiếu nào được chọn</h3>
               <p className="text-xs text-slate-500 max-w-sm">
-                Hãy nhấn <strong>Quét Camera</strong>, <strong>Chọn File</strong>, hoặc nhấn <strong>Ctrl+V</strong> để dán ảnh chụp phiếu xuất nhập kho.
+                Hãy nhấn <strong>Quét Camera</strong>, <strong>Chọn File</strong> (Ảnh/PDF nhiều trang), hoặc nhấn <strong>Ctrl+V</strong> để dán ảnh.
               </p>
             </div>
           )}
@@ -1513,14 +1681,106 @@ Không trả markdown hoặc giải thích.`;
         </div>
       </main>
 
-      {/* Camera Live Modal */}
+      {/* PDF Multi-Page Preview & Selection Modal */}
+      {pdfModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white w-full max-w-2xl rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-modal flex flex-col gap-4 text-slate-900 max-h-[90vh]">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <IconLayers className="w-5 h-5 text-blue-600" />
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">File PDF Có {pdfPages.length} Trang</h3>
+                  <p className="text-[11px] text-slate-500">Chọn 1 trang chỉ định để quét hoặc quét gộp toàn bộ các trang</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setPdfModalOpen(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700"
+              >
+                <IconClose className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Thumbnail Grid */}
+            <div className="flex-1 overflow-y-auto pr-1">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {pdfPages.map((page, idx) => {
+                  const isSelected = selectedPdfIndex === idx;
+                  return (
+                    <div
+                      key={page.pageNum}
+                      onClick={() => setSelectedPdfIndex(idx)}
+                      className={`group relative p-2.5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col items-center gap-2 ${
+                        isSelected
+                          ? 'border-blue-600 bg-blue-50/50 shadow-md ring-2 ring-blue-500/20'
+                          : 'border-slate-200 hover:border-slate-300 bg-slate-50/60'
+                      }`}
+                    >
+                      <div className="relative w-full aspect-[3/4] bg-white rounded-xl overflow-hidden shadow-sm border border-slate-200 flex items-center justify-center">
+                        <img src={page.thumbUrl} alt={`Trang ${page.pageNum}`} className="w-full h-full object-contain" />
+                        {isSelected && (
+                          <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-md animate-scale-in">
+                            <IconCheck className="w-3.5 h-3.5" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="w-full flex items-center justify-between px-1">
+                        <span className="font-bold text-xs text-slate-800">Trang {page.pageNum}</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            selectSinglePdfPage(idx);
+                          }}
+                          className="text-[11px] text-blue-600 hover:underline font-semibold"
+                        >
+                          Chọn trang này
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="text-xs text-slate-500">
+                Đang chọn: <strong>Trang {pdfPages[selectedPdfIndex]?.pageNum}</strong>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  onClick={() => selectSinglePdfPage(selectedPdfIndex)}
+                  className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition-all active:scale-95"
+                >
+                  Quét 1 Trang Đã Chọn
+                </button>
+
+                <button
+                  onClick={startBatchPdfScan}
+                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                >
+                  <IconSparkles className="w-4 h-4" />
+                  <span>Quét Tất Cả {pdfPages.length} Trang</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Camera Live Modal with Auto-Crop Reticle */}
       {cameraOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-slate-900 w-full max-w-lg rounded-3xl p-5 border border-slate-800 shadow-modal flex flex-col gap-4 text-white">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
                 <IconCamera className="w-5 h-5 text-blue-400" />
-                <h3 className="font-bold text-sm text-white">Trình Quét Camera Chuyên Dụng</h3>
+                <div>
+                  <h3 className="font-bold text-sm text-white">Trình Quét Camera Tự Động Cắt</h3>
+                  <p className="text-[10px] text-blue-300">Tự động cắt chuẩn viền phiếu, không có viền thừa</p>
+                </div>
               </div>
               <button
                 onClick={closeCameraScanner}
@@ -1535,7 +1795,7 @@ Không trả markdown hoặc giải thích.`;
               <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
 
               {/* Document Bounding Box Reticle */}
-              <div className="absolute w-[86%] h-[78%] border border-blue-400/40 rounded-xl pointer-events-none shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]">
+              <div className="absolute w-[86%] h-[78%] border-2 border-blue-400/80 rounded-xl pointer-events-none shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]">
                 <div className="reticle-corner reticle-top-left" />
                 <div className="reticle-corner reticle-top-right" />
                 <div className="reticle-corner reticle-bottom-left" />
@@ -1544,8 +1804,8 @@ Không trả markdown hoặc giải thích.`;
               </div>
 
               <div className="absolute bottom-4 left-0 right-0 text-center pointer-events-none">
-                <span className="px-3 py-1 rounded-full bg-slate-900/80 text-blue-200 text-xs font-medium backdrop-blur-sm border border-blue-500/30">
-                  Căn toàn bộ phiếu vào khung hình
+                <span className="px-3 py-1 rounded-full bg-slate-900/90 text-blue-200 text-xs font-semibold backdrop-blur-sm border border-blue-500/40">
+                  ✨ Ảnh chụp sẽ tự động cắt đúng khung này
                 </span>
               </div>
             </div>
@@ -1563,7 +1823,7 @@ Không trả markdown hoặc giải thích.`;
               <button
                 onClick={captureFromCamera}
                 className="w-16 h-16 mx-auto rounded-full bg-white flex items-center justify-center shadow-lg shadow-white/20 active:scale-90 transition-transform p-1"
-                title="Chụp ảnh"
+                title="Chụp ảnh tự động cắt"
               >
                 <div className="w-full h-full rounded-full border-2 border-slate-900 bg-blue-600 hover:bg-blue-500 flex items-center justify-center text-white" />
               </button>
