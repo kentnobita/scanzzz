@@ -9,5 +9,20 @@
     "selectedColumns": [],
     "fieldPrompts": {},
     "scanHistory": []
+  },
+  "KHO-TEST": {
+    "code": "KHO-TEST",
+    "updatedAt": "2026-08-25T07:42:39.834Z",
+    "apiKey": "AIzaSyTest123",
+    "backupKeys": [],
+    "apiUsage": {
+      "AIzaSyTest123": {
+        "used": 5
+      }
+    },
+    "googleSheetUrl": "https://script.google.com/test",
+    "autoSyncSheet": false,
+    "selectedColumns": [],
+    "fieldPrompts": {}
   }
 }

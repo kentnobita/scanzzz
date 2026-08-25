@@ -115,16 +115,17 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Mã đồng bộ phải có ít nhất 3 ký tự' }, { status: 400 });
     }
 
+    // Only synchronize API keys, quota counters, Google Sheets & columns/prompt configs
     const payload = {
       code,
       updatedAt: new Date().toISOString(),
       apiKey: body.apiKey || '',
       backupKeys: Array.isArray(body.backupKeys) ? body.backupKeys : [],
+      apiUsage: body.apiUsage && typeof body.apiUsage === 'object' ? body.apiUsage : {},
       googleSheetUrl: body.googleSheetUrl || '',
       autoSyncSheet: !!body.autoSyncSheet,
       selectedColumns: body.selectedColumns || [],
       fieldPrompts: body.fieldPrompts || {},
-      scanHistory: Array.isArray(body.scanHistory) ? body.scanHistory.slice(0, 50) : [],
     };
 
     // 1. Save to memory
@@ -140,9 +141,9 @@ export async function POST(request) {
 
     return NextResponse.json({
       status: 'success',
-      message: `Đã đồng bộ dữ liệu cho mã ${code}`,
+      message: `Đã đồng bộ cấu hình API, Bộ đếm & Google Sheet cho mã ${code}`,
       updatedAt: payload.updatedAt,
-      historyCount: payload.scanHistory.length,
+      apiCount: (payload.apiKey ? 1 : 0) + payload.backupKeys.length,
     });
   } catch (error) {
     console.error('API Sync Error:', error);

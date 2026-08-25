@@ -182,9 +182,10 @@ export default function Home() {
   const [isSyncingSheet, setIsSyncingSheet] = useState(false);
   const [lastSheetSync, setLastSheetSync] = useState(null);
 
-  // Cloud Multi-Device Sync State (Phương Án 1)
+  // Cloud Multi-Device Sync State
   const [cloudSyncCode, setCloudSyncCode] = useState('');
   const [syncCodeInput, setSyncCodeInput] = useState('');
+  const [autoCloudSyncOnLaunch, setAutoCloudSyncOnLaunch] = useState(true);
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [lastCloudSync, setLastCloudSync] = useState(null);
   const [qrModalOpen, setQrModalOpen] = useState(false);
@@ -245,6 +246,10 @@ export default function Home() {
     setCloudSyncCode(savedSyncCode);
     setSyncCodeInput(savedSyncCode);
 
+    const savedAutoLaunch = localStorage.getItem('auto_cloud_sync_on_launch');
+    const autoLaunchEnabled = savedAutoLaunch === null ? true : savedAutoLaunch === 'true';
+    setAutoCloudSyncOnLaunch(autoLaunchEnabled);
+
     try {
       const bKeys = JSON.parse(localStorage.getItem('gemini_backup_api_keys') || '[]');
       setBackupKeys(Array.isArray(bKeys) ? bKeys.filter((k) => k !== key) : []);
@@ -285,7 +290,7 @@ export default function Home() {
       setScanHistory(Array.isArray(localHist) ? localHist : []);
     } catch {}
 
-    // Auto-pull if URL has ?sync=CODE
+    // Auto-sync check on first load:
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const urlSyncCode = params.get('sync');
@@ -294,7 +299,12 @@ export default function Home() {
         setCloudSyncCode(cleanCode);
         setSyncCodeInput(cleanCode);
         localStorage.setItem('cloud_sync_code', cleanCode);
-        pullFromCloud(cleanCode, true);
+        localStorage.setItem('auto_cloud_sync_on_launch', 'true');
+        setAutoCloudSyncOnLaunch(true);
+        pullFromCloud(cleanCode, false);
+      } else if (savedSyncCode && autoLaunchEnabled) {
+        // Automatically sync configuration and quota from Cloud on app launch
+        pullFromCloud(savedSyncCode, true);
       }
     }
   }, []);
@@ -305,7 +315,7 @@ export default function Home() {
     if (mode === 'desktop') document.body.classList.add('view-desktop');
   };
 
-  // Cloud Sync Functions (Method 1: Sync Code / QR)
+  // Cloud Sync Functions: API, Quota & Google Sheets Configuration
   const pushToCloud = async (overrideCode = null, silent = false) => {
     const code = (overrideCode || cloudSyncCode || syncCodeInput).trim().toUpperCase();
     if (!code || code.length < 3) {
@@ -314,18 +324,18 @@ export default function Home() {
     }
 
     setIsCloudSyncing(true);
-    if (!silent) showToast(`☁️ Đang đồng bộ cấu hình & lịch sử lên Cloud [${code}]...`);
+    if (!silent) showToast(`☁️ Đang đồng bộ cấu hình API, Bộ đếm & Sheet lên Cloud [${code}]...`);
 
     try {
       const payload = {
         code,
         apiKey: apiKey.trim(),
         backupKeys,
+        apiUsage,
         googleSheetUrl: googleSheetUrl.trim(),
         autoSyncSheet,
         selectedColumns,
         fieldPrompts,
-        scanHistory,
       };
 
       const res = await fetch('/api/sync', {
@@ -343,7 +353,7 @@ export default function Home() {
       localStorage.setItem('cloud_sync_code', code);
       const nowStr = new Date().toLocaleTimeString('vi-VN');
       setLastCloudSync({ time: nowStr, code });
-      if (!silent) showToast(`✅ Đã lưu cấu hình lên Cloud với mã [${code}] thành công!`, 'success');
+      if (!silent) showToast(`✅ Đã lưu cấu hình API & Sheet lên Cloud [${code}] thành công!`, 'success');
       return true;
     } catch (e) {
       console.error('Cloud Push Error:', e);
@@ -362,7 +372,7 @@ export default function Home() {
     }
 
     setIsCloudSyncing(true);
-    if (!silent) showToast(`☁️ Đang tải dữ liệu từ Cloud [${code}]...`);
+    if (!silent) showToast(`☁️ Đang tải cấu hình từ Cloud [${code}]...`);
 
     try {
       const res = await fetch(`/api/sync?code=${encodeURIComponent(code)}`);
@@ -375,13 +385,17 @@ export default function Home() {
       if (!data) throw new Error('Không có dữ liệu');
 
       // Apply synced data
-      if (data.apiKey) {
+      if (data.apiKey !== undefined) {
         setApiKey(data.apiKey);
         localStorage.setItem('gemini_api_key', data.apiKey);
       }
       if (Array.isArray(data.backupKeys)) {
         setBackupKeys(data.backupKeys);
         localStorage.setItem('gemini_backup_api_keys', JSON.stringify(data.backupKeys));
+      }
+      if (data.apiUsage && typeof data.apiUsage === 'object') {
+        setApiUsage(data.apiUsage);
+        localStorage.setItem('gemini_api_usage', JSON.stringify(data.apiUsage));
       }
       if (data.googleSheetUrl !== undefined) {
         setGoogleSheetUrl(data.googleSheetUrl);
@@ -399,10 +413,6 @@ export default function Home() {
         setFieldPrompts(data.fieldPrompts);
         localStorage.setItem('scan_field_prompts', JSON.stringify(data.fieldPrompts));
       }
-      if (Array.isArray(data.scanHistory) && data.scanHistory.length) {
-        setScanHistory(data.scanHistory);
-        localStorage.setItem('scan_history', JSON.stringify(data.scanHistory));
-      }
 
       setCloudSyncCode(code);
       setSyncCodeInput(code);
@@ -410,11 +420,13 @@ export default function Home() {
 
       const nowStr = new Date().toLocaleTimeString('vi-VN');
       setLastCloudSync({ time: nowStr, code });
-      showToast(`🎉 Đã đồng bộ toàn bộ API, Sheet & ${data.scanHistory?.length || 0} phiếu từ Cloud [${code}]!`, 'success');
+      if (!silent) {
+        showToast(`🎉 Đã đồng bộ cấu hình API, Bộ đếm & Google Sheet từ Cloud [${code}]!`, 'success');
+      }
       return true;
     } catch (e) {
       console.error('Cloud Pull Error:', e);
-      showToast('❌ ' + e.message, 'error');
+      if (!silent) showToast('❌ ' + e.message, 'error');
       return false;
     } finally {
       setIsCloudSyncing(false);
@@ -471,6 +483,25 @@ export default function Home() {
       item.lastResult = result;
       next[key] = item;
       localStorage.setItem('gemini_api_usage', JSON.stringify(next));
+
+      // Auto-sync quota counter to Cloud in background
+      if (cloudSyncCode) {
+        fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code: cloudSyncCode,
+            apiKey: apiKey.trim(),
+            backupKeys,
+            apiUsage: next,
+            googleSheetUrl: googleSheetUrl.trim(),
+            autoSyncSheet,
+            selectedColumns,
+            fieldPrompts,
+          }),
+        }).catch(() => {});
+      }
+
       return next;
     });
 
@@ -489,7 +520,7 @@ export default function Home() {
       localStorage.setItem('gemini_api_usage_history', JSON.stringify(next));
       return next;
     });
-  }, [apiUsage]);
+  }, [apiUsage, cloudSyncCode, apiKey, backupKeys, googleSheetUrl, autoSyncSheet, selectedColumns, fieldPrompts]);
 
   const loadImageFromDataUrl = useCallback((dataUrl) => {
     const img = new Image();
@@ -1075,7 +1106,7 @@ Không trả markdown hoặc giải thích.`;
         s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js';
         s.onload = resolve;
         s.onerror = () => reject(new Error('Không thể tải Tesseract.js'));
-        document.head.appendChild(s);
+        document.head.appendChild(script);
       });
     }
 
@@ -1380,7 +1411,7 @@ Không trả markdown hoặc giải thích.`;
     }
   };
 
-  // History Operations in LocalStorage & Auto Cloud Sync
+  // History Operations in LocalStorage
   const saveHistoryRecord = (id, spVal, itemsVal, pageResultsVal = [], isNew = false) => {
     const currentPR = pageResultsVal.length ? pageResultsVal : pageResults;
     const record = {
@@ -1406,25 +1437,6 @@ Không trả markdown hoặc giải thích.`;
       }
       const capped = next.slice(0, 50);
       localStorage.setItem('scan_history', JSON.stringify(capped));
-
-      // Background Cloud Sync if syncCode is set
-      if (cloudSyncCode) {
-        fetch('/api/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            code: cloudSyncCode,
-            apiKey: apiKey.trim(),
-            backupKeys,
-            googleSheetUrl: googleSheetUrl.trim(),
-            autoSyncSheet,
-            selectedColumns,
-            fieldPrompts,
-            scanHistory: capped,
-          }),
-        }).catch(() => {});
-      }
-
       return capped;
     });
 
@@ -1451,7 +1463,6 @@ Không trả markdown hoặc giải thích.`;
     setScanHistory((prev) => {
       const next = prev.filter((h) => h.id !== id);
       localStorage.setItem('scan_history', JSON.stringify(next));
-      if (cloudSyncCode) pushToCloud(cloudSyncCode, true);
       return next;
     });
     if (currentHistoryId === id) setCurrentHistoryId(null);
@@ -1460,11 +1471,10 @@ Không trả markdown hoặc giải thích.`;
 
   const clearAllHistory = () => {
     if (!scanHistory.length) return;
-    if (window.confirm('Bạn có chắc muốn xóa toàn bộ lịch sử phiếu đã quét?')) {
+    if (window.confirm('Bạn có chắc muốn xóa toàn bộ lịch sử phiếu đã quét trên thiết bị này?')) {
       localStorage.removeItem('scan_history');
       setScanHistory([]);
-      if (cloudSyncCode) pushToCloud(cloudSyncCode, true);
-      showToast('Đã xóa toàn bộ lịch sử', 'success');
+      showToast('Đã xóa toàn bộ lịch sử trên thiết bị này', 'success');
     }
   };
 
@@ -1613,6 +1623,11 @@ Không trả markdown hoặc giải thích.`;
     setApiUsage(next);
     localStorage.setItem('gemini_api_usage', JSON.stringify(next));
     setRateLimitedKeys(new Set());
+    
+    // Also push reset quota counters to cloud if connected
+    if (cloudSyncCode) {
+      pushToCloud(cloudSyncCode, true);
+    }
     showToast('Đã đặt lại 20 lượt cho tất cả API', 'success');
   };
 
@@ -1644,12 +1659,13 @@ Không trả markdown hoặc giải thích.`;
     localStorage.setItem('gemini_api_key', apiKey.trim());
     localStorage.setItem('google_sheet_webhook_url', googleSheetUrl.trim());
     localStorage.setItem('google_sheet_auto_sync', String(autoSyncSheet));
+    localStorage.setItem('auto_cloud_sync_on_launch', String(autoCloudSyncOnLaunch));
     localStorage.setItem('scan_columns', JSON.stringify(selectedColumns));
     localStorage.setItem('scan_field_prompts', JSON.stringify(fieldPrompts));
     localStorage.setItem('view_mode', viewMode);
     applyViewMode(viewMode);
 
-    // If sync code is active, auto push settings to cloud
+    // If sync code is active, auto push API + Quota + Sheet settings to cloud
     if (cloudSyncCode) {
       pushToCloud(cloudSyncCode, true);
     }
@@ -1708,7 +1724,7 @@ Không trả markdown hoặc giải thích.`;
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">Scan Pro Max</h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                  v36.0.9
+                  v36.0.10
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">Trích xuất số phiếu & danh mục hàng hóa bằng AI</p>
@@ -1728,7 +1744,7 @@ Không trả markdown hoặc giải thích.`;
                   ? 'bg-blue-950/80 hover:bg-blue-900/90 text-blue-300 border-blue-600/60'
                   : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700/60'
               }`}
-              title={cloudSyncCode ? `Đang đồng bộ Cloud: ${cloudSyncCode}` : 'Đồng bộ đám mây đa thiết bị'}
+              title={cloudSyncCode ? `Đang đồng bộ cấu hình Cloud: ${cloudSyncCode}` : 'Đồng bộ cấu hình API & Google Sheet đa thiết bị'}
             >
               <IconCloud className="w-4 h-4 text-blue-400" />
               <span className="hidden sm:inline">{cloudSyncCode ? `Mã: ${cloudSyncCode}` : 'Đồng Bộ Cloud'}</span>
@@ -1763,7 +1779,7 @@ Không trả markdown hoặc giải thích.`;
             <button
               onClick={() => setHistoryOpen(true)}
               className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 active:scale-95 transition-all text-slate-200 hover:text-white border border-slate-700/60 relative"
-              title="Lịch sử phiếu đã quét"
+              title="Lịch sử phiếu đã quét trên thiết bị này"
             >
               <IconHistory className="w-5 h-5" />
               {scanHistory.length > 0 && (
@@ -1888,7 +1904,7 @@ Không trả markdown hoặc giải thích.`;
               </div>
               <div className="flex items-center gap-1.5 font-bold">
                 <IconCloud className="w-3.5 h-3.5 text-blue-600" />
-                <span>Đồng bộ tự động cấu hình & lịch sử đa thiết bị</span>
+                <span>Tự động đồng bộ cấu hình API, Bộ đếm & Google Sheet</span>
               </div>
             </div>
 
@@ -1931,7 +1947,7 @@ Không trả markdown hoặc giải thích.`;
             <div className="flex items-center justify-between mb-3.5">
               <div className="flex items-center gap-2">
                 <IconHistory className="w-4 h-4 text-slate-500" />
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">Lịch sử phiếu đã quét</h3>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">Lịch sử phiếu thiết bị này</h3>
                 <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600">
                   {scanHistory.length}
                 </span>
@@ -2942,7 +2958,7 @@ Không trả markdown hoặc giải thích.`;
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <IconHistory className="w-5 h-5 text-blue-600" />
-                <h3 className="font-bold text-sm text-slate-900">Lịch Sử Phiếu Đã Quét ({scanHistory.length})</h3>
+                <h3 className="font-bold text-sm text-slate-900">Lịch Sử Phiếu ({scanHistory.length})</h3>
               </div>
               <button
                 onClick={() => setHistoryOpen(false)}
@@ -3004,7 +3020,7 @@ Không trả markdown hoặc giải thích.`;
             {scanHistory.length > 0 && (
               <div className="pt-2 border-t border-slate-100 flex justify-end">
                 <button onClick={clearAllHistory} className="text-xs text-red-600 font-semibold hover:underline">
-                  Xóa tất cả lịch sử
+                  Xóa tất cả lịch sử trên máy này
                 </button>
               </div>
             )}
@@ -3045,7 +3061,7 @@ Không trả markdown hoặc giải thích.`;
                 MÃ ĐỒNG BỘ: {cloudSyncCode || syncCodeInput}
               </div>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Mở camera trên điện thoại và quét mã QR này để tự động đồng bộ toàn bộ API key, Google Sheet và Lịch sử!
+                Mở camera trên điện thoại và quét mã QR này để tự động nạp toàn bộ cấu hình API Gemini, Bộ đếm & Google Sheet!
               </p>
             </div>
 
@@ -3149,23 +3165,23 @@ Không trả markdown hoặc giải thích.`;
 
             {/* Tab Contents */}
             <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs">
-              {/* TAB 1: CLOUD SYNC (PHƯƠNG ÁN 1) */}
+              {/* TAB 1: CLOUD SYNC (API, QUOTA COUNTER & GOOGLE SHEETS) */}
               {settingsTab === 'sync' && (
                 <div className="space-y-4">
                   <div className="p-3.5 bg-gradient-to-r from-blue-50 to-indigo-50/70 rounded-2xl border border-blue-200 space-y-2">
                     <div className="flex items-center gap-2 text-blue-950 font-bold">
                       <IconCloud className="w-5 h-5 text-blue-600" />
-                      <span>Đồng Bộ Đa Thiết Bị Theo Mã Kho (Cloud Sync)</span>
+                      <span>Đồng Bộ Cấu Hình API, Bộ Đếm & Google Sheet</span>
                     </div>
                     <p className="text-[11px] text-blue-900 leading-relaxed">
-                      Chỉ cần nhập cùng một <strong>Mã Đồng Bộ</strong> hoặc <strong>Quét mã QR</strong> trên điện thoại / máy tính khác, toàn bộ API Key, Link Google Sheet và Lịch sử phiếu sẽ được tự động đồng bộ ngay lập tức!
+                      Chỉ cần nhập cùng một <strong>Mã Đồng Bộ</strong> hoặc <strong>Quét mã QR</strong> trên điện thoại / máy tính khác, toàn bộ API Key Gemini, Bộ đếm lượt dùng và Link Google Sheet sẽ được tự động đồng bộ ngay lập tức!
                     </p>
                   </div>
 
                   {/* Sync Code Input with Controls */}
                   <div className="space-y-2">
                     <label className="font-bold text-slate-700 flex items-center justify-between">
-                      <span>Mã Đồng Bộ / Mã Kho Của Bạn</span>
+                      <span>Mã Đồng Bộ Của Bạn</span>
                       <button
                         type="button"
                         onClick={generateRandomSyncCode}
@@ -3185,6 +3201,28 @@ Không trả markdown hoặc giải thích.`;
                     </div>
                   </div>
 
+                  {/* Auto Cloud Sync on Launch Toggle */}
+                  <label className="p-3 rounded-xl border border-blue-200 bg-blue-50/50 flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autoCloudSyncOnLaunch}
+                      onChange={(e) => {
+                        setAutoCloudSyncOnLaunch(e.target.checked);
+                        localStorage.setItem('auto_cloud_sync_on_launch', String(e.target.checked));
+                        showToast(e.target.checked ? 'Đã bật tự động đồng bộ khi mở web' : 'Đã tắt tự động đồng bộ khi mở web');
+                      }}
+                      className="mt-0.5 w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 accent-blue-600"
+                    />
+                    <div>
+                      <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                        <span>⚡ Tự động tải cấu hình đám mây khi mở trang web trên thiết bị này</span>
+                      </div>
+                      <div className="text-[11px] text-slate-600 leading-tight mt-0.5">
+                        Mỗi khi mở trang web, hệ thống sẽ tự động cập nhật API Key, Bộ đếm lượt quota và Google Sheet mới nhất từ Cloud mà không cần thao tác thủ công.
+                      </div>
+                    </div>
+                  </label>
+
                   {/* Sync Actions Grid */}
                   <div className="grid grid-cols-2 gap-2.5">
                     <button
@@ -3194,7 +3232,7 @@ Không trả markdown hoặc giải thích.`;
                       className="py-3 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all disabled:opacity-50"
                     >
                       <IconCloud className="w-4 h-4" />
-                      <span>{isCloudSyncing ? 'Đang đẩy...' : '☁️ Đẩy Lên Cloud'}</span>
+                      <span>{isCloudSyncing ? 'Đang đẩy...' : '☁️ Đẩy Cấu Hình Lên Cloud'}</span>
                     </button>
 
                     <button
@@ -3216,7 +3254,7 @@ Không trả markdown hoặc giải thích.`;
                     <div className="space-y-1.5 text-center sm:text-left flex-1">
                       <div className="font-bold text-slate-800 text-xs">Quét QR mở ngay trên điện thoại:</div>
                       <p className="text-[11px] text-slate-500 leading-tight">
-                        Mở camera trên điện thoại quét mã này là tự động áp dụng toàn bộ API, Sheet & Lịch sử.
+                        Mở camera trên điện thoại quét mã này là tự động áp dụng API, Bộ đếm quota và Google Sheet.
                       </p>
                       <button
                         type="button"
@@ -3290,7 +3328,7 @@ Không trả markdown hoặc giải thích.`;
                   {/* Monitor & Counters */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-700">Giám Sát Quota Cục Bộ</span>
+                      <span className="font-bold text-slate-700">Giám Sát Quota Cục Bộ (Đồng bộ Cloud)</span>
                       <div className="flex items-center gap-2">
                         <button onClick={checkAllApis} className="text-blue-600 hover:underline font-semibold">
                           Kiểm tra tất cả
