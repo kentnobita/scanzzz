@@ -1,0 +1,13 @@
+{
+  "TEST-KHO": {
+    "code": "TEST-KHO",
+    "updatedAt": "2026-08-25T01:15:32.703Z",
+    "apiKey": "AIzaSyTestKey123",
+    "backupKeys": [],
+    "googleSheetUrl": "",
+    "autoSyncSheet": false,
+    "selectedColumns": [],
+    "fieldPrompts": {},
+    "scanHistory": []
+  }
+}

@@ -27,6 +27,10 @@ import {
   IconLayers,
   IconEye,
   IconSpreadsheet,
+  IconCloud,
+  IconQrCode,
+  IconShare,
+  IconDevicePhone,
 } from '@/components/Icons';
 
 const COLUMN_DEFS = {
@@ -178,9 +182,16 @@ export default function Home() {
   const [isSyncingSheet, setIsSyncingSheet] = useState(false);
   const [lastSheetSync, setLastSheetSync] = useState(null);
 
+  // Cloud Multi-Device Sync State (Phương Án 1)
+  const [cloudSyncCode, setCloudSyncCode] = useState('');
+  const [syncCodeInput, setSyncCodeInput] = useState('');
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [lastCloudSync, setLastCloudSync] = useState(null);
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+
   // Modals & Tabs state
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState('api'); // 'api' | 'sheet' | 'columns' | 'prompts' | 'view'
+  const [settingsTab, setSettingsTab] = useState('sync'); // 'sync' | 'api' | 'sheet' | 'columns' | 'prompts' | 'view'
   const [historyOpen, setHistoryOpen] = useState(false);
   const [cropOpen, setCropOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -219,7 +230,7 @@ export default function Home() {
     }
   };
 
-  // Sync state with localStorage on mount
+  // Sync state with localStorage on mount & check URL for ?sync=CODE
   useEffect(() => {
     const key = localStorage.getItem('gemini_api_key') || '';
     setApiKey(key);
@@ -229,6 +240,10 @@ export default function Home() {
 
     const autoSync = localStorage.getItem('google_sheet_auto_sync') === 'true';
     setAutoSyncSheet(autoSync);
+
+    const savedSyncCode = localStorage.getItem('cloud_sync_code') || '';
+    setCloudSyncCode(savedSyncCode);
+    setSyncCodeInput(savedSyncCode);
 
     try {
       const bKeys = JSON.parse(localStorage.getItem('gemini_backup_api_keys') || '[]');
@@ -269,12 +284,154 @@ export default function Home() {
       const localHist = JSON.parse(localStorage.getItem('scan_history') || '[]');
       setScanHistory(Array.isArray(localHist) ? localHist : []);
     } catch {}
+
+    // Auto-pull if URL has ?sync=CODE
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlSyncCode = params.get('sync');
+      if (urlSyncCode) {
+        const cleanCode = urlSyncCode.trim().toUpperCase();
+        setCloudSyncCode(cleanCode);
+        setSyncCodeInput(cleanCode);
+        localStorage.setItem('cloud_sync_code', cleanCode);
+        pullFromCloud(cleanCode, true);
+      }
+    }
   }, []);
 
   const applyViewMode = (mode) => {
     document.body.classList.remove('view-mobile', 'view-desktop');
     if (mode === 'mobile') document.body.classList.add('view-mobile');
     if (mode === 'desktop') document.body.classList.add('view-desktop');
+  };
+
+  // Cloud Sync Functions (Method 1: Sync Code / QR)
+  const pushToCloud = async (overrideCode = null, silent = false) => {
+    const code = (overrideCode || cloudSyncCode || syncCodeInput).trim().toUpperCase();
+    if (!code || code.length < 3) {
+      showToast('Vui lòng nhập Mã Đồng Bộ ít nhất 3 ký tự (Ví dụ: KHO-01)', 'error');
+      return false;
+    }
+
+    setIsCloudSyncing(true);
+    if (!silent) showToast(`☁️ Đang đồng bộ cấu hình & lịch sử lên Cloud [${code}]...`);
+
+    try {
+      const payload = {
+        code,
+        apiKey: apiKey.trim(),
+        backupKeys,
+        googleSheetUrl: googleSheetUrl.trim(),
+        autoSyncSheet,
+        selectedColumns,
+        fieldPrompts,
+        scanHistory,
+      };
+
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Lỗi server');
+      }
+
+      setCloudSyncCode(code);
+      localStorage.setItem('cloud_sync_code', code);
+      const nowStr = new Date().toLocaleTimeString('vi-VN');
+      setLastCloudSync({ time: nowStr, code });
+      if (!silent) showToast(`✅ Đã lưu cấu hình lên Cloud với mã [${code}] thành công!`, 'success');
+      return true;
+    } catch (e) {
+      console.error('Cloud Push Error:', e);
+      if (!silent) showToast('❌ Lỗi lưu Cloud: ' + e.message, 'error');
+      return false;
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  };
+
+  const pullFromCloud = async (overrideCode = null, silent = false) => {
+    const code = (overrideCode || cloudSyncCode || syncCodeInput).trim().toUpperCase();
+    if (!code || code.length < 3) {
+      showToast('Vui lòng nhập Mã Đồng Bộ ít nhất 3 ký tự', 'error');
+      return false;
+    }
+
+    setIsCloudSyncing(true);
+    if (!silent) showToast(`☁️ Đang tải dữ liệu từ Cloud [${code}]...`);
+
+    try {
+      const res = await fetch(`/api/sync?code=${encodeURIComponent(code)}`);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Mã đồng bộ chưa có dữ liệu trên Cloud');
+      }
+
+      const { data } = await res.json();
+      if (!data) throw new Error('Không có dữ liệu');
+
+      // Apply synced data
+      if (data.apiKey) {
+        setApiKey(data.apiKey);
+        localStorage.setItem('gemini_api_key', data.apiKey);
+      }
+      if (Array.isArray(data.backupKeys)) {
+        setBackupKeys(data.backupKeys);
+        localStorage.setItem('gemini_backup_api_keys', JSON.stringify(data.backupKeys));
+      }
+      if (data.googleSheetUrl !== undefined) {
+        setGoogleSheetUrl(data.googleSheetUrl);
+        localStorage.setItem('google_sheet_webhook_url', data.googleSheetUrl);
+      }
+      if (data.autoSyncSheet !== undefined) {
+        setAutoSyncSheet(!!data.autoSyncSheet);
+        localStorage.setItem('google_sheet_auto_sync', String(data.autoSyncSheet));
+      }
+      if (Array.isArray(data.selectedColumns) && data.selectedColumns.length) {
+        setSelectedColumns(data.selectedColumns);
+        localStorage.setItem('scan_columns', JSON.stringify(data.selectedColumns));
+      }
+      if (data.fieldPrompts) {
+        setFieldPrompts(data.fieldPrompts);
+        localStorage.setItem('scan_field_prompts', JSON.stringify(data.fieldPrompts));
+      }
+      if (Array.isArray(data.scanHistory) && data.scanHistory.length) {
+        setScanHistory(data.scanHistory);
+        localStorage.setItem('scan_history', JSON.stringify(data.scanHistory));
+      }
+
+      setCloudSyncCode(code);
+      setSyncCodeInput(code);
+      localStorage.setItem('cloud_sync_code', code);
+
+      const nowStr = new Date().toLocaleTimeString('vi-VN');
+      setLastCloudSync({ time: nowStr, code });
+      showToast(`🎉 Đã đồng bộ toàn bộ API, Sheet & ${data.scanHistory?.length || 0} phiếu từ Cloud [${code}]!`, 'success');
+      return true;
+    } catch (e) {
+      console.error('Cloud Pull Error:', e);
+      showToast('❌ ' + e.message, 'error');
+      return false;
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  };
+
+  const getShareLink = () => {
+    const code = cloudSyncCode || syncCodeInput || 'KHO-01';
+    if (typeof window === 'undefined') return '';
+    return `${window.location.origin}/?sync=${encodeURIComponent(code.trim().toUpperCase())}`;
+  };
+
+  const generateRandomSyncCode = () => {
+    const randomNum = Math.floor(100000 + Math.random() * 900000);
+    const code = `KHO-${randomNum}`;
+    setSyncCodeInput(code);
+    showToast(`Đã tạo mã ngẫu nhiên: ${code}`);
   };
 
   const getGeminiApiKeys = useCallback(() => {
@@ -486,7 +643,7 @@ export default function Home() {
     }
   };
 
-  // Drag & Drop event listeners for both PDF and Images
+  // Drag & Drop event listeners
   useEffect(() => {
     const handleDragOver = (e) => {
       e.preventDefault();
@@ -618,7 +775,7 @@ export default function Home() {
     }
   };
 
-  // Capture with AUTO-CROP to Reticle Bounding Box
+  // Capture with AUTO-CROP
   const captureFromCamera = () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth) {
@@ -827,10 +984,9 @@ export default function Home() {
         })),
       };
 
-      // Send to Google Apps Script Webhook
       await fetch(cleanUrl, {
         method: 'POST',
-        mode: 'no-cors', // Google Apps Script Web App responds with 302 redirect
+        mode: 'no-cors',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
@@ -1205,7 +1361,6 @@ Không trả markdown hoặc giải thích.`;
       saveHistoryRecord(nextId, detectedFirstSoPhieu || '', accumulatedItems, perPageResults, true);
       showToast(`✨ Đã trích xuất thành công ${accumulatedItems.length} dòng từ ${total} trang PDF`, 'success');
 
-      // Auto-sync to Google Sheet if enabled
       if (autoSyncSheet && googleSheetUrl && accumulatedItems.length > 0) {
         syncToGoogleSheet(accumulatedItems, detectedFirstSoPhieu || '', 1, true);
       }
@@ -1225,7 +1380,7 @@ Không trả markdown hoặc giải thích.`;
     }
   };
 
-  // History Operations in LocalStorage
+  // History Operations in LocalStorage & Auto Cloud Sync
   const saveHistoryRecord = (id, spVal, itemsVal, pageResultsVal = [], isNew = false) => {
     const currentPR = pageResultsVal.length ? pageResultsVal : pageResults;
     const record = {
@@ -1249,8 +1404,28 @@ Không trả markdown hoặc giải thích.`;
         record.createdAt = new Date().toISOString();
         next = [record, ...prev];
       }
-      localStorage.setItem('scan_history', JSON.stringify(next.slice(0, 50)));
-      return next;
+      const capped = next.slice(0, 50);
+      localStorage.setItem('scan_history', JSON.stringify(capped));
+
+      // Background Cloud Sync if syncCode is set
+      if (cloudSyncCode) {
+        fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code: cloudSyncCode,
+            apiKey: apiKey.trim(),
+            backupKeys,
+            googleSheetUrl: googleSheetUrl.trim(),
+            autoSyncSheet,
+            selectedColumns,
+            fieldPrompts,
+            scanHistory: capped,
+          }),
+        }).catch(() => {});
+      }
+
+      return capped;
     });
 
     if (!isNew) showToast('💾 Đã lưu thay đổi vào lịch sử', 'success');
@@ -1276,6 +1451,7 @@ Không trả markdown hoặc giải thích.`;
     setScanHistory((prev) => {
       const next = prev.filter((h) => h.id !== id);
       localStorage.setItem('scan_history', JSON.stringify(next));
+      if (cloudSyncCode) pushToCloud(cloudSyncCode, true);
       return next;
     });
     if (currentHistoryId === id) setCurrentHistoryId(null);
@@ -1287,6 +1463,7 @@ Không trả markdown hoặc giải thích.`;
     if (window.confirm('Bạn có chắc muốn xóa toàn bộ lịch sử phiếu đã quét?')) {
       localStorage.removeItem('scan_history');
       setScanHistory([]);
+      if (cloudSyncCode) pushToCloud(cloudSyncCode, true);
       showToast('Đã xóa toàn bộ lịch sử', 'success');
     }
   };
@@ -1325,7 +1502,7 @@ Không trả markdown hoặc giải thích.`;
     copyToClipboard(values.join('\n'), `${prefix}col_${key}`);
   };
 
-  // Cell & Field editors for multi-page data
+  // Cell & Field editors
   const updatePageItemCell = (pageNum, itemIdx, colKey, val) => {
     setPageResults((prev) =>
       prev.map((p) => {
@@ -1471,6 +1648,12 @@ Không trả markdown hoặc giải thích.`;
     localStorage.setItem('scan_field_prompts', JSON.stringify(fieldPrompts));
     localStorage.setItem('view_mode', viewMode);
     applyViewMode(viewMode);
+
+    // If sync code is active, auto push settings to cloud
+    if (cloudSyncCode) {
+      pushToCloud(cloudSyncCode, true);
+    }
+
     setSettingsOpen(false);
     showToast('✅ Đã lưu cấu hình thành công', 'success');
   };
@@ -1496,6 +1679,8 @@ Không trả markdown hoặc giải thích.`;
   const singleTabResult = typeof activeResultTab === 'number'
     ? pageResults.find((p) => p.pageNum === activeResultTab)
     : null;
+
+  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(getShareLink())}`;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
@@ -1523,7 +1708,7 @@ Không trả markdown hoặc giải thích.`;
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">Scan Pro Max</h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                  v36.0.8
+                  v36.0.9
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">Trích xuất số phiếu & danh mục hàng hóa bằng AI</p>
@@ -1531,18 +1716,47 @@ Không trả markdown hoặc giải thích.`;
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
+            {/* Cloud Sync Button */}
+            <button
+              onClick={() => {
+                setSettingsTab('sync');
+                setSettingsOpen(true);
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                cloudSyncCode
+                  ? 'bg-blue-950/80 hover:bg-blue-900/90 text-blue-300 border-blue-600/60'
+                  : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700/60'
+              }`}
+              title={cloudSyncCode ? `Đang đồng bộ Cloud: ${cloudSyncCode}` : 'Đồng bộ đám mây đa thiết bị'}
+            >
+              <IconCloud className="w-4 h-4 text-blue-400" />
+              <span className="hidden sm:inline">{cloudSyncCode ? `Mã: ${cloudSyncCode}` : 'Đồng Bộ Cloud'}</span>
+            </button>
+
+            {/* Google Sheet indicator */}
             {googleSheetUrl && (
               <button
                 onClick={() => {
                   setSettingsTab('sheet');
                   setSettingsOpen(true);
                 }}
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 border border-emerald-700/60 text-xs font-bold transition-all"
+                className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 border border-emerald-700/60 text-xs font-bold transition-all"
                 title="Đã kết nối Google Sheet"
               >
                 <IconSpreadsheet className="w-4 h-4 text-emerald-400" />
-                <span>Google Sheet</span>
+                <span>Sheet</span>
+              </button>
+            )}
+
+            {/* QR Quick Share on Mobile */}
+            {cloudSyncCode && (
+              <button
+                onClick={() => setQrModalOpen(true)}
+                className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700/60"
+                title="Hiện mã QR để quét trên điện thoại"
+              >
+                <IconQrCode className="w-5 h-5 text-blue-400" />
               </button>
             )}
 
@@ -1561,7 +1775,7 @@ Không trả markdown hoặc giải thích.`;
             <button
               onClick={() => setSettingsOpen(true)}
               className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 active:scale-95 transition-all text-slate-200 hover:text-white border border-slate-700/60"
-              title="Cài đặt & Cấu hình API, Google Sheet"
+              title="Cài đặt & Cấu hình API, Cloud Sync, Google Sheet"
             >
               <IconSettings className="w-5 h-5" />
             </button>
@@ -1585,6 +1799,13 @@ Không trả markdown hoặc giải thích.`;
                   : 'Chế độ OCR Offline (Tesseract)'}
               </span>
             </div>
+
+            {cloudSyncCode && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold">
+                <IconCloud className="w-3 h-3 text-blue-600" />
+                <span>Cloud: {cloudSyncCode}</span>
+              </span>
+            )}
 
             {googleSheetUrl && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold">
@@ -1666,8 +1887,8 @@ Không trả markdown hoặc giải thích.`;
                 <span>Kéo thả trực tiếp file PDF hoặc file Ảnh vào màn hình</span>
               </div>
               <div className="flex items-center gap-1.5 font-bold">
-                <IconSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Tự động hoặc thủ công đồng bộ sang Google Sheet</span>
+                <IconCloud className="w-3.5 h-3.5 text-blue-600" />
+                <span>Đồng bộ tự động cấu hình & lịch sử đa thiết bị</span>
               </div>
             </div>
 
@@ -2318,7 +2539,7 @@ Không trả markdown hoặc giải thích.`;
         </div>
       </main>
 
-      {/* PDF Multi-Page Preview & Selection Modal with Multi-Selection */}
+      {/* PDF Multi-Page Preview & Selection Modal */}
       {pdfModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white w-full max-w-2xl rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-modal flex flex-col gap-4 text-slate-900 max-h-[90vh]">
@@ -2559,11 +2780,9 @@ Không trả markdown hoặc giải thích.`;
               </button>
             </div>
 
-            {/* Video Feed with Corner Reticle & Laser */}
             <div className="relative aspect-[3/4] max-h-[60vh] bg-black rounded-2xl overflow-hidden flex items-center justify-center">
               <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
 
-              {/* Document Bounding Box Reticle */}
               <div className="absolute w-[86%] h-[78%] border-2 border-blue-400/80 rounded-xl pointer-events-none shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]">
                 <div className="reticle-corner reticle-top-left" />
                 <div className="reticle-corner reticle-top-right" />
@@ -2579,7 +2798,6 @@ Không trả markdown hoặc giải thích.`;
               </div>
             </div>
 
-            {/* Shutter & Controls */}
             <div className="grid grid-cols-3 items-center gap-3 pt-2">
               <button
                 onClick={switchCamera}
@@ -2794,7 +3012,55 @@ Không trả markdown hoặc giải thích.`;
         </div>
       )}
 
-      {/* Settings Modal with Google Sheets Tab */}
+      {/* QR Code Quick Sync Modal */}
+      {qrModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
+          onClick={(e) => e.target === e.currentTarget && setQrModalOpen(false)}
+        >
+          <div className="bg-white w-full max-w-sm rounded-3xl p-6 border border-slate-200 shadow-modal flex flex-col items-center gap-4 text-slate-900 animate-slide-up text-center">
+            <div className="flex items-center justify-between w-full border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <IconQrCode className="w-5 h-5 text-blue-600" />
+                <h3 className="font-bold text-sm text-slate-900">Quét QR Bằng Điện Thoại</h3>
+              </div>
+              <button
+                onClick={() => setQrModalOpen(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700"
+              >
+                <IconClose className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
+              <img
+                src={qrImageUrl}
+                alt="QR Code Sync"
+                className="w-48 h-48 rounded-xl object-contain mx-auto shadow-sm"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <div className="font-mono text-sm font-extrabold text-blue-600">
+                MÃ ĐỒNG BỘ: {cloudSyncCode || syncCodeInput}
+              </div>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Mở camera trên điện thoại và quét mã QR này để tự động đồng bộ toàn bộ API key, Google Sheet và Lịch sử!
+              </p>
+            </div>
+
+            <button
+              onClick={() => copyToClipboard(getShareLink(), 'share_link')}
+              className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all"
+            >
+              <IconShare className="w-4 h-4" />
+              <span>{copiedKey === 'share_link' ? 'Đã sao chép link!' : 'Sao chép link chia sẻ'}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal with Cloud Sync, Google Sheets & API tabs */}
       {settingsOpen && (
         <div
           className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in"
@@ -2818,6 +3084,17 @@ Không trả markdown hoặc giải thích.`;
             {/* Tabs */}
             <div className="flex border-b border-slate-200 text-xs font-bold overflow-x-auto">
               <button
+                onClick={() => setSettingsTab('sync')}
+                className={`pb-2 px-3 border-b-2 whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                  settingsTab === 'sync'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <IconCloud className="w-4 h-4 text-blue-600" />
+                <span>Đồng Bộ Cloud ☁️</span>
+              </button>
+              <button
                 onClick={() => setSettingsTab('api')}
                 className={`pb-2 px-3 border-b-2 whitespace-nowrap transition-all ${
                   settingsTab === 'api'
@@ -2825,7 +3102,7 @@ Không trả markdown hoặc giải thích.`;
                     : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
-                API Gemini & Failover
+                API Gemini
               </button>
               <button
                 onClick={() => setSettingsTab('sheet')}
@@ -2872,7 +3149,96 @@ Không trả markdown hoặc giải thích.`;
 
             {/* Tab Contents */}
             <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs">
-              {/* TAB 1: API GEMINI */}
+              {/* TAB 1: CLOUD SYNC (PHƯƠNG ÁN 1) */}
+              {settingsTab === 'sync' && (
+                <div className="space-y-4">
+                  <div className="p-3.5 bg-gradient-to-r from-blue-50 to-indigo-50/70 rounded-2xl border border-blue-200 space-y-2">
+                    <div className="flex items-center gap-2 text-blue-950 font-bold">
+                      <IconCloud className="w-5 h-5 text-blue-600" />
+                      <span>Đồng Bộ Đa Thiết Bị Theo Mã Kho (Cloud Sync)</span>
+                    </div>
+                    <p className="text-[11px] text-blue-900 leading-relaxed">
+                      Chỉ cần nhập cùng một <strong>Mã Đồng Bộ</strong> hoặc <strong>Quét mã QR</strong> trên điện thoại / máy tính khác, toàn bộ API Key, Link Google Sheet và Lịch sử phiếu sẽ được tự động đồng bộ ngay lập tức!
+                    </p>
+                  </div>
+
+                  {/* Sync Code Input with Controls */}
+                  <div className="space-y-2">
+                    <label className="font-bold text-slate-700 flex items-center justify-between">
+                      <span>Mã Đồng Bộ / Mã Kho Của Bạn</span>
+                      <button
+                        type="button"
+                        onClick={generateRandomSyncCode}
+                        className="text-blue-600 hover:underline font-semibold text-xs"
+                      >
+                        Tạo mã tự động
+                      </button>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={syncCodeInput}
+                        onChange={(e) => setSyncCodeInput(e.target.value.toUpperCase())}
+                        placeholder="Ví dụ: KHO-TONG, KHO-01, SCAN888..."
+                        className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 font-mono font-bold text-sm text-blue-950 uppercase outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Sync Actions Grid */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => pushToCloud(syncCodeInput)}
+                      disabled={isCloudSyncing}
+                      className="py-3 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      <IconCloud className="w-4 h-4" />
+                      <span>{isCloudSyncing ? 'Đang đẩy...' : '☁️ Đẩy Lên Cloud'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => pullFromCloud(syncCodeInput)}
+                      disabled={isCloudSyncing}
+                      className="py-3 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      <IconDevicePhone className="w-4 h-4 text-slate-600" />
+                      <span>{isCloudSyncing ? 'Đang tải...' : '📥 Tải Từ Cloud Về Máy'}</span>
+                    </button>
+                  </div>
+
+                  {/* Mobile QR Code & Share Box */}
+                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center gap-4">
+                    <div className="w-24 h-24 bg-white p-1 rounded-xl border border-slate-200 shadow-sm flex items-center justify-center flex-shrink-0">
+                      <img src={qrImageUrl} alt="QR Code" className="w-full h-full object-contain" />
+                    </div>
+                    <div className="space-y-1.5 text-center sm:text-left flex-1">
+                      <div className="font-bold text-slate-800 text-xs">Quét QR mở ngay trên điện thoại:</div>
+                      <p className="text-[11px] text-slate-500 leading-tight">
+                        Mở camera trên điện thoại quét mã này là tự động áp dụng toàn bộ API, Sheet & Lịch sử.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(getShareLink(), 'share_link_box')}
+                        className="inline-flex items-center gap-1 text-xs text-blue-600 font-bold hover:underline"
+                      >
+                        <IconCopy className="w-3.5 h-3.5" />
+                        <span>{copiedKey === 'share_link_box' ? 'Đã sao chép link!' : 'Sao chép link chia sẻ'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {lastCloudSync && (
+                    <div className="text-[11px] text-slate-500 flex items-center gap-1">
+                      <IconCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Đồng bộ Cloud gần nhất: <strong>{lastCloudSync.time}</strong> (Mã: <strong>{lastCloudSync.code}</strong>)</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 2: API GEMINI */}
               {settingsTab === 'api' && (
                 <div className="space-y-4">
                   {/* Primary Key */}
@@ -2896,7 +3262,7 @@ Không trả markdown hoặc giải thích.`;
                       placeholder="Dán API Key Gemini tại đây..."
                       className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 font-mono outline-none"
                     />
-                    <p className="text-[11px] text-slate-400">Key chỉ lưu trên trình duyệt của bạn, không gửi đi máy chủ bên ngoài.</p>
+                    <p className="text-[11px] text-slate-400">Key chỉ lưu trên trình duyệt và mã đồng bộ riêng của bạn.</p>
                   </div>
 
                   {/* Backup Keys File */}
@@ -2977,7 +3343,7 @@ Không trả markdown hoặc giải thích.`;
                 </div>
               )}
 
-              {/* TAB 2: GOOGLE SHEETS INTEGRATION */}
+              {/* TAB 3: GOOGLE SHEETS INTEGRATION */}
               {settingsTab === 'sheet' && (
                 <div className="space-y-4">
                   <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200 space-y-2">
@@ -2986,7 +3352,7 @@ Không trả markdown hoặc giải thích.`;
                       <span>Kết Nối Google Sheets Tự Động Lưu Phiếu</span>
                     </div>
                     <p className="text-[11px] text-emerald-800 leading-relaxed">
-                      Mỗi dòng hàng sau khi quét sẽ được tự động ghi vào trang tính Google Sheet của bạn (gồm Thời gian, Số phiếu, Trang, Mã hàng, Số lượng, ĐVT, Pallet...).
+                      Mỗi dòng hàng sau khi quét sẽ được tự động ghi vào trang tính Google Sheet của bạn (tự động cách 1 dòng trống giữa các phiếu).
                     </p>
                   </div>
 
@@ -3056,7 +3422,7 @@ Không trả markdown hoặc giải thích.`;
                 </div>
               )}
 
-              {/* TAB 3: COLUMNS SELECTION */}
+              {/* TAB 4: COLUMNS SELECTION */}
               {settingsTab === 'columns' && (
                 <div className="space-y-3">
                   <p className="text-slate-500 leading-relaxed">
@@ -3096,7 +3462,7 @@ Không trả markdown hoặc giải thích.`;
                 </div>
               )}
 
-              {/* TAB 4: PROMPTS CUSTOMIZATION */}
+              {/* TAB 5: PROMPTS CUSTOMIZATION */}
               {settingsTab === 'prompts' && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -3132,7 +3498,7 @@ Không trả markdown hoặc giải thích.`;
                 </div>
               )}
 
-              {/* TAB 5: VIEW MODE */}
+              {/* TAB 6: VIEW MODE */}
               {settingsTab === 'view' && (
                 <div className="space-y-3">
                   <p className="text-slate-500 leading-relaxed">Chọn chế độ bố cục giao diện hiển thị phù hợp với thiết bị của bạn:</p>
