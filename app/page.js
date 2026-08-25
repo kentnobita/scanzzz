@@ -26,6 +26,7 @@ import {
   IconInfo,
   IconLayers,
   IconEye,
+  IconSpreadsheet,
 } from '@/components/Icons';
 
 const COLUMN_DEFS = {
@@ -52,6 +53,61 @@ const DEFAULT_FIELD_PROMPTS = {
 };
 
 const API_LOCAL_LIMIT = 20;
+
+const APPS_SCRIPT_SAMPLE = `function doPost(e) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var data = JSON.parse(e.postData ? e.postData.contents : "{}");
+    
+    // Tự động thêm tiêu đề cột nếu sheet đang trống
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow([
+        "Thời Gian Lưu",
+        "Số Phiếu",
+        "Trang",
+        "Tên / Mã Hàng",
+        "Số O.S/PO",
+        "Đơn Vị Tính",
+        "SL Chứng Từ",
+        "SL Thực Nhập",
+        "Số Pallet",
+        "Ghi Chú"
+      ]);
+      sheet.getRange(1, 1, 1, 10).setFontWeight("bold").setBackground("#E8F0FE");
+      sheet.setFrozenRows(1);
+    }
+    
+    var time = Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "yyyy-MM-dd HH:mm:ss");
+    var items = Array.isArray(data.items) ? data.items : [];
+    var rows = [];
+    
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      rows.push([
+        time,
+        item.soPhieu || data.soPhieu || "",
+        item._pageNum || data.pageNum || 1,
+        item.ten || "",
+        item.soOSPO || "",
+        item.donViTinh || "",
+        item.soLuongChungTu || "",
+        item.soLuongThucNhap || "",
+        item.soPallet || "",
+        item.ghiChu || ""
+      ]);
+    }
+    
+    if (rows.length > 0) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 10).setValues(rows);
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({ status: "success", count: rows.length }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}`;
 
 export default function Home() {
   // Toast state
@@ -86,7 +142,7 @@ export default function Home() {
   const [selectedPdfIndex, setSelectedPdfIndex] = useState(0);
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
 
-  // Per-page Results separation ('separate' | 'all' | pageNum)
+  // Per-page Results separation ('separate' | pageNum)
   const [pageResults, setPageResults] = useState([]); // [{ pageNum, soPhieu, items: [], previewUrl, status, itemCount }]
   const [activeResultTab, setActiveResultTab] = useState('separate');
 
@@ -110,9 +166,15 @@ export default function Home() {
   const [viewMode, setViewMode] = useState('auto');
   const [scanHistory, setScanHistory] = useState([]);
 
+  // Google Sheets Integration State
+  const [googleSheetUrl, setGoogleSheetUrl] = useState('');
+  const [autoSyncSheet, setAutoSyncSheet] = useState(false);
+  const [isSyncingSheet, setIsSyncingSheet] = useState(false);
+  const [lastSheetSync, setLastSheetSync] = useState(null);
+
   // Modals & Tabs state
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState('api'); // 'api' | 'columns' | 'prompts' | 'view'
+  const [settingsTab, setSettingsTab] = useState('api'); // 'api' | 'sheet' | 'columns' | 'prompts' | 'view'
   const [historyOpen, setHistoryOpen] = useState(false);
   const [cropOpen, setCropOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -155,6 +217,12 @@ export default function Home() {
   useEffect(() => {
     const key = localStorage.getItem('gemini_api_key') || '';
     setApiKey(key);
+
+    const sheetUrl = localStorage.getItem('google_sheet_webhook_url') || '';
+    setGoogleSheetUrl(sheetUrl);
+
+    const autoSync = localStorage.getItem('google_sheet_auto_sync') === 'true';
+    setAutoSyncSheet(autoSync);
 
     try {
       const bKeys = JSON.parse(localStorage.getItem('gemini_backup_api_keys') || '[]');
@@ -348,7 +416,7 @@ export default function Home() {
         showToast('📄 Đã nạp file PDF 1 trang', 'success');
       } else {
         setPdfModalOpen(true);
-        showToast(`📄 Đã tải ${numPages} trang PDF. Hãy chọn các trang cần quét!`, 'success');
+        showToast(`📄 Đã tải ${numPages} trang PDF. Bấm chọn các trang cần quét!`, 'success');
       }
     } catch (e) {
       console.error(e);
@@ -366,8 +434,7 @@ export default function Home() {
     showToast(`📄 Đã chọn Trang ${page.pageNum} để quét`, 'success');
   };
 
-  const togglePdfPageSelect = (index, e) => {
-    e?.stopPropagation();
+  const togglePdfPageSelect = (index) => {
     setPdfPages((prev) =>
       prev.map((p, idx) => (idx === index ? { ...p, selected: !p.selected } : p))
     );
@@ -558,14 +625,12 @@ export default function Home() {
     const cw = video.clientWidth || 360;
     const ch = video.clientHeight || 480;
 
-    // Calculate visible area due to object-cover CSS scaling
     const scale = Math.max(cw / vw, ch / vh);
     const visW = cw / scale;
     const visH = ch / scale;
     const visX = (vw - visW) / 2;
     const visY = (vh - visH) / 2;
 
-    // Reticle frame is 86% width x 78% height centered inside visible region
     const cropW = Math.round(visW * 0.86);
     const cropH = Math.round(visH * 0.78);
     const cropX = Math.round(visX + (visW - cropW) / 2);
@@ -723,6 +788,58 @@ export default function Home() {
     setUnsharpenedSrc(null);
     loadImageFromDataUrl(previewSrc);
     showToast('↺ Đã đặt lại ảnh gốc', 'success');
+  };
+
+  // Google Sheets Push Helper
+  const syncToGoogleSheet = async (itemsToPush, targetSoPhieu = '', pageNum = 1, silent = false) => {
+    const cleanUrl = googleSheetUrl.trim();
+    if (!cleanUrl) {
+      if (!silent) {
+        showToast('Vui lòng dán Webhook URL Google Apps Script trong Cài đặt ⚙️', 'error');
+        setSettingsTab('sheet');
+        setSettingsOpen(true);
+      }
+      return false;
+    }
+
+    const items = itemsToPush && itemsToPush.length ? itemsToPush : tableItems;
+    if (!items || !items.length) {
+      if (!silent) showToast('Chưa có dòng hàng nào để đẩy sang Google Sheet', 'error');
+      return false;
+    }
+
+    setIsSyncingSheet(true);
+    if (!silent) showToast('📊 Đang đồng bộ dữ liệu vào Google Sheet...');
+
+    try {
+      const payload = {
+        soPhieu: targetSoPhieu || soPhieu || '',
+        pageNum: pageNum || 1,
+        items: items.map((item) => ({
+          ...item,
+          soPhieu: item.soPhieu || targetSoPhieu || soPhieu || '',
+        })),
+      };
+
+      // Send to Google Apps Script Webhook
+      await fetch(cleanUrl, {
+        method: 'POST',
+        mode: 'no-cors', // Google Apps Script Web App responds with 302 redirect
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const nowStr = new Date().toLocaleTimeString('vi-VN');
+      setLastSheetSync({ time: nowStr, count: items.length });
+      showToast(`📊 Đã lưu thành công ${items.length} dòng vào Google Sheet lúc ${nowStr}!`, 'success');
+      return true;
+    } catch (e) {
+      console.error('Google Sheet Sync Error:', e);
+      showToast('❌ Lỗi kết nối Google Sheet: ' + e.message, 'error');
+      return false;
+    } finally {
+      setIsSyncingSheet(false);
+    }
   };
 
   // Direct Gemini OCR with Google Generative AI
@@ -929,6 +1046,11 @@ Không trả markdown hoặc giải thích.`;
 
       saveHistoryRecord(nextId, resultData.soPhieu || '', normalizedItems, singlePageResult, true);
 
+      // Auto-sync to Google Sheet if enabled
+      if (autoSyncSheet && googleSheetUrl) {
+        syncToGoogleSheet(normalizedItems, resultData.soPhieu || '', 1, true);
+      }
+
       setTimeout(() => {
         resultRef.current?.scrollIntoView({ behavior: 'smooth' });
       }, 200);
@@ -942,7 +1064,7 @@ Không trả markdown hoặc giải thích.`;
     }
   };
 
-  // Batch Multi-Page PDF Scan (supports arbitrary selected pages)
+  // Batch Multi-Page PDF Scan
   const startBatchPdfScan = async (customPagesList = null) => {
     const targetPages = customPagesList || pdfPages.filter((p) => p.selected);
     if (!targetPages.length || isScanning) {
@@ -980,7 +1102,6 @@ Không trả markdown hoặc giải thích.`;
         const page = targetPages[i];
         const pageNum = page.pageNum;
 
-        // Update status to 'running'
         setBatchProgressModal((prev) => {
           const nextStatuses = [...prev.pageStatuses];
           nextStatuses[i] = { ...nextStatuses[i], status: 'running', detail: 'Đang gửi AI nhận diện...' };
@@ -1008,7 +1129,7 @@ Không trả markdown hoặc giải thích.`;
           }
 
           const normalized = (Array.isArray(pageResult.items) ? pageResult.items : []).map((item) => {
-            const out = { _pageNum: pageNum };
+            const out = { _pageNum: pageNum, soPhieu: pageSoPhieu };
             selectedColumns.forEach((k) => (out[k] = item?.[k] ?? ''));
             return out;
           });
@@ -1025,7 +1146,6 @@ Không trả markdown hoặc giải thích.`;
           };
           perPageResults.push(singleResult);
 
-          // Update status to 'done'
           setBatchProgressModal((prev) => {
             const nextStatuses = [...prev.pageStatuses];
             nextStatuses[i] = {
@@ -1064,7 +1184,6 @@ Không trả markdown hoặc giải thích.`;
       setEngineBadge(usedEngine);
       setScanProgress({ active: true, percent: 100, text: `✅ Đã quét xong ${total} trang!` });
 
-      // Set first scanned page as active preview
       if (targetPages[0]) {
         loadImageFromDataUrl(targetPages[0].fullUrl);
       }
@@ -1078,7 +1197,12 @@ Không trả markdown hoặc giải thích.`;
       setResultVisible(true);
 
       saveHistoryRecord(nextId, detectedFirstSoPhieu || '', accumulatedItems, perPageResults, true);
-      showToast(`✨ Đã trích xuất thành công ${accumulatedItems.length} dòng từ ${total} trang PDF đã chọn`, 'success');
+      showToast(`✨ Đã trích xuất thành công ${accumulatedItems.length} dòng từ ${total} trang PDF`, 'success');
+
+      // Auto-sync to Google Sheet if enabled
+      if (autoSyncSheet && googleSheetUrl && accumulatedItems.length > 0) {
+        syncToGoogleSheet(accumulatedItems, detectedFirstSoPhieu || '', 1, true);
+      }
 
       setTimeout(() => {
         resultRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1207,7 +1331,6 @@ Không trả markdown hoặc giải thích.`;
         return p;
       })
     );
-    // Also sync to master tableItems
     setTableItems((prev) => {
       const filtered = prev.filter((item) => item._pageNum === pageNum);
       const targetItem = filtered[itemIdx];
@@ -1238,6 +1361,7 @@ Không trả markdown hoặc giải thích.`;
     setUnsharpenedSrc(null);
     setCropSourceSrc(null);
     setPdfPages([]);
+    setLastSheetSync(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     showToast('Đã đặt lại trạng thái', 'success');
   };
@@ -1309,8 +1433,34 @@ Không trả markdown hoặc giải thích.`;
     showToast('Đã đặt lại 20 lượt cho tất cả API', 'success');
   };
 
+  const testGoogleSheetConnection = async () => {
+    const url = googleSheetUrl.trim();
+    if (!url) {
+      showToast('Vui lòng dán Webhook URL trước khi kiểm tra', 'error');
+      return;
+    }
+    showToast('Đang kiểm tra kết nối Google Sheet...');
+    try {
+      await fetch(url, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          soPhieu: 'TEST-CONNECTION',
+          pageNum: 1,
+          items: [{ ten: 'Kiểm tra kết nối hệ thống', soLuongThucNhap: '1', ghiChu: 'Test OK' }],
+        }),
+      });
+      showToast('✅ Đã gửi dòng dữ liệu mẫu sang Google Sheet thành công!', 'success');
+    } catch (err) {
+      showToast('❌ Lỗi kết nối Webhook: ' + err.message, 'error');
+    }
+  };
+
   const saveSettings = () => {
     localStorage.setItem('gemini_api_key', apiKey.trim());
+    localStorage.setItem('google_sheet_webhook_url', googleSheetUrl.trim());
+    localStorage.setItem('google_sheet_auto_sync', String(autoSyncSheet));
     localStorage.setItem('scan_columns', JSON.stringify(selectedColumns));
     localStorage.setItem('scan_field_prompts', JSON.stringify(fieldPrompts));
     localStorage.setItem('view_mode', viewMode);
@@ -1335,10 +1485,8 @@ Không trả markdown hoặc giải thích.`;
   const availableApiCount = getApiMonitorEntries().filter((i) => !i.limited && !i.exhausted).length;
   const totalApiCount = getGeminiApiKeys().length;
   const isMultiPage = pageResults.length > 1;
-
   const selectedPdfPagesCount = pdfPages.filter((p) => p.selected).length;
 
-  // Single page result helper when viewing 1 specific tab
   const singleTabResult = typeof activeResultTab === 'number'
     ? pageResults.find((p) => p.pageNum === activeResultTab)
     : null;
@@ -1369,7 +1517,7 @@ Không trả markdown hoặc giải thích.`;
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">Scan Pro Max</h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                  v36.0.5
+                  v36.0.8
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">Trích xuất số phiếu & danh mục hàng hóa bằng AI</p>
@@ -1378,6 +1526,20 @@ Không trả markdown hoặc giải thích.`;
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2.5">
+            {googleSheetUrl && (
+              <button
+                onClick={() => {
+                  setSettingsTab('sheet');
+                  setSettingsOpen(true);
+                }}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 border border-emerald-700/60 text-xs font-bold transition-all"
+                title="Đã kết nối Google Sheet"
+              >
+                <IconSpreadsheet className="w-4 h-4 text-emerald-400" />
+                <span>Google Sheet</span>
+              </button>
+            )}
+
             <button
               onClick={() => setHistoryOpen(true)}
               className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 active:scale-95 transition-all text-slate-200 hover:text-white border border-slate-700/60 relative"
@@ -1393,7 +1555,7 @@ Không trả markdown hoặc giải thích.`;
             <button
               onClick={() => setSettingsOpen(true)}
               className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 active:scale-95 transition-all text-slate-200 hover:text-white border border-slate-700/60"
-              title="Cài đặt & Cấu hình API"
+              title="Cài đặt & Cấu hình API, Google Sheet"
             >
               <IconSettings className="w-5 h-5" />
             </button>
@@ -1404,18 +1566,28 @@ Không trả markdown hoặc giải thích.`;
       {/* Sub-header Status Indicator Bar */}
       <div className="bg-slate-100 border-b border-slate-200/80 py-2">
         <div className="max-w-[1200px] mx-auto px-4 flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="flex items-center gap-2">
-            <span
-              className={`inline-block w-2.5 h-2.5 rounded-full ${
-                availableApiCount > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-              }`}
-            />
-            <span className="font-semibold text-slate-700">
-              {totalApiCount > 0
-                ? `${availableApiCount}/${totalApiCount} API Gemini sẵn sàng (3.6 Flash)`
-                : 'Chế độ OCR Offline (Tesseract)'}
-            </span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span
+                className={`inline-block w-2.5 h-2.5 rounded-full ${
+                  availableApiCount > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                }`}
+              />
+              <span className="font-semibold text-slate-700">
+                {totalApiCount > 0
+                  ? `${availableApiCount}/${totalApiCount} API Gemini sẵn sàng`
+                  : 'Chế độ OCR Offline (Tesseract)'}
+              </span>
+            </div>
+
+            {googleSheetUrl && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                <IconSpreadsheet className="w-3 h-3 text-emerald-600" />
+                <span>Sheet đã kết nối</span>
+              </span>
+            )}
           </div>
+
           <div className="text-slate-500 hidden md:flex items-center gap-3">
             <span>
               Mẹo: <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-300 font-mono text-[10px] text-slate-700">Kéo thả PDF / Ảnh</kbd> hoặc <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-300 font-mono text-[10px] text-slate-700">Ctrl+V</kbd>
@@ -1488,8 +1660,8 @@ Không trả markdown hoặc giải thích.`;
                 <span>Kéo thả trực tiếp file PDF hoặc file Ảnh vào màn hình</span>
               </div>
               <div className="flex items-center gap-1.5 font-bold">
-                <IconLayers className="w-3.5 h-3.5 text-blue-600" />
-                <span>Tùy chọn chọn nhiều trang PDF hoặc quét tất cả</span>
+                <IconSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Tự động hoặc thủ công đồng bộ sang Google Sheet</span>
               </div>
             </div>
 
@@ -1611,7 +1783,6 @@ Không trả markdown hoặc giải thích.`;
               <div className="relative w-full rounded-xl overflow-hidden border border-slate-200 bg-slate-950 flex items-center justify-center min-h-[260px] max-h-[500px]">
                 <img src={previewSrc} alt="Preview" className="w-full h-full object-contain max-h-[480px]" />
 
-                {/* Laser animation when scanning */}
                 {isScanning && (
                   <div className="absolute inset-0 pointer-events-none">
                     <div className="w-full h-1 scan-laser-line animate-scan-laser" />
@@ -1804,15 +1975,26 @@ Không trả markdown hoặc giải thích.`;
                           </div>
                         </div>
 
-                        {page.previewUrl && (
+                        <div className="flex items-center gap-2">
                           <button
-                            onClick={() => loadImageFromDataUrl(page.previewUrl)}
-                            className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1.5 border border-blue-200 transition-all active:scale-95"
+                            onClick={() => syncToGoogleSheet(page.items, page.soPhieu, page.pageNum)}
+                            disabled={isSyncingSheet}
+                            className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center gap-1.5 border border-emerald-200 transition-all active:scale-95 disabled:opacity-50"
                           >
-                            <IconEye className="w-4 h-4" />
-                            <span>Xem ảnh gốc Trang {page.pageNum}</span>
+                            <IconSpreadsheet className="w-4 h-4 text-emerald-600" />
+                            <span>Lưu Trang {page.pageNum} Sang Sheet</span>
                           </button>
-                        )}
+
+                          {page.previewUrl && (
+                            <button
+                              onClick={() => loadImageFromDataUrl(page.previewUrl)}
+                              className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1.5 border border-blue-200 transition-all active:scale-95"
+                            >
+                              <IconEye className="w-4 h-4" />
+                              <span>Xem ảnh gốc</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {/* Slip Number Ticket for this Page */}
@@ -1958,15 +2140,26 @@ Không trả markdown hoặc giải thích.`;
                       </div>
                     </div>
 
-                    {singleTabResult.previewUrl && (
+                    <div className="flex items-center gap-2">
                       <button
-                        onClick={() => loadImageFromDataUrl(singleTabResult.previewUrl)}
-                        className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1.5 border border-blue-200 transition-all active:scale-95"
+                        onClick={() => syncToGoogleSheet(singleTabResult.items, singleTabResult.soPhieu, singleTabResult.pageNum)}
+                        disabled={isSyncingSheet}
+                        className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center gap-1.5 border border-emerald-200 transition-all active:scale-95 disabled:opacity-50"
                       >
-                        <IconEye className="w-4 h-4" />
-                        <span>Xem ảnh gốc Trang {singleTabResult.pageNum}</span>
+                        <IconSpreadsheet className="w-4 h-4 text-emerald-600" />
+                        <span>Lưu Trang {singleTabResult.pageNum} Sang Sheet</span>
                       </button>
-                    )}
+
+                      {singleTabResult.previewUrl && (
+                        <button
+                          onClick={() => loadImageFromDataUrl(singleTabResult.previewUrl)}
+                          className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1.5 border border-blue-200 transition-all active:scale-95"
+                        >
+                          <IconEye className="w-4 h-4" />
+                          <span>Xem ảnh gốc</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Slip Number */}
@@ -2077,14 +2270,26 @@ Không trả markdown hoặc giải thích.`;
               )}
 
               {/* Master Actions */}
-              <div className="bg-white rounded-2xl p-4 border border-slate-200 flex items-center gap-3">
+              <div className="bg-white rounded-2xl p-4 border border-slate-200 flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => syncToGoogleSheet(tableItems, soPhieu, 1)}
+                  disabled={isSyncingSheet}
+                  className="flex-1 min-w-[200px] py-3.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm active:scale-98 transition-all disabled:opacity-50"
+                >
+                  <IconSpreadsheet className="w-4 h-4" />
+                  <span>
+                    {isSyncingSheet ? 'Đang gửi sang Google Sheet...' : '📊 Lưu Toàn Bộ Sang Google Sheet'}
+                  </span>
+                </button>
+
                 <button
                   onClick={() => saveHistoryRecord(currentHistoryId || 'h_' + Date.now(), soPhieu, tableItems, pageResults, false)}
-                  className="flex-1 py-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm active:scale-98 transition-all"
+                  className="flex-1 min-w-[180px] py-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm active:scale-98 transition-all"
                 >
                   <IconSave className="w-4 h-4" />
-                  <span>Lưu Toàn Bộ Thay Đổi Vào Lịch Sử</span>
+                  <span>Lưu Vào Lịch Sử Cục Bộ</span>
                 </button>
+
                 <button
                   onClick={resetAll}
                   className="px-5 py-3.5 rounded-xl border border-red-200 hover:bg-red-50 text-red-600 font-bold text-xs flex items-center gap-1.5 active:scale-98 transition-all"
@@ -2093,6 +2298,15 @@ Không trả markdown hoặc giải thích.`;
                   <span>Quét Lại Mới</span>
                 </button>
               </div>
+
+              {lastSheetSync && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center justify-between animate-fade-in">
+                  <div className="flex items-center gap-2">
+                    <IconCheck className="w-4 h-4 text-emerald-600" />
+                    <span>Lần đồng bộ Google Sheet gần nhất: <strong>{lastSheetSync.time}</strong> ({lastSheetSync.count} dòng)</span>
+                  </div>
+                </div>
+              )}
             </section>
           )}
         </div>
@@ -2107,7 +2321,7 @@ Không trả markdown hoặc giải thích.`;
                 <IconLayers className="w-5 h-5 text-blue-600" />
                 <div>
                   <h3 className="font-bold text-sm text-slate-900">File PDF Có {pdfPages.length} Trang</h3>
-                  <p className="text-[11px] text-slate-500">Tích chọn các trang bạn muốn quét hoặc chọn 1 trang để quét riêng</p>
+                  <p className="text-[11px] text-slate-500">Bấm vào bất kỳ đâu trên ô trang để chọn hoặc bỏ chọn</p>
                 </div>
               </div>
               <button
@@ -2143,7 +2357,7 @@ Không trả markdown hoặc giải thích.`;
               </div>
             </div>
 
-            {/* Thumbnail Grid with Multi-Select Checkboxes */}
+            {/* Thumbnail Grid with Multi-Select Full Card Click */}
             <div className="flex-1 overflow-y-auto pr-1">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {pdfPages.map((page, idx) => {
@@ -2574,13 +2788,13 @@ Không trả markdown hoặc giải thích.`;
         </div>
       )}
 
-      {/* Settings Modal */}
+      {/* Settings Modal with Google Sheets Tab */}
       {settingsOpen && (
         <div
           className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in"
           onClick={(e) => e.target === e.currentTarget && setSettingsOpen(false)}
         >
-          <div className="bg-white w-full max-w-xl rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-modal flex flex-col gap-4 max-h-[90vh] animate-slide-up">
+          <div className="bg-white w-full max-w-2xl rounded-t-3xl sm:rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-modal flex flex-col gap-4 max-h-[90vh] animate-slide-up">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
@@ -2606,6 +2820,17 @@ Không trả markdown hoặc giải thích.`;
                 }`}
               >
                 API Gemini & Failover
+              </button>
+              <button
+                onClick={() => setSettingsTab('sheet')}
+                className={`pb-2 px-3 border-b-2 whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                  settingsTab === 'sheet'
+                    ? 'border-emerald-600 text-emerald-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <IconSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <span>Google Sheet 📊</span>
               </button>
               <button
                 onClick={() => setSettingsTab('columns')}
@@ -2746,7 +2971,86 @@ Không trả markdown hoặc giải thích.`;
                 </div>
               )}
 
-              {/* TAB 2: COLUMNS SELECTION */}
+              {/* TAB 2: GOOGLE SHEETS INTEGRATION */}
+              {settingsTab === 'sheet' && (
+                <div className="space-y-4">
+                  <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200 space-y-2">
+                    <div className="flex items-center gap-2 text-emerald-900 font-bold">
+                      <IconSpreadsheet className="w-5 h-5 text-emerald-600" />
+                      <span>Kết Nối Google Sheets Tự Động Lưu Phiếu</span>
+                    </div>
+                    <p className="text-[11px] text-emerald-800 leading-relaxed">
+                      Mỗi dòng hàng sau khi quét sẽ được tự động ghi vào trang tính Google Sheet của bạn (gồm Thời gian, Số phiếu, Trang, Mã hàng, Số lượng, ĐVT, Pallet...).
+                    </p>
+                  </div>
+
+                  {/* Webhook URL Input */}
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-slate-700 flex items-center justify-between">
+                      <span>Google Apps Script Webhook URL</span>
+                      <button
+                        type="button"
+                        onClick={testGoogleSheetConnection}
+                        className="text-emerald-600 hover:underline font-bold text-xs flex items-center gap-1"
+                      >
+                        <span>Kiểm tra kết nối</span>
+                      </button>
+                    </label>
+                    <input
+                      type="url"
+                      value={googleSheetUrl}
+                      onChange={(e) => setGoogleSheetUrl(e.target.value)}
+                      placeholder="https://script.google.com/macros/s/AKfycb.../exec"
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 font-mono text-xs outline-none"
+                    />
+                  </div>
+
+                  {/* Auto-sync Checkbox */}
+                  <label className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autoSyncSheet}
+                      onChange={(e) => setAutoSyncSheet(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 accent-emerald-600"
+                    />
+                    <div>
+                      <div className="font-bold text-slate-800">Tự động đồng bộ sang Google Sheet sau khi quét xong</div>
+                      <div className="text-[11px] text-slate-500 leading-tight mt-0.5">
+                        Tự động đẩy toàn bộ các dòng hàng vừa nhận diện xong sang Sheet mà không cần bấm nút lưu thủ công.
+                      </div>
+                    </div>
+                  </label>
+
+                  {/* 3-Step Setup Instructions */}
+                  <div className="space-y-2 pt-2 border-t border-slate-200">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-800">Hướng Dẫn Cài Đặt (Mất 2 Phút):</span>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(APPS_SCRIPT_SAMPLE, 'apps_script')}
+                        className="px-3 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 font-bold text-xs flex items-center gap-1 shadow-sm active:scale-95 transition-all"
+                      >
+                        <IconCopy className="w-3.5 h-3.5" />
+                        <span>{copiedKey === 'apps_script' ? 'Đã sao chép code!' : '📋 Sao chép mã Apps Script'}</span>
+                      </button>
+                    </div>
+
+                    <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-200">
+                      <li>Mở file Google Sheet của bạn ➔ vào menu <strong>Tiện ích mở rộng (Extensions)</strong> ➔ chọn <strong>Apps Script</strong>.</li>
+                      <li>Xóa hết code cũ trong đó, nhấn nút <strong>Sao chép mã Apps Script</strong> ở trên và dán vào ➔ nhấn <strong>Lưu (Ctrl+S)</strong>.</li>
+                      <li>Nhấn <strong>Triển khai (Deploy)</strong> ➔ <strong>Tùy chọn triển khai mới (New deployment)</strong>:
+                        <ul className="list-disc list-inside pl-4 text-slate-500">
+                          <li>Loại: <strong>Ứng dụng web (Web app)</strong></li>
+                          <li>Người có quyền truy cập (Who has access): Chọn <strong>Bất kỳ ai (Anyone)</strong></li>
+                        </ul>
+                      </li>
+                      <li>Bấm <strong>Triển khai</strong> ➔ sao chép link Webhook (kết thúc bằng <code>/exec</code>) và dán vào ô bên trên.</li>
+                    </ol>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: COLUMNS SELECTION */}
               {settingsTab === 'columns' && (
                 <div className="space-y-3">
                   <p className="text-slate-500 leading-relaxed">
@@ -2786,7 +3090,7 @@ Không trả markdown hoặc giải thích.`;
                 </div>
               )}
 
-              {/* TAB 3: PROMPTS CUSTOMIZATION */}
+              {/* TAB 4: PROMPTS CUSTOMIZATION */}
               {settingsTab === 'prompts' && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -2822,7 +3126,7 @@ Không trả markdown hoặc giải thích.`;
                 </div>
               )}
 
-              {/* TAB 4: VIEW MODE */}
+              {/* TAB 5: VIEW MODE */}
               {settingsTab === 'view' && (
                 <div className="space-y-3">
                   <p className="text-slate-500 leading-relaxed">Chọn chế độ bố cục giao diện hiển thị phù hợp với thiết bị của bạn:</p>
