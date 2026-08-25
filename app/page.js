@@ -80,11 +80,24 @@ export default function Home() {
   const [resultVisible, setResultVisible] = useState(false);
   const [copiedKey, setCopiedKey] = useState(null);
 
-  // PDF Multi-page state
+  // Multi-page PDF states & Per-page separation
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
-  const [pdfPages, setPdfPages] = useState([]); // [{ pageNum, fullUrl, thumbUrl, base64 }]
+  const [pdfPages, setPdfPages] = useState([]); // [{ pageNum, fullUrl, thumbUrl, base64, selected: true }]
   const [selectedPdfIndex, setSelectedPdfIndex] = useState(0);
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
+
+  // Per-page Results separation ('separate' | 'all' | pageNum)
+  const [pageResults, setPageResults] = useState([]); // [{ pageNum, soPhieu, items: [], previewUrl, status, itemCount }]
+  const [activeResultTab, setActiveResultTab] = useState('separate');
+
+  // Live Batch Progress Dialog state
+  const [batchProgressModal, setBatchProgressModal] = useState({
+    active: false,
+    total: 0,
+    current: 0,
+    percent: 0,
+    pageStatuses: [], // [{ pageNum, status: 'pending'|'running'|'done'|'error', detail: '', lines: 0, soPhieu: '' }]
+  });
 
   // Settings & Storage state
   const [apiKey, setApiKey] = useState('');
@@ -117,8 +130,9 @@ export default function Home() {
   const videoRef = useRef(null);
   const cameraStreamRef = useRef(null);
 
-  // Refs
-  const fileInputRef = useRef(null);
+  // Refs for File Inputs
+  const imageInputRef = useRef(null);
+  const pdfInputRef = useRef(null);
   const cameraInputRef = useRef(null);
   const backupFileInputRef = useRef(null);
   const cropCanvasRef = useRef(null);
@@ -276,11 +290,11 @@ export default function Home() {
     img.src = dataUrl;
   }, []);
 
-  // Multi-page PDF handler
+  // Multi-page PDF handler (with PDF.js dynamic load)
   const handlePDF = useCallback(async (file) => {
     try {
       setIsProcessingPdf(true);
-      showToast('📄 Đang tải và phân tích trang PDF...');
+      showToast('📄 Đang nạp và trích xuất các trang PDF...');
       if (!window.pdfjsLib) {
         await new Promise((resolve, reject) => {
           const script = document.createElement('script');
@@ -289,7 +303,7 @@ export default function Home() {
             window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
             resolve();
           };
-          script.onerror = () => reject(new Error('Không thể tải PDF.js'));
+          script.onerror = () => reject(new Error('Không thể tải thư viện PDF.js'));
           document.head.appendChild(script);
         });
       }
@@ -334,7 +348,7 @@ export default function Home() {
         showToast('📄 Đã nạp file PDF 1 trang', 'success');
       } else {
         setPdfModalOpen(true);
-        showToast(`📄 Đã tải ${numPages} trang PDF. Hãy chọn chế độ quét!`, 'success');
+        showToast(`📄 Đã tải ${numPages} trang PDF. Hãy chọn các trang cần quét!`, 'success');
       }
     } catch (e) {
       console.error(e);
@@ -352,17 +366,28 @@ export default function Home() {
     showToast(`📄 Đã chọn Trang ${page.pageNum} để quét`, 'success');
   };
 
+  const togglePdfPageSelect = (index, e) => {
+    e?.stopPropagation();
+    setPdfPages((prev) =>
+      prev.map((p, idx) => (idx === index ? { ...p, selected: !p.selected } : p))
+    );
+  };
+
+  const selectAllPdfPages = (selectState) => {
+    setPdfPages((prev) => prev.map((p) => ({ ...p, selected: selectState })));
+  };
+
   const processFile = useCallback((file) => {
-    if (file.type === 'application/pdf') {
+    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
       handlePDF(file);
-    } else if (file.type.startsWith('image/')) {
+    } else if (file.type.startsWith('image/') || /\.(jpe?g|png|webp|bmp)$/i.test(file.name)) {
       const reader = new FileReader();
       reader.onload = (e) => {
         loadImageFromDataUrl(e.target.result);
       };
       reader.readAsDataURL(file);
     } else {
-      showToast('Định dạng không hỗ trợ (chỉ nhận JPG, PNG, PDF)', 'error');
+      showToast('Định dạng không hỗ trợ (chỉ nhận PDF, JPG, PNG, WEBP)', 'error');
     }
   }, [handlePDF, loadImageFromDataUrl, showToast]);
 
@@ -388,6 +413,7 @@ export default function Home() {
     }
   };
 
+  // Drag & Drop event listeners for both PDF and Images
   useEffect(() => {
     const handleDragOver = (e) => {
       e.preventDefault();
@@ -403,7 +429,12 @@ export default function Home() {
       const file = e.dataTransfer.files?.[0];
       if (file) {
         processFile(file);
-        showToast('📥 Đã nhận file kéo thả', 'success');
+        showToast(
+          file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
+            ? '📥 Đã nhận file PDF kéo thả'
+            : '📥 Đã nhận file ảnh kéo thả',
+          'success'
+        );
       }
     };
 
@@ -758,10 +789,6 @@ Không trả markdown hoặc giải thích.`;
     }
   };
 
-  const scanClientGemini = async (key) => {
-    return await scanClientGeminiWithBase64(currentImageBase64, currentImageMimeType, key);
-  };
-
   const scanWithTesseract = async (base64Data, mimeType, onProgress) => {
     if (!window.Tesseract) {
       await new Promise((resolve, reject) => {
@@ -881,13 +908,26 @@ Không trả markdown hoặc giải thích.`;
         return out;
       });
 
+      const singlePageResult = [
+        {
+          pageNum: 1,
+          soPhieu: resultData.soPhieu || '',
+          items: normalizedItems,
+          previewUrl: previewSrc,
+          status: 'done',
+          itemCount: normalizedItems.length,
+        },
+      ];
+
       const nextId = 'h_' + Date.now();
       setCurrentHistoryId(nextId);
       setSoPhieu(resultData.soPhieu || '');
       setTableItems(normalizedItems);
+      setPageResults(singlePageResult);
+      setActiveResultTab('separate');
       setResultVisible(true);
 
-      saveHistoryRecord(nextId, resultData.soPhieu || '', normalizedItems, true);
+      saveHistoryRecord(nextId, resultData.soPhieu || '', normalizedItems, singlePageResult, true);
 
       setTimeout(() => {
         resultRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -902,82 +942,169 @@ Không trả markdown hoặc giải thích.`;
     }
   };
 
-  // Batch Multi-Page PDF Scan
-  const startBatchPdfScan = async () => {
-    if (!pdfPages.length || isScanning) return;
+  // Batch Multi-Page PDF Scan (supports arbitrary selected pages)
+  const startBatchPdfScan = async (customPagesList = null) => {
+    const targetPages = customPagesList || pdfPages.filter((p) => p.selected);
+    if (!targetPages.length || isScanning) {
+      showToast('Vui lòng chọn ít nhất 1 trang để quét', 'error');
+      return;
+    }
     setPdfModalOpen(false);
     setIsScanning(true);
     setShowTesseractWarning(false);
 
-    const total = pdfPages.length;
+    const total = targetPages.length;
+    const initialStatuses = targetPages.map((p) => ({
+      pageNum: p.pageNum,
+      status: 'pending',
+      detail: 'Chờ xử lý...',
+      lines: 0,
+      soPhieu: '',
+    }));
+
+    setBatchProgressModal({
+      active: true,
+      total,
+      current: 0,
+      percent: 0,
+      pageStatuses: initialStatuses,
+    });
+
     let accumulatedItems = [];
-    let detectedSoPhieu = '';
+    let detectedFirstSoPhieu = '';
+    let perPageResults = [];
     let usedEngine = 'gemini';
 
     try {
       for (let i = 0; i < total; i++) {
-        const page = pdfPages[i];
-        const pctStart = Math.round((i / total) * 100);
+        const page = targetPages[i];
+        const pageNum = page.pageNum;
+
+        // Update status to 'running'
+        setBatchProgressModal((prev) => {
+          const nextStatuses = [...prev.pageStatuses];
+          nextStatuses[i] = { ...nextStatuses[i], status: 'running', detail: 'Đang gửi AI nhận diện...' };
+          return {
+            ...prev,
+            current: i + 1,
+            percent: Math.round((i / total) * 100),
+            pageStatuses: nextStatuses,
+          };
+        });
+
         setScanProgress({
           active: true,
-          percent: pctStart,
-          text: `📄 Đang quét trang ${page.pageNum}/${total}...`,
+          percent: Math.round((i / total) * 100),
+          text: `📄 Đang quét trang ${pageNum} (${i + 1}/${total})...`,
         });
 
-        const { data: pageResult, engine } = await executeOcrOnImage(page.base64, 'image/jpeg', `[Trang ${page.pageNum}/${total}]`);
-        usedEngine = engine;
+        try {
+          const { data: pageResult, engine } = await executeOcrOnImage(page.base64, 'image/jpeg', `[Trang ${pageNum}]`);
+          usedEngine = engine;
 
-        if (pageResult.soPhieu && !detectedSoPhieu) {
-          detectedSoPhieu = pageResult.soPhieu;
+          const pageSoPhieu = pageResult.soPhieu || '';
+          if (pageSoPhieu && !detectedFirstSoPhieu) {
+            detectedFirstSoPhieu = pageSoPhieu;
+          }
+
+          const normalized = (Array.isArray(pageResult.items) ? pageResult.items : []).map((item) => {
+            const out = { _pageNum: pageNum };
+            selectedColumns.forEach((k) => (out[k] = item?.[k] ?? ''));
+            return out;
+          });
+
+          accumulatedItems = [...accumulatedItems, ...normalized];
+
+          const singleResult = {
+            pageNum,
+            soPhieu: pageSoPhieu,
+            items: normalized,
+            previewUrl: page.fullUrl,
+            status: 'done',
+            itemCount: normalized.length,
+          };
+          perPageResults.push(singleResult);
+
+          // Update status to 'done'
+          setBatchProgressModal((prev) => {
+            const nextStatuses = [...prev.pageStatuses];
+            nextStatuses[i] = {
+              ...nextStatuses[i],
+              status: 'done',
+              detail: `Hoàn tất • ${normalized.length} dòng hàng`,
+              lines: normalized.length,
+              soPhieu: pageSoPhieu,
+            };
+            return {
+              ...prev,
+              percent: Math.round(((i + 1) / total) * 100),
+              pageStatuses: nextStatuses,
+            };
+          });
+        } catch (pageErr) {
+          console.error(`Error on page ${pageNum}:`, pageErr);
+          setBatchProgressModal((prev) => {
+            const nextStatuses = [...prev.pageStatuses];
+            nextStatuses[i] = {
+              ...nextStatuses[i],
+              status: 'error',
+              detail: `Lỗi: ${pageErr.message}`,
+              lines: 0,
+              soPhieu: '',
+            };
+            return {
+              ...prev,
+              percent: Math.round(((i + 1) / total) * 100),
+              pageStatuses: nextStatuses,
+            };
+          });
         }
-
-        const normalized = (Array.isArray(pageResult.items) ? pageResult.items : []).map((item) => {
-          const out = {};
-          selectedColumns.forEach((k) => (out[k] = item?.[k] ?? ''));
-          return out;
-        });
-
-        accumulatedItems = [...accumulatedItems, ...normalized];
       }
 
       setEngineBadge(usedEngine);
-      setScanProgress({ active: true, percent: 100, text: `✅ Đã quét xong toàn bộ ${total} trang!` });
+      setScanProgress({ active: true, percent: 100, text: `✅ Đã quét xong ${total} trang!` });
 
-      // Set first page as active preview
-      if (pdfPages[0]) {
-        loadImageFromDataUrl(pdfPages[0].fullUrl);
+      // Set first scanned page as active preview
+      if (targetPages[0]) {
+        loadImageFromDataUrl(targetPages[0].fullUrl);
       }
 
       const nextId = 'h_' + Date.now();
       setCurrentHistoryId(nextId);
-      setSoPhieu(detectedSoPhieu || '');
+      setSoPhieu(detectedFirstSoPhieu || '');
       setTableItems(accumulatedItems);
+      setPageResults(perPageResults);
+      setActiveResultTab('separate');
       setResultVisible(true);
 
-      saveHistoryRecord(nextId, detectedSoPhieu || '', accumulatedItems, true);
-      showToast(`✨ Đã trích xuất ${accumulatedItems.length} dòng hàng từ ${total} trang PDF`, 'success');
+      saveHistoryRecord(nextId, detectedFirstSoPhieu || '', accumulatedItems, perPageResults, true);
+      showToast(`✨ Đã trích xuất thành công ${accumulatedItems.length} dòng từ ${total} trang PDF đã chọn`, 'success');
 
       setTimeout(() => {
         resultRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, 200);
+      }, 250);
     } catch (e) {
       console.error(e);
-      showToast('❌ Lỗi quét batch PDF: ' + e.message, 'error');
-      setScanProgress({ active: true, percent: 0, text: 'Lỗi xảy ra trong quá trình quét PDF' });
+      showToast('❌ Lỗi quét PDF: ' + e.message, 'error');
     } finally {
       setIsScanning(false);
-      setTimeout(() => setScanProgress((prev) => ({ ...prev, active: false })), 1800);
+      setTimeout(() => {
+        setBatchProgressModal((prev) => ({ ...prev, active: false }));
+        setScanProgress((prev) => ({ ...prev, active: false }));
+      }, 1500);
     }
   };
 
   // History Operations in LocalStorage
-  const saveHistoryRecord = (id, spVal, itemsVal, isNew = false) => {
+  const saveHistoryRecord = (id, spVal, itemsVal, pageResultsVal = [], isNew = false) => {
+    const currentPR = pageResultsVal.length ? pageResultsVal : pageResults;
     const record = {
       id,
       createdAt: isNew ? new Date().toISOString() : undefined,
       updatedAt: new Date().toISOString(),
       soPhieu: spVal,
       items: itemsVal,
+      pageResults: currentPR,
       columns: selectedColumns,
     };
 
@@ -1003,6 +1130,8 @@ Không trả markdown hoặc giải thích.`;
     setCurrentHistoryId(item.id);
     setSoPhieu(item.soPhieu || '');
     setTableItems(item.items || []);
+    setPageResults(item.pageResults || []);
+    setActiveResultTab('separate');
     setResultVisible(true);
     setHistoryOpen(false);
     setEngineBadge('gemini');
@@ -1057,13 +1186,43 @@ Không trả markdown hoặc giải thích.`;
     showToast('📋 Đã sao chép vào clipboard!', 'success');
   };
 
-  const copyColumn = (key) => {
-    const values = tableItems.map((item) => (item[key] || '').trim()).filter(Boolean);
+  const copyColumn = (key, itemsToCopy = tableItems, prefix = '') => {
+    const values = itemsToCopy.map((item) => (item[key] || '').trim()).filter(Boolean);
     if (!values.length) {
       showToast(`Chưa có dữ liệu ở cột ${COLUMN_DEFS[key]?.short || key}`, 'error');
       return;
     }
-    copyToClipboard(values.join('\n'), `col_${key}`);
+    copyToClipboard(values.join('\n'), `${prefix}col_${key}`);
+  };
+
+  // Cell & Field editors for multi-page data
+  const updatePageItemCell = (pageNum, itemIdx, colKey, val) => {
+    setPageResults((prev) =>
+      prev.map((p) => {
+        if (p.pageNum === pageNum) {
+          const nextItems = [...p.items];
+          nextItems[itemIdx] = { ...nextItems[itemIdx], [colKey]: val };
+          return { ...p, items: nextItems };
+        }
+        return p;
+      })
+    );
+    // Also sync to master tableItems
+    setTableItems((prev) => {
+      const filtered = prev.filter((item) => item._pageNum === pageNum);
+      const targetItem = filtered[itemIdx];
+      if (targetItem) {
+        targetItem[colKey] = val;
+      }
+      return [...prev];
+    });
+  };
+
+  const updatePageSoPhieu = (pageNum, val) => {
+    setPageResults((prev) =>
+      prev.map((p) => (p.pageNum === pageNum ? { ...p, soPhieu: val } : p))
+    );
+    if (pageNum === 1) setSoPhieu(val);
   };
 
   const resetAll = () => {
@@ -1072,6 +1231,8 @@ Không trả markdown hoặc giải thích.`;
     setResultVisible(false);
     setSoPhieu('');
     setTableItems([]);
+    setPageResults([]);
+    setActiveResultTab('separate');
     setCurrentHistoryId(null);
     setImageSharpened(false);
     setUnsharpenedSrc(null);
@@ -1148,12 +1309,6 @@ Không trả markdown hoặc giải thích.`;
     showToast('Đã đặt lại 20 lượt cho tất cả API', 'success');
   };
 
-  const clearApiHistory = () => {
-    localStorage.removeItem('gemini_api_usage_history');
-    setApiHistory([]);
-    showToast('Đã xóa toàn bộ lịch sử API', 'success');
-  };
-
   const saveSettings = () => {
     localStorage.setItem('gemini_api_key', apiKey.trim());
     localStorage.setItem('scan_columns', JSON.stringify(selectedColumns));
@@ -1179,6 +1334,14 @@ Không trả markdown hoặc giải thích.`;
 
   const availableApiCount = getApiMonitorEntries().filter((i) => !i.limited && !i.exhausted).length;
   const totalApiCount = getGeminiApiKeys().length;
+  const isMultiPage = pageResults.length > 1;
+
+  const selectedPdfPagesCount = pdfPages.filter((p) => p.selected).length;
+
+  // Single page result helper when viewing 1 specific tab
+  const singleTabResult = typeof activeResultTab === 'number'
+    ? pageResults.find((p) => p.pageNum === activeResultTab)
+    : null;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
@@ -1189,8 +1352,8 @@ Không trả markdown hoặc giải thích.`;
             <div className="w-16 h-16 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center animate-bounce">
               <IconUpload className="w-8 h-8" />
             </div>
-            <h3 className="text-lg font-bold text-slate-900">Thả file ảnh hoặc PDF vào đây</h3>
-            <p className="text-sm text-slate-500">Tự động nạp tài liệu và tối ưu để quét OCR</p>
+            <h3 className="text-lg font-bold text-slate-900">Thả file PDF hoặc Ảnh vào đây</h3>
+            <p className="text-sm text-slate-500">Tự động nạp tài liệu PDF nhiều trang hoặc Ảnh phiếu</p>
           </div>
         </div>
       )}
@@ -1206,7 +1369,7 @@ Không trả markdown hoặc giải thích.`;
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">Scan Pro Max</h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                  v36.0.2
+                  v36.0.5
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">Trích xuất số phiếu & danh mục hàng hóa bằng AI</p>
@@ -1255,7 +1418,7 @@ Không trả markdown hoặc giải thích.`;
           </div>
           <div className="text-slate-500 hidden md:flex items-center gap-3">
             <span>
-              Mẹo: <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-300 font-mono text-[10px] text-slate-700">Ctrl+V</kbd> để dán ảnh bất kỳ lúc nào
+              Mẹo: <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-300 font-mono text-[10px] text-slate-700">Kéo thả PDF / Ảnh</kbd> hoặc <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-300 font-mono text-[10px] text-slate-700">Ctrl+V</kbd>
             </span>
           </div>
         </div>
@@ -1265,43 +1428,55 @@ Không trả markdown hoặc giải thích.`;
       <main className="flex-1 desktop-grid max-w-[1200px] mx-auto w-full p-4 sm:p-6">
         {/* Left Column (Upload Card & History Desktop Widget) */}
         <div className="desktop-left space-y-5">
-          {/* Upload Card */}
+          {/* Upload Card with 4 Distinct Buttons */}
           <section className="bg-white rounded-2xl p-5 border border-slate-200 shadow-subtle hover:shadow-card transition-shadow">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                 <IconCamera className="w-4 h-4 text-blue-600" />
                 Chọn Nguồn Tài Liệu
               </h2>
-              <span className="text-[11px] font-medium text-slate-400">PDF Nhiều Trang, JPG, PNG</span>
+              <span className="text-[11px] font-medium text-slate-400">PDF, JPG, PNG, WEBP</span>
             </div>
 
-            <div className="grid grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-2 gap-2.5">
+              {/* 1. Camera Scan */}
               <button
                 onClick={openCameraScanner}
-                className="flex flex-col items-center justify-center gap-1.5 py-3.5 px-2 rounded-xl bg-gradient-to-b from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-semibold text-xs shadow-sm active:scale-[0.98] transition-all"
+                className="flex items-center justify-center gap-2 py-3.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-bold text-xs shadow-sm active:scale-[0.98] transition-all"
               >
-                <IconCamera className="w-5 h-5" />
+                <IconCamera className="w-4 h-4" />
                 <span>Quét Camera</span>
               </button>
 
+              {/* 2. Pick Image */}
               <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isProcessingPdf}
-                className="flex flex-col items-center justify-center gap-1.5 py-3.5 px-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold text-xs border border-slate-200/80 active:scale-[0.98] transition-all disabled:opacity-50"
+                onClick={() => imageInputRef.current?.click()}
+                className="flex items-center justify-center gap-2 py-3.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs border border-slate-200/80 active:scale-[0.98] transition-all"
               >
-                {isProcessingPdf ? (
-                  <div className="w-5 h-5 border-2 border-slate-600 border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <IconUpload className="w-5 h-5 text-slate-600" />
-                )}
-                <span>Chọn File</span>
+                <IconUpload className="w-4 h-4 text-blue-600" />
+                <span>Chọn Ảnh</span>
               </button>
 
+              {/* 3. Pick PDF */}
+              <button
+                onClick={() => pdfInputRef.current?.click()}
+                disabled={isProcessingPdf}
+                className="flex items-center justify-center gap-2 py-3.5 px-3 rounded-xl bg-indigo-50/80 hover:bg-indigo-100 text-indigo-900 font-bold text-xs border border-indigo-200/80 active:scale-[0.98] transition-all disabled:opacity-50"
+              >
+                {isProcessingPdf ? (
+                  <div className="w-4 h-4 border-2 border-indigo-700 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <IconLayers className="w-4 h-4 text-indigo-600" />
+                )}
+                <span>Chọn File PDF</span>
+              </button>
+
+              {/* 4. Paste Clipboard */}
               <button
                 onClick={pasteFromClipboard}
-                className="flex flex-col items-center justify-center gap-1.5 py-3.5 px-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold text-xs border border-slate-200/80 active:scale-[0.98] transition-all"
+                className="flex items-center justify-center gap-2 py-3.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs border border-slate-200/80 active:scale-[0.98] transition-all"
               >
-                <IconClipboard className="w-5 h-5 text-slate-600" />
+                <IconClipboard className="w-4 h-4 text-slate-600" />
                 <span>Dán Clipboard</span>
               </button>
             </div>
@@ -1310,14 +1485,15 @@ Không trả markdown hoặc giải thích.`;
             <div className="mt-4 p-3 bg-blue-50/70 border border-blue-100 rounded-xl space-y-1.5 text-xs text-blue-900 leading-relaxed">
               <div className="flex items-center gap-1.5 font-bold">
                 <IconCheck className="w-3.5 h-3.5 text-blue-600" />
-                <span>Camera tự động cắt viền phiếu không phần thừa</span>
+                <span>Kéo thả trực tiếp file PDF hoặc file Ảnh vào màn hình</span>
               </div>
               <div className="flex items-center gap-1.5 font-bold">
                 <IconLayers className="w-3.5 h-3.5 text-blue-600" />
-                <span>File PDF nhiều trang: Quét 1 trang hoặc tất cả</span>
+                <span>Tùy chọn chọn nhiều trang PDF hoặc quét tất cả</span>
               </div>
             </div>
 
+            {/* Hidden Inputs */}
             <input
               ref={cameraInputRef}
               type="file"
@@ -1330,10 +1506,20 @@ Không trả markdown hoặc giải thích.`;
               }}
             />
             <input
-              ref={fileInputRef}
+              ref={imageInputRef}
               type="file"
               className="hidden"
-              accept="image/*,.pdf,application/pdf"
+              accept="image/*"
+              onChange={(e) => {
+                if (e.target.files?.[0]) processFile(e.target.files[0]);
+                e.target.value = '';
+              }}
+            />
+            <input
+              ref={pdfInputRef}
+              type="file"
+              className="hidden"
+              accept=".pdf,application/pdf"
               onChange={(e) => {
                 if (e.target.files?.[0]) processFile(e.target.files[0]);
                 e.target.value = '';
@@ -1367,8 +1553,13 @@ Không trả markdown hoặc giải thích.`;
                     className="p-3 rounded-xl border border-slate-200/80 hover:border-blue-400 hover:bg-blue-50/40 cursor-pointer transition-all flex items-center justify-between gap-3 group"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="font-mono font-bold text-sm text-slate-800 truncate">
-                        {item.soPhieu || 'Chưa có số phiếu'}
+                      <div className="font-mono font-bold text-sm text-slate-800 truncate flex items-center gap-1.5">
+                        <span>{item.soPhieu || 'Chưa có số phiếu'}</span>
+                        {item.pageResults?.length > 1 && (
+                          <span className="px-1.5 py-0.2 rounded bg-blue-100 text-blue-700 text-[10px] font-bold">
+                            {item.pageResults.length} trang tách biệt
+                          </span>
+                        )}
                       </div>
                       <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
                         <span>{formatDate(item.updatedAt || item.createdAt)}</span>
@@ -1409,7 +1600,7 @@ Không trả markdown hoặc giải thích.`;
                       className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-bold flex items-center gap-1 border border-blue-200"
                     >
                       <IconLayers className="w-3.5 h-3.5" />
-                      <span>Xem {pdfPages.length} trang PDF</span>
+                      <span>Xem & Chọn {pdfPages.length} trang PDF</span>
                     </button>
                   )}
                   <span className="text-xs font-medium text-slate-500 font-mono">Đã sẵn sàng</span>
@@ -1472,7 +1663,7 @@ Không trả markdown hoặc giải thích.`;
               </div>
 
               {/* Scan Progress Feedback */}
-              {scanProgress.active && (
+              {scanProgress.active && !batchProgressModal.active && (
                 <div className="mt-4 space-y-2">
                   <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
                     <div
@@ -1522,86 +1713,317 @@ Không trả markdown hoặc giải thích.`;
               <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-subtle">
                 <IconScan className="w-8 h-8" />
               </div>
-              <h3 className="text-base font-bold text-slate-800">Chưa có ảnh phiếu nào được chọn</h3>
+              <h3 className="text-base font-bold text-slate-800">Chưa có ảnh hoặc file PDF nào được chọn</h3>
               <p className="text-xs text-slate-500 max-w-sm">
-                Hãy nhấn <strong>Quét Camera</strong>, <strong>Chọn File</strong> (Ảnh/PDF nhiều trang), hoặc nhấn <strong>Ctrl+V</strong> để dán ảnh.
+                Hãy nhấn <strong>Chọn File PDF</strong>, <strong>Chọn Ảnh</strong>, <strong>Quét Camera</strong>, kéo thả file PDF vào đây hoặc nhấn <strong>Ctrl+V</strong>.
               </p>
             </div>
           )}
 
           {/* Results Section */}
           {resultVisible && (
-            <section ref={resultRef} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-subtle animate-slide-up space-y-5">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">Kết quả trích xuất</h3>
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                      engineBadge === 'gemini'
-                        ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                        : 'bg-amber-100 text-amber-800 border border-amber-200'
-                    }`}
-                  >
-                    {engineBadge === 'gemini' ? '✨ Gemini Vision 3.6 Flash' : '📝 Tesseract OCR'}
-                  </span>
+            <section ref={resultRef} className="space-y-6 animate-slide-up">
+              {/* Results Control Header */}
+              <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-subtle space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">Kết quả trích xuất</h3>
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                        engineBadge === 'gemini'
+                          ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                          : 'bg-amber-100 text-amber-800 border border-amber-200'
+                      }`}
+                    >
+                      {engineBadge === 'gemini' ? '✨ Gemini Vision 3.6 Flash' : '📝 Tesseract OCR'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                    <span>Tổng {tableItems.length} dòng hàng</span>
+                    {isMultiPage && <span className="text-blue-600 font-bold font-mono">({pageResults.length} trang riêng biệt)</span>}
+                  </div>
                 </div>
-                <span className="text-xs font-medium text-slate-500">{tableItems.length} dòng hàng</span>
+
+                {/* Multi-Page View Switcher */}
+                {isMultiPage && (
+                  <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-2xl overflow-x-auto">
+                    <button
+                      onClick={() => setActiveResultTab('separate')}
+                      className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm ${
+                        activeResultTab === 'separate'
+                          ? 'bg-blue-600 text-white shadow-blue-500/20'
+                          : 'bg-white text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <IconLayers className="w-3.5 h-3.5" />
+                      <span>📑 Tách Riêng {pageResults.length} Trang (Độc lập)</span>
+                    </button>
+
+                    {pageResults.map((p) => {
+                      const isActive = activeResultTab === p.pageNum;
+                      return (
+                        <button
+                          key={p.pageNum}
+                          onClick={() => setActiveResultTab(p.pageNum)}
+                          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                            isActive
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'bg-white/70 hover:bg-white text-slate-700'
+                          }`}
+                        >
+                          <span>📄 Chỉ Trang {p.pageNum}</span>
+                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${isActive ? 'bg-blue-800 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                            {p.items.length} dòng
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
-              {/* Slip Number Ticket Card */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50/60 p-4 rounded-xl border border-blue-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-blue-800">Số Phiếu Xuất/Nhập Kho</div>
-                  <input
-                    type="text"
-                    value={soPhieu}
-                    onChange={(e) => setSoPhieu(e.target.value)}
-                    placeholder="Chưa nhận dạng được số phiếu..."
-                    className="font-mono text-xl font-extrabold text-blue-900 bg-transparent border-none outline-none focus:ring-0 p-0 w-full"
-                  />
-                </div>
-                <button
-                  onClick={() => copyToClipboard(soPhieu, 'soPhieu')}
-                  className="self-start sm:self-center flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white hover:bg-blue-50 text-blue-700 font-semibold text-xs border border-blue-200 shadow-sm active:scale-95 transition-all"
-                >
-                  {copiedKey === 'soPhieu' ? <IconCheck className="w-4 h-4 text-emerald-600" /> : <IconCopy className="w-4 h-4" />}
-                  <span>{copiedKey === 'soPhieu' ? 'Đã sao chép' : 'Sao chép số phiếu'}</span>
-                </button>
-              </div>
+              {/* MODE 1: SEPARATE PAGES VIEW (Default for Multi-Page) */}
+              {(activeResultTab === 'separate' || !isMultiPage) && (
+                <div className="space-y-6">
+                  {(pageResults.length ? pageResults : [{ pageNum: 1, soPhieu, items: tableItems, previewUrl: previewSrc }]).map((page) => (
+                    <div
+                      key={page.pageNum}
+                      className="bg-white rounded-3xl p-5 sm:p-6 border-2 border-slate-200/90 shadow-card space-y-5 animate-fade-in"
+                    >
+                      {/* Page Card Header */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-xl bg-blue-600 text-white font-bold flex items-center justify-center text-sm shadow-sm">
+                            {page.pageNum}
+                          </div>
+                          <div>
+                            <h4 className="font-extrabold text-base text-slate-900 uppercase tracking-tight">
+                              Kết Quả Trang {page.pageNum}
+                            </h4>
+                            <span className="text-xs text-slate-500 font-semibold">{page.items.length} dòng hàng của trang {page.pageNum}</span>
+                          </div>
+                        </div>
 
-              {/* Dynamic Extracted Table */}
-              <div>
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">Chi tiết danh mục hàng hóa</div>
-                <div className="overflow-x-auto border border-slate-200 rounded-xl">
-                  <table className="w-full text-xs text-left border-collapse">
-                    <thead className="bg-slate-100/80 text-slate-600 uppercase font-bold text-[10px] border-b border-slate-200">
-                      <tr>
-                        <th className="p-2.5 text-center w-10">STT</th>
-                        {selectedColumns.map((k) => (
-                          <th key={k} className="p-2.5 whitespace-nowrap">
-                            {COLUMN_DEFS[k]?.short || k}
-                          </th>
-                        ))}
-                        <th className="p-2.5 text-center w-12">Copy</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {tableItems.length > 0 ? (
-                        tableItems.map((item, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="p-2 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
+                        {page.previewUrl && (
+                          <button
+                            onClick={() => loadImageFromDataUrl(page.previewUrl)}
+                            className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1.5 border border-blue-200 transition-all active:scale-95"
+                          >
+                            <IconEye className="w-4 h-4" />
+                            <span>Xem ảnh gốc Trang {page.pageNum}</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Slip Number Ticket for this Page */}
+                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50/70 p-4 rounded-2xl border border-blue-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-blue-800 flex items-center gap-2">
+                            <span>Số Phiếu — Trang {page.pageNum}</span>
+                          </div>
+                          <input
+                            type="text"
+                            value={page.soPhieu || ''}
+                            onChange={(e) => updatePageSoPhieu(page.pageNum, e.target.value)}
+                            placeholder={`Chưa có số phiếu Trang ${page.pageNum}...`}
+                            className="font-mono text-xl font-extrabold text-blue-900 bg-transparent border-none outline-none focus:ring-0 p-0 w-full"
+                          />
+                        </div>
+                        <button
+                          onClick={() => copyToClipboard(page.soPhieu, `sp_p${page.pageNum}`)}
+                          className="self-start sm:self-center flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-blue-50 text-blue-700 font-semibold text-xs border border-blue-200 shadow-sm active:scale-95 transition-all"
+                        >
+                          {copiedKey === `sp_p${page.pageNum}` ? (
+                            <IconCheck className="w-4 h-4 text-emerald-600" />
+                          ) : (
+                            <IconCopy className="w-4 h-4" />
+                          )}
+                          <span>{copiedKey === `sp_p${page.pageNum}` ? 'Đã sao chép' : `Sao chép số phiếu P.${page.pageNum}`}</span>
+                        </button>
+                      </div>
+
+                      {/* Items Table for this Page with STT starting from 1 */}
+                      <div>
+                        <div className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
+                          Bảng danh mục hàng hóa (Trang {page.pageNum})
+                        </div>
+                        <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                          <table className="w-full text-xs text-left border-collapse">
+                            <thead className="bg-slate-100 text-slate-600 uppercase font-bold text-[10px] border-b border-slate-200">
+                              <tr>
+                                <th className="p-2.5 text-center w-12">STT</th>
+                                {selectedColumns.map((k) => (
+                                  <th key={k} className="p-2.5 whitespace-nowrap">
+                                    {COLUMN_DEFS[k]?.short || k}
+                                  </th>
+                                ))}
+                                <th className="p-2.5 text-center w-12">Copy</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {page.items.length > 0 ? (
+                                page.items.map((item, idx) => (
+                                  <tr key={idx} className="hover:bg-blue-50/30 transition-colors">
+                                    <td className="p-2 text-center font-mono font-bold text-slate-500 bg-slate-50/50">
+                                      {idx + 1}
+                                    </td>
+                                    {selectedColumns.map((k) => (
+                                      <td key={k} className="p-1.5">
+                                        <input
+                                          type="text"
+                                          value={item[k] || ''}
+                                          onChange={(e) => updatePageItemCell(page.pageNum, idx, k, e.target.value)}
+                                          placeholder={COLUMN_DEFS[k]?.short}
+                                          className="w-full px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 focus:border-blue-500 focus:bg-white bg-transparent font-mono text-xs text-slate-800 outline-none transition-all"
+                                        />
+                                      </td>
+                                    ))}
+                                    <td className="p-2 text-center">
+                                      <button
+                                        onClick={() => {
+                                          const values = selectedColumns.map((k) => (item[k] || '').trim()).filter(Boolean);
+                                          copyToClipboard(values.join(' | '), `p${page.pageNum}_row_${idx}`);
+                                        }}
+                                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
+                                        title="Sao chép dòng này"
+                                      >
+                                        {copiedKey === `p${page.pageNum}_row_${idx}` ? (
+                                          <IconCheck className="w-4 h-4 text-emerald-600" />
+                                        ) : (
+                                          <IconCopy className="w-4 h-4" />
+                                        )}
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))
+                              ) : (
+                                <tr>
+                                  <td colSpan={selectedColumns.length + 2} className="p-8 text-center text-slate-400">
+                                    Trang này chưa có dữ liệu hàng hóa
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Column Quick Copy Chips for this Specific Page */}
+                      <div className="pt-2">
+                        <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                          Sao chép nhanh theo cột — Trang {page.pageNum}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedColumns.map((k) => (
+                            <button
+                              key={k}
+                              onClick={() => copyColumn(k, page.items, `p${page.pageNum}_`)}
+                              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-semibold text-xs border transition-all active:scale-95 ${
+                                copiedKey === `p${page.pageNum}_col_${k}`
+                                  ? 'bg-emerald-600 text-white border-emerald-600'
+                                  : 'bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border-slate-200/80 hover:border-blue-200'
+                              }`}
+                            >
+                              {copiedKey === `p${page.pageNum}_col_${k}` ? (
+                                <IconCheck className="w-3.5 h-3.5" />
+                              ) : (
+                                <IconCopy className="w-3.5 h-3.5 text-slate-400" />
+                              )}
+                              <span>{COLUMN_DEFS[k]?.short} (Trang {page.pageNum})</span>
+                              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-700 font-mono">
+                                {page.items.length}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* MODE 2: SINGLE SPECIFIC PAGE VIEW */}
+              {typeof activeResultTab === 'number' && singleTabResult && (
+                <div className="bg-white rounded-3xl p-5 sm:p-6 border-2 border-slate-200 shadow-card space-y-5 animate-fade-in">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3.5">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-blue-600 text-white font-bold flex items-center justify-center text-sm shadow-sm">
+                        {singleTabResult.pageNum}
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-base text-slate-900 uppercase tracking-tight">
+                          Kết Quả Trang {singleTabResult.pageNum}
+                        </h4>
+                        <span className="text-xs text-slate-500 font-semibold">{singleTabResult.items.length} dòng hàng</span>
+                      </div>
+                    </div>
+
+                    {singleTabResult.previewUrl && (
+                      <button
+                        onClick={() => loadImageFromDataUrl(singleTabResult.previewUrl)}
+                        className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold flex items-center gap-1.5 border border-blue-200 transition-all active:scale-95"
+                      >
+                        <IconEye className="w-4 h-4" />
+                        <span>Xem ảnh gốc Trang {singleTabResult.pageNum}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Slip Number */}
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50/70 p-4 rounded-2xl border border-blue-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex-1">
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-blue-800">
+                        Số Phiếu (Trang {singleTabResult.pageNum})
+                      </div>
+                      <input
+                        type="text"
+                        value={singleTabResult.soPhieu || ''}
+                        onChange={(e) => updatePageSoPhieu(singleTabResult.pageNum, e.target.value)}
+                        placeholder={`Chưa có số phiếu Trang ${singleTabResult.pageNum}...`}
+                        className="font-mono text-xl font-extrabold text-blue-900 bg-transparent border-none outline-none focus:ring-0 p-0 w-full"
+                      />
+                    </div>
+                    <button
+                      onClick={() => copyToClipboard(singleTabResult.soPhieu, `sp_single_${singleTabResult.pageNum}`)}
+                      className="self-start sm:self-center flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-blue-50 text-blue-700 font-semibold text-xs border border-blue-200 shadow-sm active:scale-95 transition-all"
+                    >
+                      {copiedKey === `sp_single_${singleTabResult.pageNum}` ? (
+                        <IconCheck className="w-4 h-4 text-emerald-600" />
+                      ) : (
+                        <IconCopy className="w-4 h-4" />
+                      )}
+                      <span>{copiedKey === `sp_single_${singleTabResult.pageNum}` ? 'Đã sao chép' : `Sao chép số phiếu`}</span>
+                    </button>
+                  </div>
+
+                  {/* Table */}
+                  <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                    <table className="w-full text-xs text-left border-collapse">
+                      <thead className="bg-slate-100 text-slate-600 uppercase font-bold text-[10px] border-b border-slate-200">
+                        <tr>
+                          <th className="p-2.5 text-center w-12">STT</th>
+                          {selectedColumns.map((k) => (
+                            <th key={k} className="p-2.5 whitespace-nowrap">
+                              {COLUMN_DEFS[k]?.short || k}
+                            </th>
+                          ))}
+                          <th className="p-2.5 text-center w-12">Copy</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {singleTabResult.items.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-blue-50/30 transition-colors">
+                            <td className="p-2 text-center font-mono font-bold text-slate-500 bg-slate-50/50">
+                              {idx + 1}
+                            </td>
                             {selectedColumns.map((k) => (
                               <td key={k} className="p-1.5">
                                 <input
                                   type="text"
                                   value={item[k] || ''}
-                                  onChange={(e) => {
-                                    const next = [...tableItems];
-                                    next[idx] = { ...next[idx], [k]: e.target.value };
-                                    setTableItems(next);
-                                  }}
+                                  onChange={(e) => updatePageItemCell(singleTabResult.pageNum, idx, k, e.target.value)}
                                   placeholder={COLUMN_DEFS[k]?.short}
-                                  className="w-full px-2 py-1.5 rounded-md border border-transparent hover:border-slate-200 focus:border-blue-500 focus:bg-white bg-transparent font-mono text-xs text-slate-800 outline-none transition-all"
+                                  className="w-full px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 focus:border-blue-500 focus:bg-white bg-transparent font-mono text-xs text-slate-800 outline-none transition-all"
                                 />
                               </td>
                             ))}
@@ -1609,12 +2031,12 @@ Không trả markdown hoặc giải thích.`;
                               <button
                                 onClick={() => {
                                   const values = selectedColumns.map((k) => (item[k] || '').trim()).filter(Boolean);
-                                  copyToClipboard(values.join(' | '), `row_${idx}`);
+                                  copyToClipboard(values.join(' | '), `s_${singleTabResult.pageNum}_${idx}`);
                                 }}
                                 className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
                                 title="Sao chép dòng này"
                               >
-                                {copiedKey === `row_${idx}` ? (
+                                {copiedKey === `s_${singleTabResult.pageNum}_${idx}` ? (
                                   <IconCheck className="w-4 h-4 text-emerald-600" />
                                 ) : (
                                   <IconCopy className="w-4 h-4" />
@@ -1622,58 +2044,53 @@ Không trả markdown hoặc giải thích.`;
                               </button>
                             </td>
                           </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={selectedColumns.length + 2} className="p-8 text-center text-slate-400">
-                            Chưa tìm thấy dòng dữ liệu hàng hóa
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
 
-              {/* Column Quick Copy Chips */}
-              <div>
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Sao chép nhanh theo từng cột</div>
-                <div className="flex flex-wrap gap-2">
-                  {selectedColumns.map((k) => (
-                    <button
-                      key={k}
-                      onClick={() => copyColumn(k)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all active:scale-95 ${
-                        copiedKey === `col_${k}`
-                          ? 'bg-emerald-600 text-white border-emerald-600'
-                          : 'bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border-slate-200/80 hover:border-blue-200'
-                      }`}
-                    >
-                      {copiedKey === `col_${k}` ? <IconCheck className="w-3.5 h-3.5" /> : <IconCopy className="w-3.5 h-3.5 text-slate-400" />}
-                      <span>{COLUMN_DEFS[k]?.short}</span>
-                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200/70 text-slate-700 font-mono">
-                        {tableItems.length}
-                      </span>
-                    </button>
-                  ))}
+                  {/* Copy Chips */}
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {selectedColumns.map((k) => (
+                      <button
+                        key={k}
+                        onClick={() => copyColumn(k, singleTabResult.items, `single_${singleTabResult.pageNum}_`)}
+                        className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-semibold text-xs border transition-all active:scale-95 ${
+                          copiedKey === `single_${singleTabResult.pageNum}_col_${k}`
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border-slate-200/80 hover:border-blue-200'
+                        }`}
+                      >
+                        {copiedKey === `single_${singleTabResult.pageNum}_col_${k}` ? (
+                          <IconCheck className="w-3.5 h-3.5" />
+                        ) : (
+                          <IconCopy className="w-3.5 h-3.5 text-slate-400" />
+                        )}
+                        <span>{COLUMN_DEFS[k]?.short} (Trang {singleTabResult.pageNum})</span>
+                        <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-700 font-mono">
+                          {singleTabResult.items.length}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* Footer Actions */}
-              <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
+              {/* Master Actions */}
+              <div className="bg-white rounded-2xl p-4 border border-slate-200 flex items-center gap-3">
                 <button
-                  onClick={() => saveHistoryRecord(currentHistoryId || 'h_' + Date.now(), soPhieu, tableItems, false)}
-                  className="flex-1 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-98 transition-all"
+                  onClick={() => saveHistoryRecord(currentHistoryId || 'h_' + Date.now(), soPhieu, tableItems, pageResults, false)}
+                  className="flex-1 py-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm active:scale-98 transition-all"
                 >
                   <IconSave className="w-4 h-4" />
-                  <span>Lưu Chỉnh Sửa Vào Lịch Sử</span>
+                  <span>Lưu Toàn Bộ Thay Đổi Vào Lịch Sử</span>
                 </button>
                 <button
                   onClick={resetAll}
-                  className="px-4 py-3 rounded-xl border border-red-200 hover:bg-red-50 text-red-600 font-bold text-xs flex items-center gap-1.5 active:scale-98 transition-all"
+                  className="px-5 py-3.5 rounded-xl border border-red-200 hover:bg-red-50 text-red-600 font-bold text-xs flex items-center gap-1.5 active:scale-98 transition-all"
                 >
                   <IconRefresh className="w-4 h-4" />
-                  <span>Quét Lại</span>
+                  <span>Quét Lại Mới</span>
                 </button>
               </div>
             </section>
@@ -1681,7 +2098,7 @@ Không trả markdown hoặc giải thích.`;
         </div>
       </main>
 
-      {/* PDF Multi-Page Preview & Selection Modal */}
+      {/* PDF Multi-Page Preview & Selection Modal with Multi-Selection */}
       {pdfModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white w-full max-w-2xl rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-modal flex flex-col gap-4 text-slate-900 max-h-[90vh]">
@@ -1690,7 +2107,7 @@ Không trả markdown hoặc giải thích.`;
                 <IconLayers className="w-5 h-5 text-blue-600" />
                 <div>
                   <h3 className="font-bold text-sm text-slate-900">File PDF Có {pdfPages.length} Trang</h3>
-                  <p className="text-[11px] text-slate-500">Chọn 1 trang chỉ định để quét hoặc quét gộp toàn bộ các trang</p>
+                  <p className="text-[11px] text-slate-500">Tích chọn các trang bạn muốn quét hoặc chọn 1 trang để quét riêng</p>
                 </div>
               </div>
               <button
@@ -1701,40 +2118,84 @@ Không trả markdown hoặc giải thích.`;
               </button>
             </div>
 
-            {/* Thumbnail Grid */}
+            {/* Quick Multi-Select Controls */}
+            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-2xl border border-slate-200 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-slate-700">
+                  Đã chọn <strong className="text-blue-600 font-mono text-sm">{selectedPdfPagesCount}</strong> / {pdfPages.length} trang
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => selectAllPdfPages(true)}
+                  className="px-3 py-1 rounded-lg bg-white hover:bg-blue-50 text-blue-600 border border-slate-200 text-xs font-semibold"
+                >
+                  Chọn tất cả
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selectAllPdfPages(false)}
+                  className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 text-xs font-semibold"
+                >
+                  Bỏ chọn hết
+                </button>
+              </div>
+            </div>
+
+            {/* Thumbnail Grid with Multi-Select Checkboxes */}
             <div className="flex-1 overflow-y-auto pr-1">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {pdfPages.map((page, idx) => {
-                  const isSelected = selectedPdfIndex === idx;
+                  const isChecked = !!page.selected;
+                  const isCurrentActive = selectedPdfIndex === idx;
                   return (
                     <div
                       key={page.pageNum}
-                      onClick={() => setSelectedPdfIndex(idx)}
-                      className={`group relative p-2.5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col items-center gap-2 ${
-                        isSelected
-                          ? 'border-blue-600 bg-blue-50/50 shadow-md ring-2 ring-blue-500/20'
-                          : 'border-slate-200 hover:border-slate-300 bg-slate-50/60'
+                      onClick={() => {
+                        setSelectedPdfIndex(idx);
+                        togglePdfPageSelect(idx);
+                      }}
+                      className={`group relative p-2.5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col items-center gap-2 select-none ${
+                        isChecked
+                          ? 'border-blue-600 bg-blue-50/40 shadow-sm ring-2 ring-blue-500/20'
+                          : 'border-slate-200 hover:border-slate-300 bg-slate-50/60 opacity-60 hover:opacity-90'
                       }`}
                     >
+                      {/* Checkbox badge on top-left */}
+                      <div
+                        className={`absolute top-3.5 left-3.5 z-10 w-6 h-6 rounded-lg flex items-center justify-center border transition-all ${
+                          isChecked
+                            ? 'bg-blue-600 border-blue-600 text-white shadow-md'
+                            : 'bg-white/90 border-slate-300 hover:border-blue-500 text-transparent'
+                        }`}
+                      >
+                        <IconCheck className="w-4 h-4 stroke-[3]" />
+                      </div>
+
+                      {/* Image Thumbnail */}
                       <div className="relative w-full aspect-[3/4] bg-white rounded-xl overflow-hidden shadow-sm border border-slate-200 flex items-center justify-center">
-                        <img src={page.thumbUrl} alt={`Trang ${page.pageNum}`} className="w-full h-full object-contain" />
-                        {isSelected && (
-                          <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-md animate-scale-in">
-                            <IconCheck className="w-3.5 h-3.5" />
-                          </div>
+                        <img src={page.thumbUrl} alt={`Trang ${page.pageNum}`} className="w-full h-full object-contain pointer-events-none" />
+                        {isCurrentActive && (
+                          <div className="absolute inset-0 ring-2 ring-blue-500/50 rounded-xl pointer-events-none" />
                         )}
                       </div>
 
+                      {/* Label & Actions */}
                       <div className="w-full flex items-center justify-between px-1">
-                        <span className="font-bold text-xs text-slate-800">Trang {page.pageNum}</span>
+                        <span className="font-bold text-xs text-slate-800 flex items-center gap-1">
+                          <span>Trang {page.pageNum}</span>
+                          {isChecked && <span className="text-[10px] text-blue-600 font-bold">(Đã chọn)</span>}
+                        </span>
                         <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             selectSinglePdfPage(idx);
                           }}
-                          className="text-[11px] text-blue-600 hover:underline font-semibold"
+                          className="text-[11px] text-blue-600 hover:underline font-bold px-1.5 py-0.5 rounded hover:bg-blue-100/50"
                         >
-                          Chọn trang này
+                          Quét riêng
                         </button>
                       </div>
                     </div>
@@ -1746,7 +2207,7 @@ Không trả markdown hoặc giải thích.`;
             {/* Actions */}
             <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
               <div className="text-xs text-slate-500">
-                Đang chọn: <strong>Trang {pdfPages[selectedPdfIndex]?.pageNum}</strong>
+                Đang xem: <strong>Trang {pdfPages[selectedPdfIndex]?.pageNum}</strong>
               </div>
 
               <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -1754,17 +2215,105 @@ Không trả markdown hoặc giải thích.`;
                   onClick={() => selectSinglePdfPage(selectedPdfIndex)}
                   className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition-all active:scale-95"
                 >
-                  Quét 1 Trang Đã Chọn
+                  Quét 1 Trang Đang Xem (P.{pdfPages[selectedPdfIndex]?.pageNum})
                 </button>
 
                 <button
-                  onClick={startBatchPdfScan}
-                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-95"
+                  onClick={() => startBatchPdfScan()}
+                  disabled={selectedPdfPagesCount === 0}
+                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-40"
                 >
                   <IconSparkles className="w-4 h-4" />
-                  <span>Quét Tất Cả {pdfPages.length} Trang</span>
+                  <span>Quét {selectedPdfPagesCount} Trang Đã Chọn</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Real-time Multi-Page Batch Progress Dialog */}
+      {batchProgressModal.active && (
+        <div className="fixed inset-0 z-[600] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white w-full max-w-lg rounded-3xl p-6 border border-slate-200 shadow-modal flex flex-col gap-4 text-slate-900 animate-slide-up">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <IconLayers className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">
+                    Đang Quét File PDF ({batchProgressModal.current}/{batchProgressModal.total} Trang)
+                  </h3>
+                  <p className="text-xs text-slate-500">Tiến trình nhận dạng AI đang diễn ra theo từng trang</p>
+                </div>
+              </div>
+              <span className="font-mono font-extrabold text-blue-600 text-base">
+                {batchProgressModal.percent}%
+              </span>
+            </div>
+
+            {/* Main Progress Bar */}
+            <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 transition-all duration-300 rounded-full"
+                style={{ width: `${batchProgressModal.percent}%` }}
+              />
+            </div>
+
+            {/* Per-Page Progress Items List */}
+            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+              {batchProgressModal.pageStatuses.map((ps) => (
+                <div
+                  key={ps.pageNum}
+                  className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs transition-all ${
+                    ps.status === 'running'
+                      ? 'bg-blue-50/80 border-blue-300 ring-2 ring-blue-500/20'
+                      : ps.status === 'done'
+                      ? 'bg-emerald-50/50 border-emerald-200'
+                      : ps.status === 'error'
+                      ? 'bg-red-50/50 border-red-200'
+                      : 'bg-slate-50 border-slate-200 opacity-60'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[11px] ${
+                        ps.status === 'done'
+                          ? 'bg-emerald-600 text-white'
+                          : ps.status === 'running'
+                          ? 'bg-blue-600 text-white animate-pulse'
+                          : ps.status === 'error'
+                          ? 'bg-red-600 text-white'
+                          : 'bg-slate-200 text-slate-600'
+                      }`}
+                    >
+                      {ps.pageNum}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-800">
+                        Trang {ps.pageNum} {ps.soPhieu ? `— Số phiếu: ${ps.soPhieu}` : ''}
+                      </div>
+                      <div className="text-[11px] text-slate-500 truncate">{ps.detail}</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    {ps.status === 'running' && (
+                      <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                    )}
+                    {ps.status === 'done' && (
+                      <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                        +{ps.lines} dòng
+                      </span>
+                    )}
+                    {ps.status === 'error' && (
+                      <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 font-bold text-[10px]">Lỗi</span>
+                    )}
+                    {ps.status === 'pending' && <span className="text-[10px] text-slate-400">Chờ...</span>}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -1974,7 +2523,14 @@ Không trả markdown hoặc giải thích.`;
                     className="p-3.5 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/40 cursor-pointer transition-all flex items-center justify-between gap-3"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="font-mono font-bold text-sm text-slate-900">{item.soPhieu || 'Không có số phiếu'}</div>
+                      <div className="font-mono font-bold text-sm text-slate-900 flex items-center gap-2">
+                        <span>{item.soPhieu || 'Không có số phiếu'}</span>
+                        {item.pageResults?.length > 1 && (
+                          <span className="px-1.5 py-0.2 rounded bg-blue-100 text-blue-700 text-[10px] font-bold">
+                            {item.pageResults.length} trang tách biệt
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-slate-500 mt-0.5">
                         {formatDate(item.updatedAt || item.createdAt)} • {item.items?.length || 0} dòng
                       </div>
@@ -2325,7 +2881,7 @@ Không trả markdown hoặc giải thích.`;
       {/* Floating Toast Notification */}
       {toast && (
         <div
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[600] px-5 py-3 rounded-full text-xs font-bold text-white shadow-modal animate-fade-in flex items-center gap-2 ${
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[700] px-5 py-3 rounded-full text-xs font-bold text-white shadow-modal animate-fade-in flex items-center gap-2 ${
             toast.type === 'success'
               ? 'bg-emerald-600'
               : toast.type === 'error'
