@@ -32,6 +32,7 @@ import {
   IconShare,
   IconDevicePhone,
 } from '@/components/Icons';
+import QrCodeCanvas from '@/components/QrCodeCanvas';
 
 const COLUMN_DEFS = {
   ten: { label: 'Tên, nhãn hiệu, quy cách phẩm chất vật tư, dụng cụ, sản phẩm, hàng hóa', short: 'Tên / mã hàng' },
@@ -46,15 +47,49 @@ const COLUMN_DEFS = {
 const DEFAULT_COLUMNS = ['ten', 'soOSPO', 'donViTinh', 'soLuongChungTu', 'soLuongThucNhap', 'soPallet', 'ghiChu'];
 
 const DEFAULT_FIELD_PROMPTS = {
-  soPhieu: 'Tìm số phiếu hoặc số chứng từ. Giữ nguyên tiền tố, dấu cách và toàn bộ chữ số như trên phiếu.',
-  ten: 'Lấy mã hàng hoặc tên hàng hóa thực tế. Không gộp hai dòng hàng thành một giá trị.',
-  soOSPO: 'Lấy đúng mã O.S/PO, đơn đặt hàng hoặc mã tham chiếu được in trên cùng dòng hàng.',
-  donViTinh: 'Lấy đơn vị tính viết trên phiếu, ví dụ EA, PCS, KG, BOX. Không tự suy diễn.',
-  soLuongChungTu: 'Chỉ lấy số lượng theo chứng từ. Chỉ trả về số, không thêm đơn vị tính.',
-  soLuongThucNhap: 'Chỉ lấy số lượng thực nhập. Chỉ trả về số, không thêm đơn vị tính.',
-  soPallet: 'Lấy số pallet hoặc mã pallet. Giữ số 0 ở đầu nếu có.',
-  ghiChu: 'Lấy ghi chú cùng dòng hàng nếu có; nếu trống thì trả về chuỗi rỗng.',
+  soPhieu: 'Đọc kỹ số phiếu/số chứng từ ở đầu phiếu, bao gồm cả số in sẵn hoặc chữ viết tay bổ sung. Giữ nguyên toàn bộ ký tự và số.',
+  ten: 'Lấy chính xác tên hàng, quy cách hoặc mã sản phẩm (đọc cả chữ viết tay tiếng Việt có dấu, chữ viết tắt như Thùng, Cuộn, Cây, Bộ, Hộp). Không gộp hai dòng hàng thành một.',
+  soOSPO: 'Chỉ lấy số, không lấy thêm bất kỳ chữ hay ký tự nào. Tự động điều chỉnh theo định dạng 5 chữ số (xxxxx): nếu trên phiếu ghi dạng TiềnTố-HậuTố (ví dụ: 8-999 -> 80999, 8-99 -> 80099, 8-9 -> 80009, 8-1999 -> 81999, 8-x999 -> 8x999) thì phần sau dấu gạch nối luôn được bù số 0 ở đầu thành 4 chữ số ghép với số đầu.',
+  donViTinh: 'Lấy đơn vị tính viết trên phiếu (ví dụ: EA, PCS, KG, BOX, CÁI, THÙNG, BỘ, CUỘN, CÂY). Không tự suy diễn.',
+  soLuongChungTu: 'Chỉ lấy số lượng theo chứng từ (chỉ trả về số thuần). Nếu có chữ viết tay sửa đổi/ghi đè lên số in, ưu tiên lấy số viết tay mới nhất.',
+  soLuongThucNhap: 'Chỉ lấy số lượng thực nhập/thực xuất (chỉ trả về số thuần). Đọc kỹ các con số viết tay bằng bút bi/bút mực.',
+  soPallet: 'Lấy số pallet hoặc mã pallet viết tay/in sẵn. Giữ nguyên số 0 ở đầu nếu có.',
+  ghiChu: 'Lấy ghi chú viết tay hoặc in cùng dòng hàng nếu có; nếu trống thì trả về chuỗi rỗng.',
 };
+
+export function formatOSPO(raw) {
+  if (raw === null || raw === undefined) return '';
+  let str = String(raw).trim();
+  if (!str || str === '???') return str;
+
+  // 1. Kiểm tra nếu có dấu gạch nối hoặc dấu phân cách: ví dụ "8-999", "8 - 99", "8.999", "8/9"
+  const matchWithSep = str.match(/(\d+)\s*[-/._\s]\s*(\d+)/);
+  if (matchWithSep) {
+    const prefix = matchWithSep[1];
+    const suffix = matchWithSep[2];
+    // Hậu tố được bù các số 0 ở đầu thành đúng 4 chữ số
+    const paddedSuffix = suffix.padStart(4, '0');
+    return `${prefix}${paddedSuffix}`;
+  }
+
+  // 2. Nếu là số thuần hoặc chuỗi chứa số: chỉ giữ lại các chữ số
+  const onlyDigits = str.replace(/\D/g, '');
+  if (!onlyDigits) return '';
+
+  // Nếu đã từ 5 chữ số trở lên thì giữ nguyên
+  if (onlyDigits.length >= 5) {
+    return onlyDigits;
+  }
+
+  // Nếu từ 2 đến 4 chữ số (ví dụ "8999" -> 8 + 0999 = 80999; "899" -> 80099)
+  if (onlyDigits.length >= 2 && onlyDigits.length < 5) {
+    const prefix = onlyDigits[0];
+    const suffix = onlyDigits.slice(1);
+    return `${prefix}${suffix.padStart(4, '0')}`;
+  }
+
+  return onlyDigits;
+}
 
 const API_LOCAL_LIMIT = 20;
 
@@ -63,9 +98,10 @@ const APPS_SCRIPT_SAMPLE = `function doPost(e) {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     var contents = e.postData ? e.postData.contents : "{}";
     var data = JSON.parse(contents);
+    var lastRow = sheet.getLastRow();
     
-    // Tự động thêm tiêu đề cột nếu sheet đang trống
-    if (sheet.getLastRow() === 0) {
+    // Tự động thêm tiêu đề cột nếu sheet đang hoàn toàn trống
+    if (lastRow === 0) {
       sheet.appendRow([
         "Thời Gian Lưu",
         "Số Phiếu",
@@ -80,9 +116,7 @@ const APPS_SCRIPT_SAMPLE = `function doPost(e) {
       ]);
       sheet.getRange(1, 1, 1, 10).setFontWeight("bold").setBackground("#E8F0FE");
       sheet.setFrozenRows(1);
-    } else if (sheet.getLastRow() > 1) {
-      // Cách 1 dòng trống giữa các phiếu để dễ nhận biết
-      sheet.appendRow(["", "", "", "", "", "", "", "", "", ""]);
+      lastRow = 1;
     }
     
     var time = Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "yyyy-MM-dd HH:mm:ss");
@@ -90,6 +124,11 @@ const APPS_SCRIPT_SAMPLE = `function doPost(e) {
     var defaultSoPhieu = data.soPhieu || "";
     var defaultPageNum = data.pageNum || 1;
     var rows = [];
+    
+    // 🌟 Tự động chèn 1 dòng trống phân cách giữa các lần lưu phiếu (khi đã có dữ liệu trước đó)
+    if (lastRow > 1) {
+      rows.push(["", "", "", "", "", "", "", "", "", ""]);
+    }
     
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
@@ -108,10 +147,11 @@ const APPS_SCRIPT_SAMPLE = `function doPost(e) {
     }
     
     if (rows.length > 0) {
-      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 10).setValues(rows);
+      var startRow = lastRow + 1;
+      sheet.getRange(startRow, 1, rows.length, 10).setValues(rows);
     }
     
-    return ContentService.createTextOutput(JSON.stringify({ status: "success", count: rows.length }))
+    return ContentService.createTextOutput(JSON.stringify({ status: "success", count: items.length }))
       .setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
@@ -433,11 +473,11 @@ export default function Home() {
     }
   };
 
-  const getShareLink = () => {
-    const code = cloudSyncCode || syncCodeInput || 'KHO-01';
-    if (typeof window === 'undefined') return '';
-    return `${window.location.origin}/?sync=${encodeURIComponent(code.trim().toUpperCase())}`;
-  };
+  const getShareLink = useCallback(() => {
+    const code = (cloudSyncCode || syncCodeInput || 'KHO-01').trim().toUpperCase();
+    const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://scanzzz.vercel.app';
+    return `${origin}/?sync=${encodeURIComponent(code)}`;
+  }, [cloudSyncCode, syncCodeInput]);
 
   const generateRandomSyncCode = () => {
     const randomNum = Math.floor(100000 + Math.random() * 900000);
@@ -1042,12 +1082,23 @@ export default function Home() {
       .map((k) => `- ${k === 'soPhieu' ? 'Số phiếu' : COLUMN_DEFS[k]?.short || k} → trường ${k}: ${fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''}`)
       .join('\n');
 
-    const promptText = `Bạn là hệ thống OCR chuyên đọc phiếu nhập kho / xuất kho Việt Nam. Hãy đọc chính xác phần đầu phiếu và bảng hàng hóa.
+    const promptText = `Bạn là chuyên gia thị giác AI OCR chuyên đọc phiếu xuất kho / nhập kho / giao hàng Việt Nam, đặc biệt xử lý xuất sắc CHỮ VIẾT TAY và BẢNG BIỂU PHỨC TẠP.
 
-Trích xuất số phiếu và các cột được chọn theo hướng dẫn riêng sau:
+HƯỚNG DẪN NHẬN DIỆN CHỮ VIẾT TAY:
+1. Đọc chuẩn xác chữ viết tay tiếng Việt (chữ viết bút bi, bút mực, nét ngoáy, nét nghiêng, viết đè, viết tắt).
+2. Phân biệt rõ các ký tự số viết tay dễ nhầm lẫn:
+   - Số 0 và chữ O, D
+   - Số 1 và số 7, chữ l, I, /
+   - Số 2 và chữ Z
+   - Số 5 và chữ S, số 6
+   - Số 8 và chữ B, số 0
+3. Nếu một ô có cả chữ in và chữ viết tay sửa/ghi đè lên, ưu tiên lấy giá trị viết tay mới nhất.
+4. Quét từng dòng bảng từ trên xuống dưới theo chiều ngang, không bỏ sót dòng viết tay nhỏ hoặc dòng ở cuối bảng. Bỏ qua các dòng tổng cộng ("Tổng", "Cộng", "Tổng số lượng", "Ký nhận").
+
+QUY TẮC TRÍCH XUẤT CHO TỪNG CỘT:
 ${rules}
 
-Chỉ lấy dòng hàng hóa có dữ liệu thực tế, bỏ qua dòng trống và dòng tổng cộng. Nếu một trường không đọc được, ghi "???". Không tự suy diễn dữ liệu không xuất hiện trên phiếu.
+Nếu một trường hoàn toàn không đọc được, ghi "???". Không tự suy diễn dữ liệu không xuất hiện trên phiếu.
 
 Trả về đúng JSON thuần theo cấu trúc:
 {
@@ -1214,7 +1265,11 @@ Không trả markdown hoặc giải thích.`;
 
       const normalizedItems = (Array.isArray(resultData.items) ? resultData.items : []).map((item) => {
         const out = {};
-        selectedColumns.forEach((k) => (out[k] = item?.[k] ?? ''));
+        selectedColumns.forEach((k) => {
+          let val = item?.[k] ?? '';
+          if (k === 'soOSPO') val = formatOSPO(val);
+          out[k] = val;
+        });
         return out;
       });
 
@@ -1323,7 +1378,11 @@ Không trả markdown hoặc giải thích.`;
 
           const normalized = (Array.isArray(pageResult.items) ? pageResult.items : []).map((item) => {
             const out = { _pageNum: pageNum, soPhieu: pageSoPhieu };
-            selectedColumns.forEach((k) => (out[k] = item?.[k] ?? ''));
+            selectedColumns.forEach((k) => {
+              let val = item?.[k] ?? '';
+              if (k === 'soOSPO') val = formatOSPO(val);
+              out[k] = val;
+            });
             return out;
           });
 
@@ -1695,8 +1754,6 @@ Không trả markdown hoặc giải thích.`;
   const singleTabResult = typeof activeResultTab === 'number'
     ? pageResults.find((p) => p.pageNum === activeResultTab)
     : null;
-
-  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(getShareLink())}`;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
@@ -2298,6 +2355,14 @@ Không trả markdown hoặc giải thích.`;
                                           type="text"
                                           value={item[k] || ''}
                                           onChange={(e) => updatePageItemCell(page.pageNum, idx, k, e.target.value)}
+                                          onBlur={(e) => {
+                                            if (k === 'soOSPO') {
+                                              const formatted = formatOSPO(e.target.value);
+                                              if (formatted !== e.target.value) {
+                                                updatePageItemCell(page.pageNum, idx, k, formatted);
+                                              }
+                                            }
+                                          }}
                                           placeholder={COLUMN_DEFS[k]?.short}
                                           className="w-full px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 focus:border-blue-500 focus:bg-white bg-transparent font-mono text-xs text-slate-800 outline-none transition-all"
                                         />
@@ -2458,6 +2523,14 @@ Không trả markdown hoặc giải thích.`;
                                   type="text"
                                   value={item[k] || ''}
                                   onChange={(e) => updatePageItemCell(singleTabResult.pageNum, idx, k, e.target.value)}
+                                  onBlur={(e) => {
+                                    if (k === 'soOSPO') {
+                                      const formatted = formatOSPO(e.target.value);
+                                      if (formatted !== e.target.value) {
+                                        updatePageItemCell(singleTabResult.pageNum, idx, k, formatted);
+                                      }
+                                    }
+                                  }}
                                   placeholder={COLUMN_DEFS[k]?.short}
                                   className="w-full px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 focus:border-blue-500 focus:bg-white bg-transparent font-mono text-xs text-slate-800 outline-none transition-all"
                                 />
@@ -3048,12 +3121,8 @@ Không trả markdown hoặc giải thích.`;
               </button>
             </div>
 
-            <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
-              <img
-                src={qrImageUrl}
-                alt="QR Code Sync"
-                className="w-48 h-48 rounded-xl object-contain mx-auto shadow-sm"
-              />
+            <div className="p-3 bg-white rounded-2xl border border-slate-200 shadow-sm flex items-center justify-center">
+              <QrCodeCanvas text={getShareLink()} size={200} />
             </div>
 
             <div className="space-y-1">
@@ -3171,10 +3240,10 @@ Không trả markdown hoặc giải thích.`;
                   <div className="p-3.5 bg-gradient-to-r from-blue-50 to-indigo-50/70 rounded-2xl border border-blue-200 space-y-2">
                     <div className="flex items-center gap-2 text-blue-950 font-bold">
                       <IconCloud className="w-5 h-5 text-blue-600" />
-                      <span>Đồng Bộ Cấu Hình API, Bộ Đếm & Google Sheet</span>
+                      <span>Đồng Bộ Cấu Hình API, Bộ Đếm, Google Sheet, Cột & Prompt</span>
                     </div>
                     <p className="text-[11px] text-blue-900 leading-relaxed">
-                      Chỉ cần nhập cùng một <strong>Mã Đồng Bộ</strong> hoặc <strong>Quét mã QR</strong> trên điện thoại / máy tính khác, toàn bộ API Key Gemini, Bộ đếm lượt dùng và Link Google Sheet sẽ được tự động đồng bộ ngay lập tức!
+                      Chỉ cần nhập cùng một <strong>Mã Đồng Bộ</strong> hoặc <strong>Quét mã QR</strong> trên thiết bị khác, toàn bộ <strong>API Key Gemini</strong>, <strong>Bộ đếm lượt dùng (20 lượt)</strong>, <strong>Link Google Sheet</strong>, <strong>Cột trích xuất</strong> và <strong>Gợi ý Prompt</strong> sẽ được tự động đồng bộ ngay lập tức!
                     </p>
                   </div>
 
@@ -3248,8 +3317,8 @@ Không trả markdown hoặc giải thích.`;
 
                   {/* Mobile QR Code & Share Box */}
                   <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center gap-4">
-                    <div className="w-24 h-24 bg-white p-1 rounded-xl border border-slate-200 shadow-sm flex items-center justify-center flex-shrink-0">
-                      <img src={qrImageUrl} alt="QR Code" className="w-full h-full object-contain" />
+                    <div className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex items-center justify-center flex-shrink-0">
+                      <QrCodeCanvas text={getShareLink()} size={96} />
                     </div>
                     <div className="space-y-1.5 text-center sm:text-left flex-1">
                       <div className="font-bold text-slate-800 text-xs">Quét QR mở ngay trên điện thoại:</div>
