@@ -1,15 +1,6 @@
 /**
  * GOOGLE APPS SCRIPT CHO GOOGLE SHEETS TỰ ĐỘNG LƯU PHIẾU XUẤT/NHẬP KHO
- * 
- * HƯỚNG DẪN 3 BƯỚC:
- * 1. Mở file Google Sheet của bạn -> Vào menu "Tiện ích mở rộng" (Extensions) -> Chọn "Apps Script".
- * 2. Xóa hết mã cũ, dán toàn bộ đoạn code này vào -> Nhấn biểu tượng Lưu (Ctrl+S).
- * 3. Nhấn "Triển khai" (Deploy) -> "Tùy chọn triển khai mới" (New deployment):
- *    - Chọn loại: "Ứng dụng web" (Web app)
- *    - Mô tả: "Scan Phieu Webhook"
- *    - Người có quyền truy cập (Who has access): Chọn "Bất kỳ ai" (Anyone)
- *    - Nhấn "Triển khai" (Deploy) -> Cấp quyền truy cập nếu được hỏi -> Sao chép URL Webhook (kết thúc bằng /exec).
- * 4. Dán URL Webhook vừa sao chép vào mục "Cài đặt ⚙️" -> "Google Sheet 📊" trên web Scan Phiếu.
+ * (Tự động cách 1 dòng trống giữa các phiếu khác nhau)
  */
 
 function doPost(e) {
@@ -40,6 +31,9 @@ function doPost(e) {
       headerRange.setFontColor("#1E3A8A");
       headerRange.setHorizontalAlignment("center");
       sheet.setFrozenRows(1);
+    } else if (sheet.getLastRow() > 1) {
+      // Tự động cách 1 dòng trống giữa các phiếu khác nhau để dễ nhận biết
+      sheet.appendRow(["", "", "", "", "", "", "", "", "", ""]);
     }
 
     var time = Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "yyyy-MM-dd HH:mm:ss");

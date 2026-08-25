@@ -57,7 +57,8 @@ const API_LOCAL_LIMIT = 20;
 const APPS_SCRIPT_SAMPLE = `function doPost(e) {
   try {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    var data = JSON.parse(e.postData ? e.postData.contents : "{}");
+    var contents = e.postData ? e.postData.contents : "{}";
+    var data = JSON.parse(contents);
     
     // Tự động thêm tiêu đề cột nếu sheet đang trống
     if (sheet.getLastRow() === 0) {
@@ -75,18 +76,23 @@ const APPS_SCRIPT_SAMPLE = `function doPost(e) {
       ]);
       sheet.getRange(1, 1, 1, 10).setFontWeight("bold").setBackground("#E8F0FE");
       sheet.setFrozenRows(1);
+    } else if (sheet.getLastRow() > 1) {
+      // Cách 1 dòng trống giữa các phiếu để dễ nhận biết
+      sheet.appendRow(["", "", "", "", "", "", "", "", "", ""]);
     }
     
     var time = Utilities.formatDate(new Date(), "Asia/Ho_Chi_Minh", "yyyy-MM-dd HH:mm:ss");
     var items = Array.isArray(data.items) ? data.items : [];
+    var defaultSoPhieu = data.soPhieu || "";
+    var defaultPageNum = data.pageNum || 1;
     var rows = [];
     
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
       rows.push([
         time,
-        item.soPhieu || data.soPhieu || "",
-        item._pageNum || data.pageNum || 1,
+        item.soPhieu || defaultSoPhieu,
+        item._pageNum || defaultPageNum,
         item.ten || "",
         item.soOSPO || "",
         item.donViTinh || "",
@@ -107,7 +113,7 @@ const APPS_SCRIPT_SAMPLE = `function doPost(e) {
     return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
   }
-}`;
+};`;
 
 export default function Home() {
   // Toast state
