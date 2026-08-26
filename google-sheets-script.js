@@ -5,10 +5,19 @@
 
 function doPost(e) {
   try {
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    var contents = e.postData ? e.postData.contents : "{}";
-    var data = JSON.parse(contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss ? ss.getActiveSheet() : SpreadsheetApp.getActiveSheet();
 
+    var contents = "";
+    if (e && e.postData && e.postData.contents) {
+      contents = e.postData.contents;
+    } else if (e && e.parameter && e.parameter.data) {
+      contents = e.parameter.data;
+    } else {
+      contents = "{}";
+    }
+
+    var data = typeof contents === "object" ? contents : JSON.parse(contents);
     var lastRow = sheet.getLastRow();
 
     // 1. Tự động tạo hàng Tiêu Đề nếu Sheet đang hoàn toàn trống
@@ -25,7 +34,7 @@ function doPost(e) {
         "Số Pallet",
         "Ghi Chú"
       ]);
-      
+
       // Định dạng Tiêu đề (In đậm, nền xanh dương nhạt, căn giữa)
       var headerRange = sheet.getRange(1, 1, 1, 10);
       headerRange.setFontWeight("bold");

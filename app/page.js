@@ -91,30 +91,53 @@ export function formatOSPO(raw) {
   return onlyDigits;
 }
 
+export function getGmt7DateString(d = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}
+
 const API_LOCAL_LIMIT = 20;
 
 const APPS_SCRIPT_SAMPLE = `function doPost(e) {
   try {
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    var contents = e.postData ? e.postData.contents : "{}";
-    var data = JSON.parse(contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss ? ss.getActiveSheet() : SpreadsheetApp.getActiveSheet();
+    
+    var contents = "";
+    if (e && e.postData && e.postData.contents) {
+      contents = e.postData.contents;
+    } else if (e && e.parameter && e.parameter.data) {
+      contents = e.parameter.data;
+    } else {
+      contents = "{}";
+    }
+
+    var data = typeof contents === "object" ? contents : JSON.parse(contents);
     var lastRow = sheet.getLastRow();
     
-    // Tự động thêm tiêu đề cột nếu sheet đang hoàn toàn trống
+    // 1. Tự động thêm tiêu đề cột nếu sheet đang hoàn toàn trống
     if (lastRow === 0) {
       sheet.appendRow([
         "Thời Gian Lưu",
         "Số Phiếu",
         "Trang",
-        "Tên / Mã Hàng",
+        "Tên / Mã Hàng Hóa",
         "Số O.S/PO",
         "Đơn Vị Tính",
-        "SL Chứng Từ",
+        "SL Theo Chứng Từ",
         "SL Thực Nhập",
         "Số Pallet",
         "Ghi Chú"
       ]);
-      sheet.getRange(1, 1, 1, 10).setFontWeight("bold").setBackground("#E8F0FE");
+      var headerRange = sheet.getRange(1, 1, 1, 10);
+      headerRange.setFontWeight("bold");
+      headerRange.setBackground("#E8F0FE");
+      headerRange.setFontColor("#1E3A8A");
+      headerRange.setHorizontalAlignment("center");
       sheet.setFrozenRows(1);
       lastRow = 1;
     }
@@ -125,7 +148,7 @@ const APPS_SCRIPT_SAMPLE = `function doPost(e) {
     var defaultPageNum = data.pageNum || 1;
     var rows = [];
     
-    // 🌟 Tự động chèn 1 dòng trống phân cách giữa các lần lưu phiếu (khi đã có dữ liệu trước đó)
+    // 2. 🌟 Tự động chèn 1 dòng trống phân cách giữa các lần lưu phiếu khác nhau (khi đã có dữ liệu trước đó)
     if (lastRow > 1) {
       rows.push(["", "", "", "", "", "", "", "", "", ""]);
     }
@@ -148,15 +171,31 @@ const APPS_SCRIPT_SAMPLE = `function doPost(e) {
     
     if (rows.length > 0) {
       var startRow = lastRow + 1;
-      sheet.getRange(startRow, 1, rows.length, 10).setValues(rows);
+      var range = sheet.getRange(startRow, 1, rows.length, 10);
+      range.setValues(rows);
+      range.setFontFamily("Arial");
+      range.setFontSize(10);
     }
     
-    return ContentService.createTextOutput(JSON.stringify({ status: "success", count: items.length }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ 
+      status: "success", 
+      message: "Đã lưu " + items.length + " dòng thành công",
+      count: items.length,
+      time: time 
+    })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ 
+      status: "error", 
+      message: err.toString() 
+    })).setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+function doGet(e) {
+  return ContentService.createTextOutput(JSON.stringify({
+    status: "online",
+    message: "Google Apps Script Webhook cho Scan Phieu đang hoạt động tốt!"
+  })).setMimeType(ContentService.MimeType.JSON);
 };`;
 
 export default function Home() {
@@ -238,6 +277,7 @@ export default function Home() {
   const [cameraOpen, setCameraOpen] = useState(false);
 
   // Image edits state
+  const [rawOriginalSrc, setRawOriginalSrc] = useState(null);
   const [imageSharpened, setImageSharpened] = useState(false);
   const [unsharpenedSrc, setUnsharpenedSrc] = useState(null);
   const [cropSourceSrc, setCropSourceSrc] = useState(null);
@@ -298,8 +338,25 @@ export default function Home() {
     }
 
     try {
-      const usage = JSON.parse(localStorage.getItem('gemini_api_usage') || '{}');
-      setApiUsage(usage);
+      const todayGmt7 = getGmt7DateString();
+      const lastQuotaDate = localStorage.getItem('gemini_quota_date');
+      const rawUsage = JSON.parse(localStorage.getItem('gemini_api_usage') || '{}');
+
+      if (lastQuotaDate && lastQuotaDate !== todayGmt7) {
+        // Reset 0h GMT+7
+        const resetUsage = {};
+        Object.keys(rawUsage).forEach((k) => {
+          if (k === '_date') return;
+          resetUsage[k] = { ...(rawUsage[k] || {}), used: 0, checkStatus: 'Đã reset 0h GMT+7' };
+        });
+        resetUsage._date = todayGmt7;
+        setApiUsage(resetUsage);
+        localStorage.setItem('gemini_api_usage', JSON.stringify(resetUsage));
+        localStorage.setItem('gemini_quota_date', todayGmt7);
+      } else {
+        setApiUsage(rawUsage);
+        if (!lastQuotaDate) localStorage.setItem('gemini_quota_date', todayGmt7);
+      }
     } catch {
       setApiUsage({});
     }
@@ -347,6 +404,29 @@ export default function Home() {
         pullFromCloud(savedSyncCode, true);
       }
     }
+
+    // Real-time background timer for crossing 0h GMT+7
+    const quotaTimer = setInterval(() => {
+      const currentToday = getGmt7DateString();
+      const recordedDate = localStorage.getItem('gemini_quota_date');
+      if (recordedDate && recordedDate !== currentToday) {
+        console.log(`[0h GMT+7 Quota Reset] Date rolled over to ${currentToday}`);
+        setApiUsage((prev) => {
+          const next = {};
+          Object.keys(prev).forEach((k) => {
+            if (k === '_date') return;
+            next[k] = { ...(prev[k] || {}), used: 0, checkStatus: 'Đã reset 0h GMT+7' };
+          });
+          next._date = currentToday;
+          localStorage.setItem('gemini_api_usage', JSON.stringify(next));
+          localStorage.setItem('gemini_quota_date', currentToday);
+          return next;
+        });
+        setRateLimitedKeys(new Set());
+      }
+    }, 15000);
+
+    return () => clearInterval(quotaTimer);
   }, []);
 
   const applyViewMode = (mode) => {
@@ -562,7 +642,7 @@ export default function Home() {
     });
   }, [apiUsage, cloudSyncCode, apiKey, backupKeys, googleSheetUrl, autoSyncSheet, selectedColumns, fieldPrompts]);
 
-  const loadImageFromDataUrl = useCallback((dataUrl) => {
+  const loadImageFromDataUrl = useCallback((dataUrl, isNewRaw = true) => {
     const img = new Image();
     img.onload = () => {
       let { width, height } = img;
@@ -580,7 +660,7 @@ export default function Home() {
       canvas.width = width;
       canvas.height = height;
       canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      const jpegUrl = canvas.toDataURL('image/jpeg', 0.9);
+      const jpegUrl = canvas.toDataURL('image/jpeg', 0.94);
 
       setCurrentImageBase64(jpegUrl.split(',')[1]);
       setCurrentImageMimeType('image/jpeg');
@@ -588,6 +668,10 @@ export default function Home() {
       setResultVisible(false);
       setImageSharpened(false);
       setUnsharpenedSrc(null);
+
+      if (isNewRaw) {
+        setRawOriginalSrc(jpegUrl);
+      }
     };
     img.src = dataUrl;
   }, []);
@@ -901,14 +985,29 @@ export default function Home() {
   };
 
   const toggleSharpen = () => {
-    if (imageSharpened && unsharpenedSrc) {
-      setImageSharpened(false);
-      loadImageFromDataUrl(unsharpenedSrc);
-      showToast('Đã tắt làm nét', 'success');
+    if (imageSharpened) {
+      if (unsharpenedSrc) {
+        const img = new Image();
+        img.onload = () => {
+          setCurrentImageBase64(unsharpenedSrc.split(',')[1]);
+          setPreviewSrc(unsharpenedSrc);
+          setImageSharpened(false);
+          setUnsharpenedSrc(null);
+          showToast('Đã tắt làm nét', 'success');
+        };
+        img.src = unsharpenedSrc;
+      } else if (rawOriginalSrc) {
+        loadImageFromDataUrl(rawOriginalSrc, false);
+        setImageSharpened(false);
+        setUnsharpenedSrc(null);
+        showToast('Đã tắt làm nét', 'success');
+      }
       return;
     }
+
     if (!previewSrc) return;
-    setUnsharpenedSrc(previewSrc);
+    const baseSource = previewSrc;
+    setUnsharpenedSrc(baseSource);
 
     const img = new Image();
     img.onload = () => {
@@ -922,7 +1021,7 @@ export default function Home() {
       const out = sourceCtx.createImageData(img.width, img.height);
       const s = imageData.data;
       const d = out.data;
-      const kernel = [0, -1, 0, -1, 5, -1, 0, -1, 0];
+      const kernel = [0, -0.6, 0, -0.6, 3.4, -0.6, 0, -0.6, 0];
       const w = img.width;
       const h = img.height;
 
@@ -937,7 +1036,7 @@ export default function Home() {
                 total += s[(py * w + px) * 4 + c] * kernel[(ky + 1) * 3 + (kx + 1)];
               }
             }
-            d[(y * w + x) * 4 + c] = Math.max(0, Math.min(255, total));
+            d[(y * w + x) * 4 + c] = Math.max(0, Math.min(255, Math.round(total)));
           }
           d[(y * w + x) * 4 + 3] = s[(y * w + x) * 4 + 3];
         }
@@ -948,11 +1047,13 @@ export default function Home() {
       canvas.height = h;
       canvas.getContext('2d').putImageData(out, 0, 0);
 
+      const sharpenedUrl = canvas.toDataURL('image/jpeg', 0.94);
+      setCurrentImageBase64(sharpenedUrl.split(',')[1]);
+      setPreviewSrc(sharpenedUrl);
       setImageSharpened(true);
-      loadImageFromDataUrl(canvas.toDataURL('image/jpeg', 0.94));
       showToast('✨ Đã làm nét ảnh', 'success');
     };
-    img.src = previewSrc;
+    img.src = baseSource;
   };
 
   const openCropEditor = () => {
@@ -1010,26 +1111,36 @@ export default function Home() {
       canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
 
       setCropOpen(false);
-      loadImageFromDataUrl(canvas.toDataURL('image/jpeg', 0.94));
+      loadImageFromDataUrl(canvas.toDataURL('image/jpeg', 0.94), false);
       showToast('✅ Đã cắt ảnh', 'success');
     };
     img.src = cropSourceSrc;
   };
 
   const resetImageEdits = () => {
-    if (!previewSrc) return;
+    const targetSrc = rawOriginalSrc || previewSrc;
+    if (!targetSrc) return;
     setImageSharpened(false);
     setUnsharpenedSrc(null);
-    loadImageFromDataUrl(previewSrc);
-    showToast('↺ Đã đặt lại ảnh gốc', 'success');
+    loadImageFromDataUrl(targetSrc, false);
+    showToast('↺ Đã khôi phục ảnh gốc ban đầu', 'success');
   };
 
-  // Google Sheets Push Helper
+  // Google Sheets Push Helper (via Server-Side Proxy Route to guarantee 302 redirect handling & error reporting)
   const syncToGoogleSheet = async (itemsToPush, targetSoPhieu = '', pageNum = 1, silent = false) => {
     const cleanUrl = googleSheetUrl.trim();
     if (!cleanUrl) {
       if (!silent) {
         showToast('Vui lòng dán Webhook URL Google Apps Script trong Cài đặt ⚙️', 'error');
+        setSettingsTab('sheet');
+        setSettingsOpen(true);
+      }
+      return false;
+    }
+
+    if (cleanUrl.includes('docs.google.com/spreadsheets')) {
+      if (!silent) {
+        showToast('Link đang dán là link trang tính Google Sheet. Vui lòng dán link Webhook Google Apps Script (/exec)', 'error');
         setSettingsTab('sheet');
         setSettingsOpen(true);
       }
@@ -1055,20 +1166,29 @@ export default function Home() {
         })),
       };
 
-      await fetch(cleanUrl, {
+      const res = await fetch('/api/sheet', {
         method: 'POST',
-        mode: 'no-cors',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ url: cleanUrl, payload }),
       });
+
+      const resData = await res.json().catch(() => ({}));
+
+      if (!res.ok || !resData.success) {
+        throw new Error(resData.error || `Lỗi đồng bộ Google Sheet (HTTP ${res.status})`);
+      }
 
       const nowStr = new Date().toLocaleTimeString('vi-VN');
       setLastSheetSync({ time: nowStr, count: items.length });
-      showToast(`📊 Đã lưu thành công ${items.length} dòng vào Google Sheet lúc ${nowStr}!`, 'success');
+      if (!silent) {
+        showToast(`📊 Đã lưu thành công ${items.length} dòng vào Google Sheet lúc ${nowStr}!`, 'success');
+      }
       return true;
     } catch (e) {
       console.error('Google Sheet Sync Error:', e);
-      showToast('❌ Lỗi kết nối Google Sheet: ' + e.message, 'error');
+      if (!silent) {
+        showToast('❌ ' + e.message, 'error');
+      }
       return false;
     } finally {
       setIsSyncingSheet(false);
@@ -1696,21 +1816,34 @@ Không trả markdown hoặc giải thích.`;
       showToast('Vui lòng dán Webhook URL trước khi kiểm tra', 'error');
       return;
     }
+
+    if (url.includes('docs.google.com/spreadsheets')) {
+      showToast('⚠️ Link bạn dán là link trang tính Google Sheet. Vui lòng dán link Webhook Google Apps Script (/exec)', 'error');
+      return;
+    }
+
     showToast('Đang kiểm tra kết nối Google Sheet...');
     try {
-      await fetch(url, {
+      const testPayload = {
+        soPhieu: 'TEST-CONNECTION',
+        pageNum: 1,
+        items: [{ ten: 'Kiểm tra kết nối hệ thống', soLuongThucNhap: '1', ghiChu: 'Test OK' }],
+      };
+
+      const res = await fetch('/api/sheet', {
         method: 'POST',
-        mode: 'no-cors',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          soPhieu: 'TEST-CONNECTION',
-          pageNum: 1,
-          items: [{ ten: 'Kiểm tra kết nối hệ thống', soLuongThucNhap: '1', ghiChu: 'Test OK' }],
-        }),
+        body: JSON.stringify({ url, payload: testPayload }),
       });
-      showToast('✅ Đã gửi dòng dữ liệu mẫu sang Google Sheet thành công!', 'success');
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || `Lỗi kết nối Webhook (HTTP ${res.status})`);
+      }
+
+      showToast('✅ Đã ghi thử 1 dòng mẫu sang Google Sheet thành công!', 'success');
     } catch (err) {
-      showToast('❌ Lỗi kết nối Webhook: ' + err.message, 'error');
+      showToast('❌ ' + err.message, 'error');
     }
   };
 
@@ -1781,7 +1914,7 @@ Không trả markdown hoặc giải thích.`;
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">Scan Pro Max</h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                  v36.0.10
+                  v36.0.17
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">Trích xuất số phiếu & danh mục hàng hóa bằng AI</p>
@@ -2628,6 +2761,32 @@ Không trả markdown hoặc giải thích.`;
         </div>
       </main>
 
+      {/* Page Footer */}
+      <footer className="w-full max-w-[1200px] mx-auto px-4 py-8 mt-6 border-t border-slate-200 text-slate-500 text-xs">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-700">Scan Pro Max — Trích Xuất Phiếu Kho AI</span>
+            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-mono font-bold text-[10px]">
+              Phiên bản v36.0.17
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-slate-500">Phát triển bởi:</span>
+            <a
+              href="https://t.me/vd81997"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold border border-blue-200 transition-all hover:shadow-sm active:scale-95"
+            >
+              <svg className="w-3.5 h-3.5 fill-[#229ED9]" viewBox="0 0 24 24">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z" />
+              </svg>
+              <span>Liên hệ: Đắc dzaii</span>
+            </a>
+          </div>
+        </div>
+      </footer>
+
       {/* PDF Multi-Page Preview & Selection Modal */}
       {pdfModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
@@ -3407,6 +3566,11 @@ Không trả markdown hoặc giải thích.`;
                           Đặt lại 20 lượt
                         </button>
                       </div>
+                    </div>
+
+                    <div className="p-2 rounded-lg bg-amber-50/80 border border-amber-200 text-amber-900 text-[11px] flex items-center gap-1.5">
+                      <span>⏰</span>
+                      <span>Bộ đếm 20 lượt tự động làm mới về 0 vào lúc <strong>00:00 hàng ngày (Múi giờ GMT+7)</strong>.</span>
                     </div>
 
                     <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
