@@ -2,7 +2,6 @@
   "appId": "com.scanphieu.app",
   "appName": "Scan Phiếu Pro Max",
   "webDir": "public",
-  "bundledWebRuntime": false,
   "server": {
     "url": "https://scanzzz.vercel.app",
     "cleartext": true
