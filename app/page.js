@@ -1940,6 +1940,19 @@ Không trả markdown hoặc giải thích.`;
               <span className="hidden sm:inline">{cloudSyncCode ? `Mã: ${cloudSyncCode}` : 'Đồng Bộ Cloud'}</span>
             </button>
 
+            {/* Download Android APK Button */}
+            <button
+              onClick={() => {
+                setSettingsTab('android');
+                setSettingsOpen(true);
+              }}
+              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 border border-emerald-700/60 text-xs font-bold transition-all"
+              title="Tải ứng dụng Android (.APK) cho nhân viên kho"
+            >
+              <IconDevicePhone className="w-4 h-4 text-emerald-400" />
+              <span>App Android</span>
+            </button>
+
             {/* Google Sheet indicator */}
             {googleSheetUrl && (
               <button
@@ -3389,6 +3402,16 @@ Không trả markdown hoặc giải thích.`;
               >
                 Giao Diện
               </button>
+              <button
+                onClick={() => setSettingsTab('android')}
+                className={`pb-2 px-3 border-b-2 whitespace-nowrap transition-all flex items-center gap-1 ${
+                  settingsTab === 'android'
+                    ? 'border-blue-600 text-blue-600 font-bold'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <span>App Android (.APK) 📱</span>
+              </button>
             </div>
 
             {/* Tab Contents */}
@@ -3799,6 +3822,56 @@ Không trả markdown hoặc giải thích.`;
                         </div>
                       </label>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 7: ANDROID APP (.APK) */}
+              {settingsTab === 'android' && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl border border-emerald-200 space-y-3">
+                    <div className="flex items-center gap-2 text-emerald-950 font-bold text-sm">
+                      <IconDevicePhone className="w-5 h-5 text-emerald-600" />
+                      <span>Ứng Dụng Android Độc Lập Cho Nhân Viên Kho</span>
+                    </div>
+                    <p className="text-xs text-emerald-900 leading-relaxed">
+                      Toàn bộ hệ thống quét phiếu đã được đóng gói thành file cài đặt <strong>.APK</strong> với đầy đủ quyền Camera quét tự động, Đèn Flash và tự động đồng bộ Cloud & Google Sheet thời gian thực.
+                    </p>
+
+                    {/* Direct Download Button */}
+                    <div className="pt-1 flex flex-col sm:flex-row items-center gap-2.5">
+                      <a
+                        href="https://github.com/kentnobita/scanzzz/releases/latest/download/ScanPhieuKho-v36.apk"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full sm:w-auto px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all active:scale-95"
+                      >
+                        <IconUpload className="w-4 h-4 rotate-180" />
+                        <span>📥 Tải File Cài Đặt Android (ScanPhieuKho-v36.apk)</span>
+                      </a>
+
+                      <a
+                        href="https://github.com/kentnobita/scanzzz/releases"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full sm:w-auto px-4 py-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 border border-slate-300 transition-all"
+                      >
+                        <IconExternalLink className="w-3.5 h-3.5" />
+                        <span>Xem Danh Sách Bản Phát Hành</span>
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* Android Quick Setup Box */}
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
+                    <div className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                      <span>📋 Hướng Dẫn Cài Đặt Lên Điện Thoại Android:</span>
+                    </div>
+                    <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-slate-600 leading-relaxed">
+                      <li>Bấm nút <strong>Tải File Cài Đặt</strong> ở trên hoặc gửi file <code>ScanPhieuKho-v36.apk</code> qua Zalo/Telegram.</li>
+                      <li>Mở file <code>.apk</code> trên điện thoại ➔ Nếu máy hỏi, chọn <strong>Cho phép cài đặt từ nguồn này</strong>.</li>
+                      <li>Mở app <strong>Scan Phiếu Pro Max</strong> ➔ Nhập <strong>Mã Đồng Bộ</strong> (hoặc quét mã QR) để nạp toàn bộ cấu hình API & Google Sheet vào máy.</li>
+                    </ol>
                   </div>
                 </div>
               )}

@@ -1,0 +1,76 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build APK Package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Node Dependencies
+        run: npm ci || npm install
+
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Build Android APK with Gradle
+        run: |
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Prepare APK Output
+        run: |
+          mkdir -p build-output
+          cp android/app/build/outputs/apk/debug/app-debug.apk build-output/ScanPhieuKho-v36.apk
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScanPhieuKho-Android-APK
+          path: build-output/ScanPhieuKho-v36.apk
+          retention-days: 30
+
+      - name: Create or Update GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: v36.0.18
+          name: "Scan Phiếu Pro Max Android APK (v36.0.18)"
+          body: |
+            ## 📱 Ứng Dụng Scan Phiếu Kho Android (.APK)
+            - **Phiên bản**: `v36.0.18`
+            - **Hệ điều hành hỗ trợ**: Android 7.0+
+            - **Tính năng**: Tự động chụp cắt viền phiếu, bật đèn Flash, đồng bộ Cloud và Google Sheet thời gian thực.
+            
+            👉 **Tải file cài đặt bên dưới**: `ScanPhieuKho-v36.apk`
+          files: build-output/ScanPhieuKho-v36.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
