@@ -268,10 +268,12 @@ export default function Home() {
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [lastCloudSync, setLastCloudSync] = useState(null);
   const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isPwaInstalled, setIsPwaInstalled] = useState(false);
 
   // Modals & Tabs state
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState('sync'); // 'sync' | 'api' | 'sheet' | 'columns' | 'prompts' | 'view'
+  const [settingsTab, setSettingsTab] = useState('sync'); // 'sync' | 'api' | 'sheet' | 'columns' | 'prompts' | 'view' | 'android'
   const [historyOpen, setHistoryOpen] = useState(false);
   const [cropOpen, setCropOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -426,8 +428,54 @@ export default function Home() {
       }
     }, 15000);
 
-    return () => clearInterval(quotaTimer);
+    // Register PWA Service Worker
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch((err) => {
+          console.log('[PWA] SW register skipped:', err);
+        });
+      });
+    }
+
+    // Capture PWA Install Prompt Event
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    const handleAppInstalled = () => {
+      setIsPwaInstalled(true);
+      setDeferredPrompt(null);
+      showToast('🎉 Đã cài đặt ứng dụng Scan Phiếu thành công!', 'success');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    if (typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone)) {
+      setIsPwaInstalled(true);
+    }
+
+    return () => {
+      clearInterval(quotaTimer);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
   }, []);
+
+  const installPwaApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        showToast('🎉 Đã cài đặt ứng dụng Scan Phiếu thành công!', 'success');
+        setDeferredPrompt(null);
+        setIsPwaInstalled(true);
+      }
+    } else {
+      showToast('📱 Hướng dẫn PWA: Trên Chrome/Edge/Safari, bấm biểu tượng Menu ➔ chọn "Cài đặt ứng dụng" hoặc "Thêm vào Màn hình chính"!', 'info');
+    }
+  };
 
   const applyViewMode = (mode) => {
     document.body.classList.remove('view-mobile', 'view-desktop');
@@ -3410,7 +3458,7 @@ Không trả markdown hoặc giải thích.`;
                     : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
-                <span>App Android (.APK) 📱</span>
+                <span>Cài Đặt App 📱</span>
               </button>
             </div>
 
@@ -3826,20 +3874,69 @@ Không trả markdown hoặc giải thích.`;
                 </div>
               )}
 
-              {/* TAB 7: ANDROID APP (.APK) */}
+              {/* TAB 7: PWA & ANDROID APP (.APK) */}
               {settingsTab === 'android' && (
                 <div className="space-y-4">
-                  <div className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl border border-emerald-200 space-y-3">
-                    <div className="flex items-center gap-2 text-emerald-950 font-bold text-sm">
-                      <IconDevicePhone className="w-5 h-5 text-emerald-600" />
-                      <span>Ứng Dụng Android Độc Lập Cho Nhân Viên Kho</span>
+                  {/* Top Intro Card */}
+                  <div className="p-4 bg-gradient-to-r from-blue-50 via-indigo-50 to-teal-50 rounded-2xl border border-blue-200 space-y-2">
+                    <div className="flex items-center gap-2 text-slate-900 font-extrabold text-sm">
+                      <IconDevicePhone className="w-5 h-5 text-blue-600" />
+                      <span>Cài Đặt Ứng Dụng Đa Nền Tảng (PWA & Android APK)</span>
                     </div>
-                    <p className="text-xs text-emerald-900 leading-relaxed">
-                      Toàn bộ hệ thống quét phiếu đã được đóng gói thành file cài đặt <strong>.APK</strong> với đầy đủ quyền Camera quét tự động, Đèn Flash và tự động đồng bộ Cloud & Google Sheet thời gian thực.
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Cả 2 phương án đều kết nối trực tiếp vào hệ thống, <strong>tự động đồng bộ 100% thời gian thực</strong> (API Key, Bộ đếm Quota, Cấu hình Cột & Google Sheet) với máy tính qua Cloud.
+                    </p>
+                  </div>
+
+                  {/* PHƯƠNG ÁN 1: PWA */}
+                  <div className="p-4 bg-white rounded-2xl border-2 border-blue-200 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-extrabold text-xs flex items-center justify-center">1</span>
+                        <span className="font-extrabold text-sm text-slate-900">Phương Án 1: Cài Đặt Trực Tiếp (PWA)</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold">
+                        Khuyên Dùng • Cài Ngay
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Cài đặt trực tiếp từ trình duyệt trên điện thoại Android/iPhone/Máy tính. Chạy toàn màn hình, mượt mà như App tải từ Store, không cần tải file cài đặt.
                     </p>
 
-                    {/* Direct Download Button */}
-                    <div className="pt-1 flex flex-col sm:flex-row items-center gap-2.5">
+                    <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
+                      <button
+                        onClick={installPwaApp}
+                        className="w-full sm:w-auto px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all active:scale-95"
+                      >
+                        <IconDevicePhone className="w-4 h-4" />
+                        <span>📲 {isPwaInstalled ? 'Đã Cài Đặt Ứng Dụng (Mở App)' : 'Cài Đặt Ứng Dụng Ngay (PWA)'}</span>
+                      </button>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-600 space-y-1">
+                      <div><strong>• Trên Android (Chrome):</strong> Bấm nút trên hoặc chọn menu <strong>⋮</strong> ➔ chọn <em>"Cài đặt ứng dụng"</em> hoặc <em>"Thêm vào MH chính"</em>.</div>
+                      <div><strong>• Trên iPhone (Safari):</strong> Bấm nút <strong>Chia sẻ (Share)</strong> ➔ chọn <em>"Thêm vào MH chính (Add to Home Screen)"</em>.</div>
+                    </div>
+                  </div>
+
+                  {/* PHƯƠNG ÁN 2: ANDROID APK */}
+                  <div className="p-4 bg-white rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-extrabold text-xs flex items-center justify-center">2</span>
+                        <span className="font-extrabold text-sm text-slate-900">Phương Án 2: File Cài Đặt Android Native (.APK)</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                        Capacitor Native
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Dành cho các dòng máy Android phát nội bộ cho nhân viên kho. Đóng gói độc lập, tích hợp sâu phần cứng Camera & Flashlight.
+                    </p>
+
+                    <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
                       <a
                         href="https://github.com/kentnobita/scanzzz/releases/latest/download/ScanPhieuKho-v36.apk"
                         target="_blank"
@@ -3854,24 +3951,23 @@ Không trả markdown hoặc giải thích.`;
                         href="https://github.com/kentnobita/scanzzz/releases"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="w-full sm:w-auto px-4 py-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 border border-slate-300 transition-all"
+                        className="w-full sm:w-auto px-4 py-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 border border-slate-300 transition-all"
                       >
                         <IconExternalLink className="w-3.5 h-3.5" />
-                        <span>Xem Danh Sách Bản Phát Hành</span>
+                        <span>Xem Tất Cả Bản Phát Hành</span>
                       </a>
                     </div>
                   </div>
 
-                  {/* Android Quick Setup Box */}
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
-                    <div className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
-                      <span>📋 Hướng Dẫn Cài Đặt Lên Điện Thoại Android:</span>
+                  {/* UNIVERSAL SYNC EXPLANATION */}
+                  <div className="p-3.5 bg-slate-900 text-slate-200 rounded-2xl space-y-2 text-[11px]">
+                    <div className="font-bold text-white flex items-center gap-2">
+                      <IconCloud className="w-4 h-4 text-blue-400" />
+                      <span>Cơ Chế Đồng Bộ Đa Nền Tảng:</span>
                     </div>
-                    <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-slate-600 leading-relaxed">
-                      <li>Bấm nút <strong>Tải File Cài Đặt</strong> ở trên hoặc gửi file <code>ScanPhieuKho-v36.apk</code> qua Zalo/Telegram.</li>
-                      <li>Mở file <code>.apk</code> trên điện thoại ➔ Nếu máy hỏi, chọn <strong>Cho phép cài đặt từ nguồn này</strong>.</li>
-                      <li>Mở app <strong>Scan Phiếu Pro Max</strong> ➔ Nhập <strong>Mã Đồng Bộ</strong> (hoặc quét mã QR) để nạp toàn bộ cấu hình API & Google Sheet vào máy.</li>
-                    </ol>
+                    <p className="text-slate-300 leading-relaxed">
+                      Bất kể bạn dùng <strong>Web Máy Tính</strong>, <strong>App PWA Điện Thoại</strong> hay <strong>App Android APK</strong>: Chỉ cần nhập cùng <strong>Mã Đồng Bộ Cloud</strong> (ví dụ <code>{cloudSyncCode || 'KHO-01'}</code>) hoặc quét mã QR, mọi API Key Gemini, bộ đếm Quota và cấu hình Google Sheet sẽ tự động đồng bộ ngay lập tức!
+                    </p>
                   </div>
                 </div>
               )}

@@ -3,6 +3,12 @@ import './globals.css'
 export const metadata = {
   title: 'Scan Pro Max — Trích Xuất Phiếu Giao Hàng & Kho',
   description: 'Ứng dụng scan và trích xuất dữ liệu phiếu xuất nhập kho chuyên nghiệp bằng AI Vision',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'ScanPhiếu',
+  },
 }
 
 export const viewport = {
@@ -10,6 +16,7 @@ export const viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  themeColor: '#2563eb',
 }
 
 export default function RootLayout({ children }) {
