@@ -101,6 +101,7 @@ export function getGmt7DateString(d = new Date()) {
 }
 
 const API_LOCAL_LIMIT = 20;
+const MAX_HISTORY_ITEMS = 50;
 
 const APPS_SCRIPT_SAMPLE = `function doPost(e) {
   try {
@@ -386,7 +387,7 @@ export default function Home() {
 
     try {
       const localHist = JSON.parse(localStorage.getItem('scan_history') || '[]');
-      setScanHistory(Array.isArray(localHist) ? localHist : []);
+      setScanHistory(Array.isArray(localHist) ? localHist.slice(0, MAX_HISTORY_ITEMS) : []);
     } catch {}
 
     // Auto-sync check on first load:
@@ -810,19 +811,164 @@ export default function Home() {
     setPdfPages((prev) => prev.map((p) => ({ ...p, selected: selectState })));
   };
 
-  const processFile = useCallback((file) => {
-    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
-      handlePDF(file);
-    } else if (file.type.startsWith('image/') || /\.(jpe?g|png|webp|bmp)$/i.test(file.name)) {
+  const convertImageToPageItem = (file, pageNum) => {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = (e) => {
-        loadImageFromDataUrl(e.target.result);
+      reader.onload = (ev) => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          const maxSize = 2400;
+          if (width > maxSize || height > maxSize) {
+            if (width > height) {
+              height = Math.round((height * maxSize) / width);
+              width = maxSize;
+            } else {
+              width = Math.round((width * maxSize) / height);
+              height = maxSize;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+          const fullUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+          // Thumbnail version
+          const thumbCanvas = document.createElement('canvas');
+          const thumbMax = 320;
+          let tw = img.width, th = img.height;
+          if (tw > thumbMax || th > thumbMax) {
+            if (tw > th) {
+              th = Math.round((th * thumbMax) / tw);
+              tw = thumbMax;
+            } else {
+              tw = Math.round((tw * thumbMax) / th);
+              th = thumbMax;
+            }
+          }
+          thumbCanvas.width = tw;
+          thumbCanvas.height = th;
+          thumbCanvas.getContext('2d').drawImage(img, 0, 0, tw, th);
+          const thumbUrl = thumbCanvas.toDataURL('image/jpeg', 0.7);
+
+          resolve({
+            pageNum,
+            name: file.name || `Ảnh ${pageNum}`,
+            fullUrl,
+            thumbUrl,
+            base64: fullUrl.split(',')[1],
+            selected: true,
+          });
+        };
+        img.onerror = () => reject(new Error('Không thể đọc ảnh: ' + (file.name || '')));
+        img.src = ev.target.result;
       };
+      reader.onerror = () => reject(new Error('Lỗi khi đọc file: ' + (file.name || '')));
       reader.readAsDataURL(file);
-    } else {
+    });
+  };
+
+  const handleMultipleFiles = useCallback(async (filesList) => {
+    if (!filesList || filesList.length === 0) return;
+    const files = Array.from(filesList).filter((f) =>
+      f.type === 'application/pdf' ||
+      /\.pdf$/i.test(f.name) ||
+      f.type.startsWith('image/') ||
+      /\.(jpe?g|png|webp|bmp)$/i.test(f.name)
+    );
+
+    if (files.length === 0) {
       showToast('Định dạng không hỗ trợ (chỉ nhận PDF, JPG, PNG, WEBP)', 'error');
+      return;
+    }
+
+    if (files.length === 1) {
+      const single = files[0];
+      if (single.type === 'application/pdf' || /\.pdf$/i.test(single.name)) {
+        handlePDF(single);
+      } else {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          loadImageFromDataUrl(e.target.result);
+          showToast(`🖼️ Đã nạp ảnh: ${single.name || 'Ảnh phiếu'}`, 'success');
+        };
+        reader.readAsDataURL(single);
+      }
+      return;
+    }
+
+    // Multiple files (Multiple photos or PDFs)
+    try {
+      setIsProcessingPdf(true);
+      showToast(`🖼️ Đang nạp và xử lý ${files.length} ảnh/tài liệu...`);
+
+      const pagesData = [];
+      let pageCounter = 1;
+
+      for (const file of files) {
+        if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+          if (!window.pdfjsLib) {
+            await new Promise((resolve, reject) => {
+              const script = document.createElement('script');
+              script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+              script.onload = () => {
+                window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+                resolve();
+              };
+              script.onerror = () => reject(new Error('Không thể tải PDF.js'));
+              document.head.appendChild(script);
+            });
+          }
+          const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+          for (let p = 1; p <= pdf.numPages; p++) {
+            const page = await pdf.getPage(p);
+            const viewport = page.getViewport({ scale: 2.0 });
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+            const fullUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+            const thumbViewport = page.getViewport({ scale: 0.45 });
+            const thumbCanvas = document.createElement('canvas');
+            thumbCanvas.width = thumbViewport.width;
+            thumbCanvas.height = thumbViewport.height;
+            await page.render({ canvasContext: thumbCanvas.getContext('2d'), viewport: thumbViewport }).promise;
+            const thumbUrl = thumbCanvas.toDataURL('image/jpeg', 0.7);
+
+            pagesData.push({
+              pageNum: pageCounter++,
+              name: `${file.name} (Trang ${p})`,
+              fullUrl,
+              thumbUrl,
+              base64: fullUrl.split(',')[1],
+              selected: true,
+            });
+          }
+        } else {
+          // Image
+          const pageItem = await convertImageToPageItem(file, pageCounter++);
+          pagesData.push(pageItem);
+        }
+      }
+
+      setPdfPages(pagesData);
+      setSelectedPdfIndex(0);
+      loadImageFromDataUrl(pagesData[0].fullUrl);
+      setPdfModalOpen(true);
+      showToast(`🖼️ Đã nạp ${pagesData.length} ảnh/trang phiếu. Bấm quét hàng loạt hoặc chọn ảnh!`, 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('❌ Lỗi khi xử lý file: ' + e.message, 'error');
+    } finally {
+      setIsProcessingPdf(false);
     }
   }, [handlePDF, loadImageFromDataUrl, showToast]);
+
+  const processFile = useCallback((file) => {
+    handleMultipleFiles([file]);
+  }, [handleMultipleFiles]);
 
   const pasteFromClipboard = async () => {
     try {
@@ -846,7 +992,7 @@ export default function Home() {
     }
   };
 
-  // Drag & Drop event listeners
+  // Drag & Drop event listeners (supports multiple files)
   useEffect(() => {
     const handleDragOver = (e) => {
       e.preventDefault();
@@ -859,15 +1005,9 @@ export default function Home() {
     const handleDrop = (e) => {
       e.preventDefault();
       setIsDragging(false);
-      const file = e.dataTransfer.files?.[0];
-      if (file) {
-        processFile(file);
-        showToast(
-          file.type === 'application/pdf' || /\.pdf$/i.test(file.name)
-            ? '📥 Đã nhận file PDF kéo thả'
-            : '📥 Đã nhận file ảnh kéo thả',
-          'success'
-        );
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        handleMultipleFiles(files);
       }
     };
 
@@ -879,7 +1019,7 @@ export default function Home() {
       window.removeEventListener('dragleave', handleDragLeave);
       window.removeEventListener('drop', handleDrop);
     };
-  }, [processFile, showToast]);
+  }, [handleMultipleFiles]);
 
   useEffect(() => {
     const handleGlobalPaste = (e) => {
@@ -1662,7 +1802,8 @@ Không trả markdown hoặc giải thích.`;
         record.createdAt = new Date().toISOString();
         next = [record, ...prev];
       }
-      const capped = next.slice(0, 50);
+      // FIFO: keep at most MAX_HISTORY_ITEMS (newest first, oldest removed automatically)
+      const capped = next.slice(0, MAX_HISTORY_ITEMS);
       localStorage.setItem('scan_history', JSON.stringify(capped));
       return capped;
     });
@@ -1962,7 +2103,7 @@ Không trả markdown hoặc giải thích.`;
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">Scan Pro Max</h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                  v36.0.17
+                  v36.0.18
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">Trích xuất số phiếu & danh mục hàng hóa bằng AI</p>
@@ -2091,12 +2232,12 @@ Không trả markdown hoặc giải thích.`;
       </div>
 
       {/* Main Workspace Layout */}
-      <main className="flex-1 desktop-grid max-w-[1200px] mx-auto w-full p-4 sm:p-6">
+      <main className="flex-1 desktop-grid max-w-[1200px] mx-auto w-full p-3 sm:p-4 md:p-6">
         {/* Left Column (Upload Card & History Desktop Widget) */}
-        <div className="desktop-left space-y-5">
+        <div className="desktop-left space-y-4 sm:space-y-5">
           {/* Upload Card with 4 Distinct Buttons */}
-          <section className="bg-white rounded-2xl p-5 border border-slate-200 shadow-subtle hover:shadow-card transition-shadow">
-            <div className="flex items-center justify-between mb-4">
+          <section className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-subtle hover:shadow-card transition-shadow">
+            <div className="flex items-center justify-between mb-3.5 sm:mb-4">
               <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                 <IconCamera className="w-4 h-4 text-blue-600" />
                 Chọn Nguồn Tài Liệu
@@ -2118,9 +2259,10 @@ Không trả markdown hoặc giải thích.`;
               <button
                 onClick={() => imageInputRef.current?.click()}
                 className="flex items-center justify-center gap-2 py-3.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs border border-slate-200/80 active:scale-[0.98] transition-all"
+                title="Chọn 1 hoặc nhiều ảnh phiếu cùng lúc (JPG, PNG, WEBP)"
               >
                 <IconUpload className="w-4 h-4 text-blue-600" />
-                <span>Chọn Ảnh</span>
+                <span>Chọn Ảnh / Nhiều Ảnh</span>
               </button>
 
               {/* 3. Pick PDF */}
@@ -2128,6 +2270,7 @@ Không trả markdown hoặc giải thích.`;
                 onClick={() => pdfInputRef.current?.click()}
                 disabled={isProcessingPdf}
                 className="flex items-center justify-center gap-2 py-3.5 px-3 rounded-xl bg-indigo-50/80 hover:bg-indigo-100 text-indigo-900 font-bold text-xs border border-indigo-200/80 active:scale-[0.98] transition-all disabled:opacity-50"
+                title="Chọn file tài liệu PDF 1 hoặc nhiều trang"
               >
                 {isProcessingPdf ? (
                   <div className="w-4 h-4 border-2 border-indigo-700 border-t-transparent rounded-full animate-spin" />
@@ -2151,7 +2294,7 @@ Không trả markdown hoặc giải thích.`;
             <div className="mt-4 p-3 bg-blue-50/70 border border-blue-100 rounded-xl space-y-1.5 text-xs text-blue-900 leading-relaxed">
               <div className="flex items-center gap-1.5 font-bold">
                 <IconCheck className="w-3.5 h-3.5 text-blue-600" />
-                <span>Kéo thả trực tiếp file PDF hoặc file Ảnh vào màn hình</span>
+                <span>Chọn nhiều ảnh hoặc kéo thả trực tiếp nhiều file vào màn hình</span>
               </div>
               <div className="flex items-center gap-1.5 font-bold">
                 <IconCloud className="w-3.5 h-3.5 text-blue-600" />
@@ -2176,8 +2319,11 @@ Không trả markdown hoặc giải thích.`;
               type="file"
               className="hidden"
               accept="image/*"
+              multiple
               onChange={(e) => {
-                if (e.target.files?.[0]) processFile(e.target.files[0]);
+                if (e.target.files && e.target.files.length > 0) {
+                  handleMultipleFiles(e.target.files);
+                }
                 e.target.value = '';
               }}
             />
@@ -2186,8 +2332,11 @@ Không trả markdown hoặc giải thích.`;
               type="file"
               className="hidden"
               accept=".pdf,application/pdf"
+              multiple
               onChange={(e) => {
-                if (e.target.files?.[0]) processFile(e.target.files[0]);
+                if (e.target.files && e.target.files.length > 0) {
+                  handleMultipleFiles(e.target.files);
+                }
                 e.target.value = '';
               }}
             />
@@ -2195,12 +2344,12 @@ Không trả markdown hoặc giải thích.`;
 
           {/* History Widget (Desktop Sidebar) */}
           <section className="bg-white rounded-2xl p-5 border border-slate-200 shadow-subtle hidden lg:block">
-            <div className="flex items-center justify-between mb-3.5">
+            <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-2">
                 <IconHistory className="w-4 h-4 text-slate-500" />
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">Lịch sử phiếu thiết bị này</h3>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600">
-                  {scanHistory.length}
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">Lịch sử phiếu đã lưu</h3>
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 font-mono">
+                  {scanHistory.length}/{MAX_HISTORY_ITEMS}
                 </span>
               </div>
               {scanHistory.length > 0 && (
@@ -2209,6 +2358,7 @@ Không trả markdown hoặc giải thích.`;
                 </button>
               )}
             </div>
+            <p className="text-[10px] text-slate-400 mb-3">Lưu tối đa 50 phiếu (tự động xóa phiếu cũ nhất khi có phiếu mới)</p>
 
             <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
               {scanHistory.length > 0 ? (
@@ -2264,9 +2414,10 @@ Không trả markdown hoặc giải thích.`;
                     <button
                       onClick={() => setPdfModalOpen(true)}
                       className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-bold flex items-center gap-1 border border-blue-200"
+                      title="Mở danh sách các ảnh/trang đã nạp để chọn quét hàng loạt"
                     >
                       <IconLayers className="w-3.5 h-3.5" />
-                      <span>Xem & Chọn {pdfPages.length} trang PDF</span>
+                      <span>Xem & Chọn {pdfPages.length} ảnh/trang</span>
                     </button>
                   )}
                   <span className="text-xs font-medium text-slate-500 font-mono">Đã sẵn sàng</span>
@@ -2828,7 +2979,7 @@ Không trả markdown hoặc giải thích.`;
           <div className="flex items-center gap-2">
             <span className="font-bold text-slate-700">Scan Pro Max — Trích Xuất Phiếu Kho AI</span>
             <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-mono font-bold text-[10px]">
-              Phiên bản v36.0.17
+              Phiên bản v36.0.18
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -2838,17 +2989,18 @@ Không trả markdown hoặc giải thích.`;
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold border border-blue-200 transition-all hover:shadow-sm active:scale-95"
+              title="Nhắn tin Telegram cho Đắc dzaii"
             >
               <svg className="w-3.5 h-3.5 fill-[#229ED9]" viewBox="0 0 24 24">
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z" />
               </svg>
-              <span>Liên hệ: Đắc dzaii</span>
+              <span>Đắc dzaii</span>
             </a>
           </div>
         </div>
       </footer>
 
-      {/* PDF Multi-Page Preview & Selection Modal */}
+      {/* Multi-Image / PDF Multi-Page Preview & Selection Modal */}
       {pdfModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white w-full max-w-2xl rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-modal flex flex-col gap-4 text-slate-900 max-h-[90vh]">
@@ -2856,8 +3008,10 @@ Không trả markdown hoặc giải thích.`;
               <div className="flex items-center gap-2">
                 <IconLayers className="w-5 h-5 text-blue-600" />
                 <div>
-                  <h3 className="font-bold text-sm text-slate-900">File PDF Có {pdfPages.length} Trang</h3>
-                  <p className="text-[11px] text-slate-500">Bấm vào bất kỳ đâu trên ô trang để chọn hoặc bỏ chọn</p>
+                  <h3 className="font-bold text-sm text-slate-900">
+                    Danh Sách {pdfPages.length} Ảnh / Trang Phiếu
+                  </h3>
+                  <p className="text-[11px] text-slate-500">Bấm vào ô để chọn/bỏ chọn quét hàng loạt hoặc bấm "Quét riêng" từng ảnh</p>
                 </div>
               </div>
               <button
@@ -2872,7 +3026,7 @@ Không trả markdown hoặc giải thích.`;
             <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-2xl border border-slate-200 text-xs">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-slate-700">
-                  Đã chọn <strong className="text-blue-600 font-mono text-sm">{selectedPdfPagesCount}</strong> / {pdfPages.length} trang
+                  Đã chọn <strong className="text-blue-600 font-mono text-sm">{selectedPdfPagesCount}</strong> / {pdfPages.length} ảnh/trang
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -2925,7 +3079,7 @@ Không trả markdown hoặc giải thích.`;
 
                       {/* Image Thumbnail */}
                       <div className="relative w-full aspect-[3/4] bg-white rounded-xl overflow-hidden shadow-sm border border-slate-200 flex items-center justify-center">
-                        <img src={page.thumbUrl} alt={`Trang ${page.pageNum}`} className="w-full h-full object-contain pointer-events-none" />
+                        <img src={page.thumbUrl} alt={`Ảnh/Trang ${page.pageNum}`} className="w-full h-full object-contain pointer-events-none" />
                         {isCurrentActive && (
                           <div className="absolute inset-0 ring-2 ring-blue-500/50 rounded-xl pointer-events-none" />
                         )}
@@ -2933,9 +3087,11 @@ Không trả markdown hoặc giải thích.`;
 
                       {/* Label & Actions */}
                       <div className="w-full flex items-center justify-between px-1">
-                        <span className="font-bold text-xs text-slate-800 flex items-center gap-1">
-                          <span>Trang {page.pageNum}</span>
-                          {isChecked && <span className="text-[10px] text-blue-600 font-bold">(Đã chọn)</span>}
+                        <span className="font-bold text-xs text-slate-800 flex items-center gap-1 min-w-0">
+                          <span className="truncate" title={page.name || `Ảnh ${page.pageNum}`}>
+                            {page.name ? page.name : `Ảnh ${page.pageNum}`}
+                          </span>
+                          {isChecked && <span className="text-[10px] text-blue-600 font-bold shrink-0">(Đã chọn)</span>}
                         </span>
                         <button
                           type="button"
@@ -2943,7 +3099,7 @@ Không trả markdown hoặc giải thích.`;
                             e.stopPropagation();
                             selectSinglePdfPage(idx);
                           }}
-                          className="text-[11px] text-blue-600 hover:underline font-bold px-1.5 py-0.5 rounded hover:bg-blue-100/50"
+                          className="text-[11px] text-blue-600 hover:underline font-bold px-1.5 py-0.5 rounded hover:bg-blue-100/50 shrink-0"
                         >
                           Quét riêng
                         </button>
@@ -2956,8 +3112,8 @@ Không trả markdown hoặc giải thích.`;
 
             {/* Actions */}
             <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="text-xs text-slate-500">
-                Đang xem: <strong>Trang {pdfPages[selectedPdfIndex]?.pageNum}</strong>
+              <div className="text-xs text-slate-500 truncate max-w-[240px]">
+                Đang xem: <strong>{pdfPages[selectedPdfIndex]?.name || `Ảnh/Trang ${pdfPages[selectedPdfIndex]?.pageNum}`}</strong>
               </div>
 
               <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -2965,7 +3121,7 @@ Không trả markdown hoặc giải thích.`;
                   onClick={() => selectSinglePdfPage(selectedPdfIndex)}
                   className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition-all active:scale-95"
                 >
-                  Quét 1 Trang Đang Xem (P.{pdfPages[selectedPdfIndex]?.pageNum})
+                  Quét 1 Ảnh Đang Xem
                 </button>
 
                 <button
@@ -2974,7 +3130,7 @@ Không trả markdown hoặc giải thích.`;
                   className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-40"
                 >
                   <IconSparkles className="w-4 h-4" />
-                  <span>Quét {selectedPdfPagesCount} Trang Đã Chọn</span>
+                  <span>Quét {selectedPdfPagesCount} Ảnh/Trang Đã Chọn</span>
                 </button>
               </div>
             </div>
@@ -2982,7 +3138,7 @@ Không trả markdown hoặc giải thích.`;
         </div>
       )}
 
-      {/* Real-time Multi-Page Batch Progress Dialog */}
+      {/* Real-time Multi-Page / Multi-Image Batch Progress Dialog */}
       {batchProgressModal.active && (
         <div className="fixed inset-0 z-[600] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white w-full max-w-lg rounded-3xl p-6 border border-slate-200 shadow-modal flex flex-col gap-4 text-slate-900 animate-slide-up">
@@ -2993,9 +3149,9 @@ Không trả markdown hoặc giải thích.`;
                 </div>
                 <div>
                   <h3 className="font-bold text-sm text-slate-900">
-                    Đang Quét File PDF ({batchProgressModal.current}/{batchProgressModal.total} Trang)
+                    Đang Quét Hàng Loạt ({batchProgressModal.current}/{batchProgressModal.total} Ảnh / Trang)
                   </h3>
-                  <p className="text-xs text-slate-500">Tiến trình nhận dạng AI đang diễn ra theo từng trang</p>
+                  <p className="text-xs text-slate-500">Tiến trình nhận dạng AI đang diễn ra theo từng ảnh/trang</p>
                 </div>
               </div>
               <span className="font-mono font-extrabold text-blue-600 text-base">
@@ -3251,7 +3407,12 @@ Không trả markdown hoặc giải thích.`;
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <IconHistory className="w-5 h-5 text-blue-600" />
-                <h3 className="font-bold text-sm text-slate-900">Lịch Sử Phiếu ({scanHistory.length})</h3>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">
+                    Lịch Sử Phiếu ({scanHistory.length}/{MAX_HISTORY_ITEMS})
+                  </h3>
+                  <p className="text-[10px] text-slate-400">Lưu tối đa 50 phiếu gần nhất, tự động xóa cũ khi quét mới</p>
+                </div>
               </div>
               <button
                 onClick={() => setHistoryOpen(false)}
