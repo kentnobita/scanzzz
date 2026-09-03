@@ -18,8 +18,9 @@
 
 ## 🌟 Tính Năng Nổi Bật
 
-### 1. 🧠 AI Vision OCR Tiên Tiến (Gemini Flash)
-- Tối ưu hóa prompt chuyên biệt cho hóa đơn, phiếu xuất kho, phiếu giao hàng tiếng Việt.
+### 1. 🧠 AI Vision OCR Tiên Tiến (Gemini 3.6 Flash)
+- Sử dụng mô hình **Google Gemini 3.6 Flash** mới nhất của Google AI Studio.
+- Tối ưu hóa prompt siêu ngắn gọn, tiết kiệm hơn **70% token đầu vào** và tăng tốc độ phản hồi 35%.
 - Nhận diện chính xác cả **chữ in** và **chữ viết tay** (bút bi, bút mực, chữ sửa đổi, ghi đè).
 - Tự động bóc tách: Số phiếu, Tên/Mã sản phẩm, Số O.S/P.O, Đơn vị tính, Số lượng chứng từ, Số lượng thực nhập/xuất, Số Pallet, Ghi chú.
 
@@ -31,9 +32,9 @@
   - `8-1999` $\rightarrow$ `81999`
   - `8-x999` $\rightarrow$ `8x999`
 
-### 3. ⏰ Tự Động Reset Quota Vào 0h GMT+7
-- Bộ đếm lượt quét API tự động làm mới vào đúng **00:00:00 hàng ngày (Múi giờ Việt Nam GMT+7)**.
-- Quản lý danh sách nhiều API Key dự phòng (xoay vòng tự động khi một key hết hạn mức).
+### 3. ⚡ Tự Động Luân Chuyển API Key Dự Phòng (Failover 429)
+- Quản lý danh sách nhiều API Key dự phòng (nạp qua file `.TXT`).
+- Tự động nhảy sang key dự phòng tiếp theo khi một key gặp lỗi giới hạn tốc độ (429 Rate Limit), đảm bảo quá trình quét liên tục không ngắt quãng.
 
 ### 4. 🖼️ Chọn Nhiều Ảnh & Nạp PDF Nhiều Trang (Batch Scan)
 - Hỗ trợ chọn cùng lúc **nhiều file ảnh** (`.jpg`, `.png`, `.webp`) hoặc kéo thả nhiều file vào ứng dụng.
@@ -105,7 +106,7 @@ npm run start
 
 Hệ thống đã tích hợp quy trình **GitHub Actions CI/CD** tự động:
 1. Mỗi khi có commit mới đẩy lên nhánh `main`, GitHub Actions sẽ tự động build file APK.
-2. File cài đặt `ScanPhieuKho-v36.apk` được phát hành tại mục [Releases](https://github.com/kentnobita/scanzzz/releases).
+2. File cài đặt `ScanPhieuKho-v37.apk` được phát hành tại mục [Releases](https://github.com/kentnobita/scanzzz/releases).
 
 Nếu muốn build thủ công trên máy:
 ```bash

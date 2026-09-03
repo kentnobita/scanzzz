@@ -100,7 +100,6 @@ export function getGmt7DateString(d = new Date()) {
   }).format(d);
 }
 
-const API_LOCAL_LIMIT = 20;
 const MAX_HISTORY_ITEMS = 50;
 
 const APPS_SCRIPT_SAMPLE = `function doPost(e) {
@@ -202,25 +201,25 @@ function doGet(e) {
 export default function Home() {
   // Toast state
   const [toast, setToast] = useState(null);
-  const showToast = useCallback((message, type = '') => {
+  const showToast = useCallback((message, type = "") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 2600);
   }, []);
 
   // Image & Scan state
   const [currentImageBase64, setCurrentImageBase64] = useState(null);
-  const [currentImageMimeType, setCurrentImageMimeType] = useState('image/jpeg');
-  const [previewSrc, setPreviewSrc] = useState('');
+  const [currentImageMimeType, setCurrentImageMimeType] = useState("image/jpeg");
+  const [previewSrc, setPreviewSrc] = useState("");
   const [isScanning, setIsScanning] = useState(false);
-  const [scanProgress, setScanProgress] = useState({ active: false, percent: 0, text: '' });
+  const [scanProgress, setScanProgress] = useState({ active: false, percent: 0, text: "" });
   const [showTesseractWarning, setShowTesseractWarning] = useState(false);
-  const [engineBadge, setEngineBadge] = useState('');
+  const [engineBadge, setEngineBadge] = useState("");
 
   // Drag and drop state
   const [isDragging, setIsDragging] = useState(false);
 
   // Result state
-  const [soPhieu, setSoPhieu] = useState('');
+  const [soPhieu, setSoPhieu] = useState("");
   const [tableItems, setTableItems] = useState([]);
   const [currentHistoryId, setCurrentHistoryId] = useState(null);
   const [resultVisible, setResultVisible] = useState(false);
@@ -228,13 +227,13 @@ export default function Home() {
 
   // Multi-page PDF states & Per-page separation
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
-  const [pdfPages, setPdfPages] = useState([]); // [{ pageNum, fullUrl, thumbUrl, base64, selected: true }]
+  const [pdfPages, setPdfPages] = useState([]);
   const [selectedPdfIndex, setSelectedPdfIndex] = useState(0);
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
 
-  // Per-page Results separation ('separate' | pageNum)
-  const [pageResults, setPageResults] = useState([]); // [{ pageNum, soPhieu, items: [], previewUrl, status, itemCount }]
-  const [activeResultTab, setActiveResultTab] = useState('separate');
+  // Per-page Results separation
+  const [pageResults, setPageResults] = useState([]);
+  const [activeResultTab, setActiveResultTab] = useState("separate");
 
   // Live Batch Progress Dialog state
   const [batchProgressModal, setBatchProgressModal] = useState({
@@ -242,14 +241,17 @@ export default function Home() {
     total: 0,
     current: 0,
     percent: 0,
-    pageStatuses: [], // [{ pageNum, status: 'pending'|'running'|'done'|'error', detail: '', lines: 0, soPhieu: '' }]
+    pageStatuses: [],
   });
 
   // Settings & Storage state
-  const [apiKey, setApiKey] = useState('');
+  const [aiProvider, setAiProvider] = useState("gemini"); // "gemini" | "openrouter" | "groq"
+  const [apiKey, setApiKey] = useState("");
   const [backupKeys, setBackupKeys] = useState([]);
-  const [apiUsage, setApiUsage] = useState({});
-  const [apiHistory, setApiHistory] = useState([]);
+  const [openRouterKey, setOpenRouterKey] = useState("");
+  const [openRouterModel, setOpenRouterModel] = useState("qwen/qwen-2.5-vl-72b-instruct:free");
+  const [groqKey, setGroqKey] = useState("");
+  const [groqModel, setGroqModel] = useState("llama-3.2-11b-vision-preview");
   const [rateLimitedKeys, setRateLimitedKeys] = useState(new Set());
   const [selectedColumns, setSelectedColumns] = useState(DEFAULT_COLUMNS);
   const [fieldPrompts, setFieldPrompts] = useState(DEFAULT_FIELD_PROMPTS);
@@ -340,36 +342,6 @@ export default function Home() {
       setBackupKeys([]);
     }
 
-    try {
-      const todayGmt7 = getGmt7DateString();
-      const lastQuotaDate = localStorage.getItem('gemini_quota_date');
-      const rawUsage = JSON.parse(localStorage.getItem('gemini_api_usage') || '{}');
-
-      if (lastQuotaDate && lastQuotaDate !== todayGmt7) {
-        // Reset 0h GMT+7
-        const resetUsage = {};
-        Object.keys(rawUsage).forEach((k) => {
-          if (k === '_date') return;
-          resetUsage[k] = { ...(rawUsage[k] || {}), used: 0, checkStatus: 'Đã reset 0h GMT+7' };
-        });
-        resetUsage._date = todayGmt7;
-        setApiUsage(resetUsage);
-        localStorage.setItem('gemini_api_usage', JSON.stringify(resetUsage));
-        localStorage.setItem('gemini_quota_date', todayGmt7);
-      } else {
-        setApiUsage(rawUsage);
-        if (!lastQuotaDate) localStorage.setItem('gemini_quota_date', todayGmt7);
-      }
-    } catch {
-      setApiUsage({});
-    }
-
-    try {
-      const hist = JSON.parse(localStorage.getItem('gemini_api_usage_history') || '[]');
-      setApiHistory(Array.isArray(hist) ? hist : []);
-    } catch {
-      setApiHistory([]);
-    }
 
     try {
       const cols = JSON.parse(localStorage.getItem('scan_columns') || '[]');
@@ -408,26 +380,6 @@ export default function Home() {
       }
     }
 
-    // Real-time background timer for crossing 0h GMT+7
-    const quotaTimer = setInterval(() => {
-      const currentToday = getGmt7DateString();
-      const recordedDate = localStorage.getItem('gemini_quota_date');
-      if (recordedDate && recordedDate !== currentToday) {
-        console.log(`[0h GMT+7 Quota Reset] Date rolled over to ${currentToday}`);
-        setApiUsage((prev) => {
-          const next = {};
-          Object.keys(prev).forEach((k) => {
-            if (k === '_date') return;
-            next[k] = { ...(prev[k] || {}), used: 0, checkStatus: 'Đã reset 0h GMT+7' };
-          });
-          next._date = currentToday;
-          localStorage.setItem('gemini_api_usage', JSON.stringify(next));
-          localStorage.setItem('gemini_quota_date', currentToday);
-          return next;
-        });
-        setRateLimitedKeys(new Set());
-      }
-    }, 15000);
 
     // Register PWA Service Worker
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
@@ -458,7 +410,6 @@ export default function Home() {
     }
 
     return () => {
-      clearInterval(quotaTimer);
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
@@ -493,14 +444,13 @@ export default function Home() {
     }
 
     setIsCloudSyncing(true);
-    if (!silent) showToast(`☁️ Đang đồng bộ cấu hình API, Bộ đếm & Sheet lên Cloud [${code}]...`);
+    if (!silent) showToast(`☁️ Đang đồng bộ cấu hình API & Sheet lên Cloud [${code}]...`);
 
     try {
       const payload = {
         code,
         apiKey: apiKey.trim(),
         backupKeys,
-        apiUsage,
         googleSheetUrl: googleSheetUrl.trim(),
         autoSyncSheet,
         selectedColumns,
@@ -562,10 +512,6 @@ export default function Home() {
         setBackupKeys(data.backupKeys);
         localStorage.setItem('gemini_backup_api_keys', JSON.stringify(data.backupKeys));
       }
-      if (data.apiUsage && typeof data.apiUsage === 'object') {
-        setApiUsage(data.apiUsage);
-        localStorage.setItem('gemini_api_usage', JSON.stringify(data.apiUsage));
-      }
       if (data.googleSheetUrl !== undefined) {
         setGoogleSheetUrl(data.googleSheetUrl);
         localStorage.setItem('google_sheet_webhook_url', data.googleSheetUrl);
@@ -590,7 +536,7 @@ export default function Home() {
       const nowStr = new Date().toLocaleTimeString('vi-VN');
       setLastCloudSync({ time: nowStr, code });
       if (!silent) {
-        showToast(`🎉 Đã đồng bộ cấu hình API, Bộ đếm & Google Sheet từ Cloud [${code}]!`, 'success');
+        showToast(`🎉 Đã đồng bộ cấu hình API & Google Sheet từ Cloud [${code}]!`, 'success');
       }
       return true;
     } catch (e) {
@@ -622,74 +568,22 @@ export default function Home() {
   const getApiMonitorEntries = useCallback(() => {
     const keys = getGeminiApiKeys();
     return keys.map((key, index) => {
-      const usage = apiUsage[key] || { used: 0 };
-      const remaining = Math.max(0, API_LOCAL_LIMIT - usage.used);
       const limited = rateLimitedKeys.has(key);
-      const exhausted = remaining === 0;
       return {
         key,
         index,
-        used: usage.used || 0,
-        remaining,
         limited,
-        exhausted,
-        lastUsedAt: usage.lastUsedAt || '',
-        lastResult: usage.lastResult || '',
-        lastCheckedAt: usage.lastCheckedAt || '',
-        checkStatus: usage.checkStatus || '',
-        checkDetail: usage.checkDetail || '',
-        status: exhausted ? 'Hết 20 lượt' : 'Sẵn sàng',
+        checkStatus: '',
+        checkDetail: '',
+        status: limited ? 'Tạm bị giới hạn (429)' : 'Sẵn sàng',
       };
     });
-  }, [getGeminiApiKeys, apiUsage, rateLimitedKeys]);
+  }, [getGeminiApiKeys, rateLimitedKeys]);
 
-  const recordApiAttempt = useCallback((key, result, detail = '', forceExhausted = false) => {
-    setApiUsage((prev) => {
-      const next = { ...prev };
-      const item = next[key] || { used: 0 };
-      item.used = forceExhausted ? API_LOCAL_LIMIT : Math.min(API_LOCAL_LIMIT, (item.used || 0) + 1);
-      item.lastUsedAt = new Date().toISOString();
-      item.lastResult = result;
-      next[key] = item;
-      localStorage.setItem('gemini_api_usage', JSON.stringify(next));
-
-      // Auto-sync quota counter to Cloud in background
-      if (cloudSyncCode) {
-        fetch('/api/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            code: cloudSyncCode,
-            apiKey: apiKey.trim(),
-            backupKeys,
-            apiUsage: next,
-            googleSheetUrl: googleSheetUrl.trim(),
-            autoSyncSheet,
-            selectedColumns,
-            fieldPrompts,
-          }),
-        }).catch(() => {});
-      }
-
-      return next;
-    });
-
-    setApiHistory((prev) => {
-      const usage = (apiUsage[key]?.used || 0) + 1;
-      const item = {
-        id: 'api_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        at: new Date().toISOString(),
-        api: maskApiKey(key),
-        result,
-        detail,
-        used: forceExhausted ? API_LOCAL_LIMIT : Math.min(API_LOCAL_LIMIT, usage),
-        remaining: forceExhausted ? 0 : Math.max(0, API_LOCAL_LIMIT - usage),
-      };
-      const next = [item, ...prev].slice(0, 80);
-      localStorage.setItem('gemini_api_usage_history', JSON.stringify(next));
-      return next;
-    });
-  }, [apiUsage, cloudSyncCode, apiKey, backupKeys, googleSheetUrl, autoSyncSheet, selectedColumns, fieldPrompts]);
+  // eslint-disable-next-line no-unused-vars
+  const recordApiAttempt = useCallback((_key, _result) => {
+    // Quota tracking removed — only rate-limit (429) detection is used
+  }, []);
 
   const loadImageFromDataUrl = useCallback((dataUrl, isNewRaw = true) => {
     const img = new Image();
@@ -1426,7 +1320,12 @@ Không trả markdown hoặc giải thích.`;
           ],
         },
       ],
-      generationConfig: { temperature: 0.1, response_mime_type: 'application/json' },
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 65536,
+        topP: 0.95,
+        responseMimeType: 'application/json',
+      },
     };
 
     const res = await fetch(
@@ -1509,17 +1408,17 @@ Không trả markdown hoặc giải thích.`;
     return { soPhieu: sp, items };
   };
 
-  // OCR Single Image Helper with Failover
+  // OCR Single Image Helper with Failover (Google Gemini 3.6 Flash)
   const executeOcrOnImage = async (base64Data, mimeType, progressPrefix = '') => {
-    const availableEntries = getApiMonitorEntries().filter((i) => !i.limited && !i.exhausted);
-    const apiKeys = availableEntries.map((i) => i.key);
+    const allKeys = getGeminiApiKeys();
+    const apiKeys = allKeys.filter((k) => !rateLimitedKeys.has(k));
+    const keysToTry = apiKeys.length > 0 ? apiKeys : allKeys;
 
-    if (apiKeys.length) {
-      for (let i = 0; i < apiKeys.length; i++) {
-        const key = apiKeys[i];
+    if (keysToTry.length > 0) {
+      for (let i = 0; i < keysToTry.length; i++) {
+        const key = keysToTry[i];
         try {
           const res = await scanClientGeminiWithBase64(base64Data, mimeType, key);
-          recordApiAttempt(key, 'Thành công');
           setRateLimitedKeys((prev) => {
             const next = new Set(prev);
             next.delete(key);
@@ -1529,34 +1428,33 @@ Không trả markdown hoặc giải thích.`;
         } catch (error) {
           const is429 = error?.status === 429;
           if (is429) {
-            recordApiAttempt(key, 'Hết 20 lượt', 'Gemini trả về 429', true);
             setRateLimitedKeys((prev) => new Set(prev).add(key));
-            if (i < apiKeys.length - 1) {
+            if (i < keysToTry.length - 1) {
               setScanProgress({
                 active: true,
                 percent: 50,
-                text: `${progressPrefix} ↪ Đang chuyển sang API dự phòng...`,
+                text: `${progressPrefix} ↪ API bị giới hạn (429), đang chuyển sang API dự phòng...`,
               });
               continue;
             }
-          } else {
-            recordApiAttempt(key, 'Lỗi', error?.message || 'Lỗi request');
+            throw new Error('Tất cả API key Gemini đang bị giới hạn (429). Vui lòng thử lại sau ít phút.');
           }
           throw error;
         }
       }
-    } else {
-      setShowTesseractWarning(true);
-      const res = await scanWithTesseract(base64Data, mimeType, (p) => {
-        const pct = Math.round(p * 100);
-        setScanProgress({
-          active: true,
-          percent: pct,
-          text: `${progressPrefix} Đang nhận diện offline... ${pct}%`,
-        });
-      });
-      return { data: res, engine: 'tesseract' };
     }
+
+    // Fallback Offline Tesseract
+    setShowTesseractWarning(true);
+    const res = await scanWithTesseract(base64Data, mimeType, (p) => {
+      const pct = Math.round(p * 100);
+      setScanProgress({
+        active: true,
+        percent: pct,
+        text: `${progressPrefix} Đang nhận diện offline... ${pct}%`,
+      });
+    });
+    return { data: res, engine: 'tesseract' };
   };
 
   // Main Single Image Scan Dispatcher
@@ -1951,24 +1849,24 @@ Không trả markdown hoặc giải thích.`;
   };
 
   const checkApiReadiness = async (key) => {
-    showToast(`Đang kiểm tra kết nối API...`);
+    showToast('Đang kiểm tra kết nối API...');
     try {
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`);
       const isReady = res.ok;
       const is429 = res.status === 429;
-      setApiUsage((prev) => {
-        const next = { ...prev };
-        const item = next[key] || { used: 0 };
-        item.lastCheckedAt = new Date().toISOString();
-        item.checkStatus = isReady ? 'Sẵn sàng' : is429 ? 'Hết 20 lượt' : 'Không sẵn sàng';
-        item.checkDetail = isReady ? 'Kết nối Gemini thành công' : `Lỗi ${res.status}`;
-        if (is429) item.used = API_LOCAL_LIMIT;
-        next[key] = item;
-        localStorage.setItem('gemini_api_usage', JSON.stringify(next));
-        return next;
-      });
-      if (isReady) showToast(`✅ ${maskApiKey(key)}: Kết nối tốt!`, 'success');
-      else showToast(`⚠️ ${maskApiKey(key)}: ${is429 ? 'Đã hết lượt (429)' : 'Không khả dụng'}`, 'error');
+      if (is429) {
+        setRateLimitedKeys((prev) => new Set(prev).add(key));
+        showToast(`⚠️ ${maskApiKey(key)}: API đang bị giới hạn tạm thời (429)`, 'error');
+      } else if (isReady) {
+        setRateLimitedKeys((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+        showToast(`✅ ${maskApiKey(key)}: Kết nối Gemini 3.6 Flash tốt!`, 'success');
+      } else {
+        showToast(`⚠️ ${maskApiKey(key)}: Không khả dụng (Lỗi ${res.status})`, 'error');
+      }
     } catch {
       showToast('Không thể kết nối máy chủ để kiểm tra', 'error');
     }
@@ -1983,20 +1881,6 @@ Không trả markdown hoặc giải thích.`;
     for (const key of keys) {
       await checkApiReadiness(key);
     }
-  };
-
-  const resetApiCounters = () => {
-    const next = {};
-    getGeminiApiKeys().forEach((k) => (next[k] = { used: 0, lastUsedAt: '', lastResult: '' }));
-    setApiUsage(next);
-    localStorage.setItem('gemini_api_usage', JSON.stringify(next));
-    setRateLimitedKeys(new Set());
-    
-    // Also push reset quota counters to cloud if connected
-    if (cloudSyncCode) {
-      pushToCloud(cloudSyncCode, true);
-    }
-    showToast('Đã đặt lại 20 lượt cho tất cả API', 'success');
   };
 
   const testGoogleSheetConnection = async () => {
@@ -2058,17 +1942,13 @@ Không trả markdown hoặc giải thích.`;
   const clearAllApis = () => {
     localStorage.removeItem('gemini_api_key');
     localStorage.removeItem('gemini_backup_api_keys');
-    localStorage.removeItem('gemini_api_usage');
-    localStorage.removeItem('gemini_api_usage_history');
     setApiKey('');
     setBackupKeys([]);
-    setApiUsage({});
-    setApiHistory([]);
     setRateLimitedKeys(new Set());
     showToast('Đã xóa toàn bộ API key', 'success');
   };
 
-  const availableApiCount = getApiMonitorEntries().filter((i) => !i.limited && !i.exhausted).length;
+  const availableApiCount = getGeminiApiKeys().filter((k) => !rateLimitedKeys.has(k)).length;
   const totalApiCount = getGeminiApiKeys().length;
   const isMultiPage = pageResults.length > 1;
   const selectedPdfPagesCount = pdfPages.filter((p) => p.selected).length;
@@ -2103,7 +1983,7 @@ Không trả markdown hoặc giải thích.`;
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">Scan Pro Max</h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                  v36.0.18
+                  v37.0.0
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">Trích xuất số phiếu & danh mục hàng hóa bằng AI</p>
@@ -2198,12 +2078,18 @@ Không trả markdown hoặc giải thích.`;
             <div className="flex items-center gap-2">
               <span
                 className={`inline-block w-2.5 h-2.5 rounded-full ${
-                  availableApiCount > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                  aiProvider === 'openrouter'
+                    ? openRouterKey ? 'bg-purple-500 animate-pulse' : 'bg-amber-500'
+                    : aiProvider === 'groq'
+                    ? groqKey ? 'bg-orange-500 animate-pulse' : 'bg-amber-500'
+                    : availableApiCount > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
                 }`}
               />
               <span className="font-semibold text-slate-700">
                 {totalApiCount > 0
-                  ? `${availableApiCount}/${totalApiCount} API Gemini sẵn sàng`
+                  ? availableApiCount > 0
+                    ? `${availableApiCount}/${totalApiCount} API Gemini 3.6 Flash sẵn sàng`
+                    : 'API Gemini đang bị giới hạn tạm thời (429)'
                   : 'Chế độ OCR Offline (Tesseract)'}
               </span>
             </div>
@@ -2546,12 +2432,22 @@ Không trả markdown hoặc giải thích.`;
                     <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">Kết quả trích xuất</h3>
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                        engineBadge === 'gemini'
+                        engineBadge === 'openrouter'
+                          ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                          : engineBadge === 'groq'
+                          ? 'bg-orange-100 text-orange-800 border border-orange-200'
+                          : engineBadge === 'gemini'
                           ? 'bg-blue-100 text-blue-800 border border-blue-200'
                           : 'bg-amber-100 text-amber-800 border border-amber-200'
                       }`}
                     >
-                      {engineBadge === 'gemini' ? '✨ Gemini Vision 3.6 Flash' : '📝 Tesseract OCR'}
+                      {engineBadge === 'openrouter'
+                        ? `✨ OpenRouter (${openRouterModel.split('/')[1]?.split(':')[0] || 'Qwen 2.5 VL'})`
+                        : engineBadge === 'groq'
+                        ? `✨ Groq (${groqModel})`
+                        : engineBadge === 'gemini'
+                        ? '✨ Gemini Vision 3.6 Flash'
+                        : '📝 Tesseract OCR'}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
@@ -2979,7 +2875,7 @@ Không trả markdown hoặc giải thích.`;
           <div className="flex items-center gap-2">
             <span className="font-bold text-slate-700">Scan Pro Max — Trích Xuất Phiếu Kho AI</span>
             <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-mono font-bold text-[10px]">
-              Phiên bản v36.0.18
+              Phiên bản v37.0.0
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -3714,7 +3610,7 @@ Không trả markdown hoặc giải thích.`;
                     <div className="space-y-1.5 text-center sm:text-left flex-1">
                       <div className="font-bold text-slate-800 text-xs">Quét QR mở ngay trên điện thoại:</div>
                       <p className="text-[11px] text-slate-500 leading-tight">
-                        Mở camera trên điện thoại quét mã này là tự động áp dụng API, Bộ đếm quota và Google Sheet.
+                        Mở camera trên điện thoại quét mã này là tự động áp dụng API và Google Sheet.
                       </p>
                       <button
                         type="button"
@@ -3739,6 +3635,21 @@ Không trả markdown hoặc giải thích.`;
               {/* TAB 2: API GEMINI */}
               {settingsTab === 'api' && (
                 <div className="space-y-4">
+                  {/* Google AI Studio Setup Guide */}
+                  <div className="p-3.5 bg-blue-50 rounded-2xl border border-blue-200 space-y-2">
+                    <div className="font-bold text-blue-900 flex items-center gap-2">
+                      <IconKey className="w-4 h-4 text-blue-600" />
+                      <span>Cách Lấy API Key từ Google AI Studio</span>
+                    </div>
+                    <ol className="list-decimal list-inside space-y-1 text-[11px] text-blue-800 leading-relaxed">
+                      <li>Vào trang <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="font-bold underline">aistudio.google.com/apikey</a> (đăng nhập tài khoản Google)</li>
+                      <li>Bấm nút <strong>&ldquo;Create API key&rdquo;</strong> → Chọn project hoặc tạo mới</li>
+                      <li>Sao chép API key (bắt đầu bằng <code className="bg-blue-100 px-1 rounded">AIza...</code>)</li>
+                      <li>Dán vào ô <strong>&ldquo;API Key Gemini Chính&rdquo;</strong> bên dưới → Bấm <strong>Lưu</strong></li>
+                    </ol>
+                    <p className="text-[10px] text-blue-700 font-medium">✅ Free tier Gemini 3.6 Flash: 1.500 requests/ngày • Miễn phí 100% • Không cần thẻ tín dụng</p>
+                  </div>
+
                   {/* Primary Key */}
                   <div className="space-y-1.5">
                     <label className="font-bold text-slate-700 flex items-center justify-between">
@@ -3757,7 +3668,7 @@ Không trả markdown hoặc giải thích.`;
                       type="password"
                       value={apiKey}
                       onChange={(e) => setApiKey(e.target.value)}
-                      placeholder="Dán API Key Gemini tại đây..."
+                      placeholder="Dán API Key Gemini tại đây (AIza...)..."
                       className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 font-mono outline-none"
                     />
                     <p className="text-[11px] text-slate-400">Key chỉ lưu trên trình duyệt và mã đồng bộ riêng của bạn.</p>
@@ -3767,7 +3678,7 @@ Không trả markdown hoặc giải thích.`;
                   <div className="space-y-1.5 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
                     <label className="font-bold text-slate-700 block">Nạp Danh Sách API Dự Phòng (.TXT)</label>
                     <p className="text-[11px] text-slate-500 leading-relaxed">
-                      Mỗi dòng 1 key. Tự động luân chuyển khi gặp mã lỗi 429 hoặc chạm hạn mức 20 lượt.
+                      Mỗi dòng 1 key. Tự động luân chuyển sang key kế tiếp khi gặp mã lỗi <strong>429 (Rate Limit)</strong> từ Gemini.
                     </p>
                     <div className="flex items-center gap-3 pt-1">
                       <button
@@ -3785,63 +3696,57 @@ Không trả markdown hoặc giải thích.`;
                     <input ref={backupFileInputRef} type="file" className="hidden" accept=".txt,text/plain" onChange={handleBackupApiFile} />
                   </div>
 
-                  {/* Monitor & Counters */}
+                  {/* API Status Monitor */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-700">Giám Sát Quota Cục Bộ (Đồng bộ Cloud)</span>
-                      <div className="flex items-center gap-2">
-                        <button onClick={checkAllApis} className="text-blue-600 hover:underline font-semibold">
-                          Kiểm tra tất cả
-                        </button>
-                        <span>•</span>
-                        <button onClick={resetApiCounters} className="text-slate-500 hover:underline">
-                          Đặt lại 20 lượt
-                        </button>
-                      </div>
+                      <span className="font-bold text-slate-700">Kiểm Tra Trạng Thái API</span>
+                      <button onClick={checkAllApis} className="text-blue-600 hover:underline font-semibold text-xs">
+                        Kiểm tra tất cả
+                      </button>
                     </div>
 
-                    <div className="p-2 rounded-lg bg-amber-50/80 border border-amber-200 text-amber-900 text-[11px] flex items-center gap-1.5">
-                      <span>⏰</span>
-                      <span>Bộ đếm 20 lượt tự động làm mới về 0 vào lúc <strong>00:00 hàng ngày (Múi giờ GMT+7)</strong>.</span>
+                    <div className="p-2 rounded-lg bg-blue-50/80 border border-blue-200 text-blue-900 text-[11px] flex items-center gap-1.5">
+                      <span>🤖</span>
+                      <span>Đang dùng mô hình <strong>Gemini 3.6 Flash</strong> chuẩn mới nhất. Hệ thống tự động chuyển key dự phòng khi gặp lỗi 429.</span>
                     </div>
 
                     <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
-                      {getApiMonitorEntries().length > 0 ? (
-                        getApiMonitorEntries().map((item) => (
-                          <div key={item.key} className="p-2.5 rounded-lg border border-slate-200 bg-white flex items-center justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="font-mono font-bold text-slate-800 text-xs truncate">
-                                {item.index === 0 ? 'Chính' : `Dự phòng #${item.index}`} • {maskApiKey(item.key)}
+                      {getGeminiApiKeys().length > 0 ? (
+                        getGeminiApiKeys().map((key, index) => {
+                          const isLimited = rateLimitedKeys.has(key);
+                          return (
+                            <div key={key} className="p-2.5 rounded-lg border border-slate-200 bg-white flex items-center justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="font-mono font-bold text-slate-800 text-xs truncate">
+                                  {index === 0 ? 'Chính' : `Dự phòng #${index}`} • {maskApiKey(key)}
+                                </div>
+                                <div className="text-[10px] flex items-center gap-2 mt-0.5">
+                                  <span className={isLimited ? 'text-red-500 font-bold' : 'text-emerald-600 font-bold'}>
+                                    {isLimited ? '⚠ Tạm bị giới hạn (429)' : '✓ Sẵn sàng'}
+                                  </span>
+                                </div>
                               </div>
-                              <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
-                                <span>{item.status}</span>
-                                {item.checkStatus && (
-                                  <>
-                                    <span>•</span>
-                                    <span className={item.checkStatus === 'Sẵn sàng' ? 'text-emerald-600 font-bold' : 'text-red-500'}>
-                                      {item.checkStatus}
-                                    </span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="px-2 py-0.5 rounded-md font-mono text-[10px] font-bold bg-slate-100 text-slate-700">
-                                {item.used}/{API_LOCAL_LIMIT}
-                              </span>
                               <button
-                                onClick={() => checkApiReadiness(item.key)}
-                                className="px-2 py-1 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-[10px] font-bold"
+                                onClick={() => checkApiReadiness(key)}
+                                className="px-2 py-1 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-[10px] font-bold shrink-0"
                               >
                                 Test
                               </button>
                             </div>
-                          </div>
-                        ))
+                          );
+                        })
                       ) : (
                         <div className="text-center py-4 text-slate-400">Chưa cấu hình API key nào</div>
                       )}
                     </div>
+                    {rateLimitedKeys.size > 0 && (
+                      <button
+                        onClick={() => { setRateLimitedKeys(new Set()); showToast('Đã xóa trạng thái giới hạn, thử lại với tất cả API', 'success'); }}
+                        className="w-full py-1.5 rounded-lg border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 active:scale-95 transition-all"
+                      >
+                        Xóa trạng thái 429 &amp; thử lại tất cả API
+                      </button>
+                    )}
                   </div>
                 </div>
               )}

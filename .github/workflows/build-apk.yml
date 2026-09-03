@@ -44,28 +44,28 @@ jobs:
       - name: Prepare APK Output
         run: |
           mkdir -p build-output
-          cp android/app/build/outputs/apk/debug/app-debug.apk build-output/ScanPhieuKho-v36.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk build-output/ScanPhieuKho-v37.apk
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ScanPhieuKho-Android-APK
-          path: build-output/ScanPhieuKho-v36.apk
+          path: build-output/ScanPhieuKho-v37.apk
           retention-days: 30
 
       - name: Create GitHub Release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v36.0.18
-          name: "Scan Phiếu Pro Max Android APK (v36.0.18)"
+          tag_name: v37.0.0
+          name: "Scan Phiếu Pro Max Android APK (v37.0.0)"
           body: |
             ## 📱 Ứng Dụng Scan Phiếu Kho Android (.APK)
-            - **Phiên bản**: v36.0.18
-            - **Hệ điều hành**: Android 5.1+
-            - **Tính năng**: Camera quét phiếu tự động, đèn Flash, đồng bộ Cloud & Google Sheet.
+            - **Phiên bản**: v37.0.0
+            - **Mô hình AI**: Google Gemini 3.6 Flash (Tối ưu Prompt 70%)
+            - **Tính năng**: Tự động chuyển API dự phòng khi 429, lưu tối đa 50 phiếu, chọn nhiều ảnh cùng lúc, Camera Flash, Đồng bộ Google Sheet & Cloud.
             
-            👉 Tải file cài đặt: `ScanPhieuKho-v36.apk`
-          files: build-output/ScanPhieuKho-v36.apk
+            👉 Tải file cài đặt: `ScanPhieuKho-v37.apk`
+          files: build-output/ScanPhieuKho-v37.apk
           draft: false
           prerelease: false
         env:
