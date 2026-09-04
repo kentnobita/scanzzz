@@ -3784,122 +3784,284 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 </div>
               )}
 
-              {/* TAB 2: API GEMINI */}
+              {/* TAB 2: API GEMINI & OPENROUTER */}
               {settingsTab === 'api' && (
                 <div className="space-y-4">
-                  {/* Google AI Studio Setup Guide */}
-                  <div className="p-3.5 bg-blue-50 rounded-2xl border border-blue-200 space-y-2">
-                    <div className="font-bold text-blue-900 flex items-center gap-2">
-                      <IconKey className="w-4 h-4 text-blue-600" />
-                      <span>Cách Lấy API Key từ Google AI Studio</span>
-                    </div>
-                    <ol className="list-decimal list-inside space-y-1 text-[11px] text-blue-800 leading-relaxed">
-                      <li>Vào trang <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="font-bold underline">aistudio.google.com/apikey</a> (đăng nhập tài khoản Google)</li>
-                      <li>Bấm nút <strong>&ldquo;Create API key&rdquo;</strong> → Chọn project hoặc tạo mới</li>
-                      <li>Sao chép API key (bắt đầu bằng <code className="bg-blue-100 px-1 rounded">AIza...</code>)</li>
-                      <li>Dán vào ô <strong>&ldquo;API Key Gemini Chính&rdquo;</strong> bên dưới → Bấm <strong>Lưu</strong></li>
-                    </ol>
-                    <p className="text-[10px] text-blue-700 font-medium">✅ Free tier Gemini 3.6 Flash: 1.500 requests/ngày • Miễn phí 100% • Không cần thẻ tín dụng</p>
+                  {/* AI Provider Switcher */}
+                  <div className="p-1.5 bg-slate-100 rounded-2xl flex items-center gap-1.5 text-xs font-bold border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setAiProvider('gemini')}
+                      className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                        aiProvider === 'gemini'
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                    >
+                      <span>🔵 Google Gemini 3.6 Flash</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAiProvider('openrouter')}
+                      className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                        aiProvider === 'openrouter'
+                          ? 'bg-purple-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                    >
+                      <span>🟣 OpenRouter (4 Models Rẻ)</span>
+                    </button>
                   </div>
 
-                  {/* Primary Key */}
-                  <div className="space-y-1.5">
-                    <label className="font-bold text-slate-700 flex items-center justify-between">
-                      <span>API Key Gemini Chính</span>
-                      <a
-                        href="https://aistudio.google.com/apikey"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline flex items-center gap-1 font-semibold text-[11px]"
-                      >
-                        <span>Lấy key Google AI Studio</span>
-                        <IconExternalLink className="w-3 h-3" />
-                      </a>
-                    </label>
-                    <input
-                      type="password"
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      placeholder="Dán API Key Gemini tại đây (AIza...)..."
-                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 font-mono outline-none"
-                    />
-                    <p className="text-[11px] text-slate-400">Key chỉ lưu trên trình duyệt và mã đồng bộ riêng của bạn.</p>
-                  </div>
+                  {/* OPENROUTER SECTION */}
+                  {aiProvider === 'openrouter' && (
+                    <div className="space-y-4 animate-fade-in">
+                      <div className="p-3.5 bg-purple-50 rounded-2xl border border-purple-200 space-y-2">
+                        <div className="font-bold text-purple-950 flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <IconSparkles className="w-4 h-4 text-purple-600" />
+                            <span>Cấu Hình OpenRouter (Tiết Kiệm Chi Phí)</span>
+                          </span>
+                          <a
+                            href="https://openrouter.ai/keys"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-purple-600 hover:underline flex items-center gap-1 font-semibold text-[11px]"
+                          >
+                            <span>Lấy key OpenRouter</span>
+                            <IconExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                        <p className="text-[11px] text-purple-900 leading-relaxed">
+                          OpenRouter cho phép bạn dùng nhiều mô hình AI Vision mạnh mẽ với giá siêu rẻ (chỉ từ <strong>~15đ – 85đ / phiếu</strong>, rẻ hơn 5–20 lần so với Gemini 3.6).
+                        </p>
+                      </div>
 
-                  {/* Backup Keys File */}
-                  <div className="space-y-1.5 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-                    <label className="font-bold text-slate-700 block">Nạp Danh Sách API Dự Phòng (.TXT)</label>
-                    <p className="text-[11px] text-slate-500 leading-relaxed">
-                      Mỗi dòng 1 key. Tự động luân chuyển sang key kế tiếp khi gặp mã lỗi <strong>429 (Rate Limit)</strong> từ Gemini.
-                    </p>
-                    <div className="flex items-center gap-3 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => backupFileInputRef.current?.click()}
-                        className="px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 flex items-center gap-1.5 shadow-sm"
-                      >
-                        <IconUpload className="w-3.5 h-3.5" />
-                        <span>Tải file .TXT</span>
-                      </button>
-                      <span className="font-medium text-slate-600">
-                        {backupKeys.length ? `Đã nạp ${backupKeys.length} key dự phòng` : 'Chưa có file'}
-                      </span>
-                    </div>
-                    <input ref={backupFileInputRef} type="file" className="hidden" accept=".txt,text/plain" onChange={handleBackupApiFile} />
-                  </div>
+                      {/* OpenRouter API Key Input */}
+                      <div className="space-y-1.5">
+                        <label className="font-bold text-slate-700 flex items-center justify-between text-xs">
+                          <span>API Key OpenRouter</span>
+                          <button
+                            type="button"
+                            onClick={testOpenRouterConnection}
+                            disabled={openRouterTesting || !openRouterKey.trim()}
+                            className="text-purple-600 hover:underline font-semibold text-[11px] disabled:opacity-50"
+                          >
+                            {openRouterTesting ? 'Đang test...' : '⚡ Test Kết Nối'}
+                          </button>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="password"
+                            value={openRouterKey}
+                            onChange={(e) => setOpenRouterKey(e.target.value)}
+                            placeholder="Dán key sk-or-v1-... tại đây"
+                            className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 font-mono text-xs outline-none"
+                          />
+                        </div>
+                        <p className="text-[11px] text-slate-400">Key được lưu an toàn trên máy và tự động đồng bộ sang điện thoại qua Cloud Sync.</p>
+                      </div>
 
-                  {/* API Status Monitor */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-700">Kiểm Tra Trạng Thái API</span>
-                      <button onClick={checkAllApis} className="text-blue-600 hover:underline font-semibold text-xs">
-                        Kiểm tra tất cả
-                      </button>
-                    </div>
-
-                    <div className="p-2 rounded-lg bg-blue-50/80 border border-blue-200 text-blue-900 text-[11px] flex items-center gap-1.5">
-                      <span>🤖</span>
-                      <span>Đang dùng mô hình <strong>Gemini 3.6 Flash</strong> chuẩn mới nhất. Hệ thống tự động chuyển key dự phòng khi gặp lỗi 429.</span>
-                    </div>
-
-                    <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
-                      {getGeminiApiKeys().length > 0 ? (
-                        getGeminiApiKeys().map((key, index) => {
-                          const isLimited = rateLimitedKeys.has(key);
-                          return (
-                            <div key={key} className="p-2.5 rounded-lg border border-slate-200 bg-white flex items-center justify-between gap-2">
-                              <div className="min-w-0 flex-1">
-                                <div className="font-mono font-bold text-slate-800 text-xs truncate">
-                                  {index === 0 ? 'Chính' : `Dự phòng #${index}`} • {maskApiKey(key)}
-                                </div>
-                                <div className="text-[10px] flex items-center gap-2 mt-0.5">
-                                  <span className={isLimited ? 'text-red-500 font-bold' : 'text-emerald-600 font-bold'}>
-                                    {isLimited ? '⚠ Tạm bị giới hạn (429)' : '✓ Sẵn sàng'}
-                                  </span>
-                                </div>
-                              </div>
+                      {/* 4 Models Selector */}
+                      <div className="space-y-2">
+                        <label className="font-bold text-slate-700 block text-xs">Chọn Mô Hình AI OpenRouter</label>
+                        <div className="grid grid-cols-1 gap-2">
+                          {[
+                            {
+                              id: 'google/gemini-2.0-flash-001',
+                              name: 'Gemini 2.0 Flash',
+                              badge: 'Khuyên Dùng • Cân Bằng Nhất',
+                              badgeColor: 'bg-emerald-100 text-emerald-800',
+                              price: '~45đ / phiếu',
+                              desc: 'Đọc chữ viết tay tiếng Việt xuất sắc, giá rẻ hơn 10 lần so với 3.6 Flash.',
+                            },
+                            {
+                              id: 'openai/gpt-4o-mini',
+                              name: 'OpenAI GPT-4o Mini',
+                              badge: 'Ổn Định Cao',
+                              badgeColor: 'bg-blue-100 text-blue-800',
+                              price: '~65đ / phiếu',
+                              desc: 'Mô hình vision nhẹ và cực kỳ ổn định của OpenAI, trích xuất bảng chuẩn.',
+                            },
+                            {
+                              id: 'qwen/qwen-2.5-vl-72b-instruct',
+                              name: 'Qwen 2.5 VL 72B',
+                              badge: 'Mạnh Nhất Về Tiếng Việt',
+                              badgeColor: 'bg-purple-100 text-purple-800',
+                              price: '~85đ / phiếu',
+                              desc: 'Mô hình Vision đầu bảng của Alibaba, siêu mạnh về tài liệu và chữ viết tay châu Á.',
+                            },
+                            {
+                              id: 'qwen/qwen-2.5-vl-7b-instruct',
+                              name: 'Qwen 2.5 VL 7B',
+                              badge: 'Siêu Rẻ Nhất',
+                              badgeColor: 'bg-amber-100 text-amber-800',
+                              price: '~15đ / phiếu',
+                              desc: 'Bản 7B siêu nhẹ, giá rẻ như cho không (~15.000đ cho 1.000 phiếu kho).',
+                            },
+                          ].map((m) => {
+                            const isSelected = openRouterModel === m.id;
+                            return (
                               <button
-                                onClick={() => checkApiReadiness(key)}
-                                className="px-2 py-1 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-[10px] font-bold shrink-0"
+                                key={m.id}
+                                type="button"
+                                onClick={() => setOpenRouterModel(m.id)}
+                                className={`p-3 rounded-xl border text-left transition-all flex items-start justify-between gap-3 ${
+                                  isSelected
+                                    ? 'border-purple-500 bg-purple-50/70 shadow-sm ring-1 ring-purple-500'
+                                    : 'border-slate-200 bg-white hover:bg-slate-50'
+                                }`}
                               >
-                                Test
+                                <div className="space-y-1 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-slate-900 text-xs">{m.name}</span>
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${m.badgeColor}`}>{m.badge}</span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 leading-tight">{m.desc}</p>
+                                  <div className="font-mono text-[10px] text-purple-700 font-semibold">{m.id}</div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <span className="font-bold text-xs text-purple-900">{m.price}</span>
+                                  {isSelected && <div className="text-[10px] text-purple-600 font-bold mt-1">✓ Đang chọn</div>}
+                                </div>
                               </button>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="text-center py-4 text-slate-400">Chưa cấu hình API key nào</div>
-                      )}
+                            );
+                          })}
+                        </div>
+
+                        {/* Custom Model Input */}
+                        <div className="pt-1">
+                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">Hoặc nhập mã model OpenRouter tùy chỉnh:</label>
+                          <input
+                            type="text"
+                            value={openRouterModel}
+                            onChange={(e) => setOpenRouterModel(e.target.value)}
+                            placeholder="Ví dụ: google/gemini-2.0-flash-001"
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-purple-500 font-mono text-xs outline-none bg-slate-50"
+                          />
+                        </div>
+                      </div>
                     </div>
-                    {rateLimitedKeys.size > 0 && (
-                      <button
-                        onClick={() => { setRateLimitedKeys(new Set()); showToast('Đã xóa trạng thái giới hạn, thử lại với tất cả API', 'success'); }}
-                        className="w-full py-1.5 rounded-lg border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 active:scale-95 transition-all"
-                      >
-                        Xóa trạng thái 429 &amp; thử lại tất cả API
-                      </button>
-                    )}
-                  </div>
+                  )}
+
+                  {/* GEMINI SECTION */}
+                  {aiProvider === 'gemini' && (
+                    <div className="space-y-4 animate-fade-in">
+                      {/* Google AI Studio Setup Guide */}
+                      <div className="p-3.5 bg-blue-50 rounded-2xl border border-blue-200 space-y-2">
+                        <div className="font-bold text-blue-900 flex items-center gap-2">
+                          <IconKey className="w-4 h-4 text-blue-600" />
+                          <span>Cách Lấy API Key từ Google AI Studio</span>
+                        </div>
+                        <ol className="list-decimal list-inside space-y-1 text-[11px] text-blue-800 leading-relaxed">
+                          <li>Vào trang <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="font-bold underline">aistudio.google.com/apikey</a> (đăng nhập tài khoản Google)</li>
+                          <li>Bấm nút <strong>&ldquo;Create API key&rdquo;</strong> → Chọn project hoặc tạo mới</li>
+                          <li>Sao chép API key (bắt đầu bằng <code className="bg-blue-100 px-1 rounded">AIza...</code>)</li>
+                          <li>Dán vào ô <strong>&ldquo;API Key Gemini Chính&rdquo;</strong> bên dưới → Bấm <strong>Lưu</strong></li>
+                        </ol>
+                        <p className="text-[10px] text-blue-700 font-medium">✅ Gói Pay-as-you-go: Tốc độ cao 1.000 RPM • Không bao giờ nghẽn 429</p>
+                      </div>
+
+                      {/* Primary Key */}
+                      <div className="space-y-1.5">
+                        <label className="font-bold text-slate-700 flex items-center justify-between">
+                          <span>API Key Gemini Chính</span>
+                          <a
+                            href="https://aistudio.google.com/apikey"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline flex items-center gap-1 font-semibold text-[11px]"
+                          >
+                            <span>Lấy key Google AI Studio</span>
+                            <IconExternalLink className="w-3 h-3" />
+                          </a>
+                        </label>
+                        <input
+                          type="password"
+                          value={apiKey}
+                          onChange={(e) => setApiKey(e.target.value)}
+                          placeholder="Dán API Key Gemini tại đây (AIza...)..."
+                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 font-mono outline-none"
+                        />
+                        <p className="text-[11px] text-slate-400">Key chỉ lưu trên trình duyệt và mã đồng bộ riêng của bạn.</p>
+                      </div>
+
+                      {/* Backup Keys File */}
+                      <div className="space-y-1.5 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+                        <label className="font-bold text-slate-700 block">Nạp Danh Sách API Dự Phòng (.TXT)</label>
+                        <p className="text-[11px] text-slate-500 leading-relaxed">
+                          Mỗi dòng 1 key. Tự động luân chuyển sang key kế tiếp khi gặp mã lỗi <strong>429 (Rate Limit)</strong> từ Gemini.
+                        </p>
+                        <div className="flex items-center gap-3 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => backupFileInputRef.current?.click()}
+                            className="px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 flex items-center gap-1.5 shadow-sm"
+                          >
+                            <IconUpload className="w-3.5 h-3.5" />
+                            <span>Tải file .TXT</span>
+                          </button>
+                          <span className="font-medium text-slate-600">
+                            {backupKeys.length ? `Đã nạp ${backupKeys.length} key dự phòng` : 'Chưa có file'}
+                          </span>
+                        </div>
+                        <input ref={backupFileInputRef} type="file" className="hidden" accept=".txt,text/plain" onChange={handleBackupApiFile} />
+                      </div>
+
+                      {/* API Status Monitor */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-700">Kiểm Tra Trạng Thái API</span>
+                          <button onClick={checkAllApis} className="text-blue-600 hover:underline font-semibold text-xs">
+                            Kiểm tra tất cả
+                          </button>
+                        </div>
+
+                        <div className="p-2 rounded-lg bg-blue-50/80 border border-blue-200 text-blue-900 text-[11px] flex items-center gap-1.5">
+                          <span>🤖</span>
+                          <span>Đang dùng mô hình <strong>Gemini 3.6 Flash</strong> chuẩn mới nhất. Hệ thống tự động chuyển key dự phòng khi gặp lỗi 429.</span>
+                        </div>
+
+                        <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                          {getGeminiApiKeys().length > 0 ? (
+                            getGeminiApiKeys().map((key, index) => {
+                              const isLimited = rateLimitedKeys.has(key);
+                              return (
+                                <div key={key} className="p-2.5 rounded-lg border border-slate-200 bg-white flex items-center justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="font-mono font-bold text-slate-800 text-xs truncate">
+                                      {index === 0 ? 'Chính' : `Dự phòng #${index}`} • {maskApiKey(key)}
+                                    </div>
+                                    <div className="text-[10px] flex items-center gap-2 mt-0.5">
+                                      <span className={isLimited ? 'text-red-500 font-bold' : 'text-emerald-600 font-bold'}>
+                                        {isLimited ? '⚠ Tạm bị giới hạn (429)' : '✓ Sẵn sàng'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={() => checkApiReadiness(key)}
+                                    className="px-2 py-1 rounded bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-[10px] font-bold shrink-0"
+                                  >
+                                    Test
+                                  </button>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="text-center py-4 text-slate-400">Chưa cấu hình API key nào</div>
+                          )}
+                        </div>
+                        {rateLimitedKeys.size > 0 && (
+                          <button
+                            onClick={() => { setRateLimitedKeys(new Set()); showToast('Đã xóa trạng thái giới hạn, thử lại với tất cả API', 'success'); }}
+                            className="w-full py-1.5 rounded-lg border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 active:scale-95 transition-all"
+                          >
+                            Xóa trạng thái 429 &amp; thử lại tất cả API
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
