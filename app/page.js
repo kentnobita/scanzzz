@@ -46,6 +46,45 @@ const COLUMN_DEFS = {
 
 const DEFAULT_COLUMNS = ['ten', 'soOSPO', 'donViTinh', 'soLuongChungTu', 'soLuongThucNhap', 'soPallet', 'ghiChu'];
 
+const OPENROUTER_MODELS = [
+  {
+    id: 'google/gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    shortName: 'Gemini 2.5 Flash',
+    badge: 'Khuyên Dùng • Chuẩn & Nhanh',
+    badgeColor: 'bg-emerald-100 text-emerald-800',
+    price: '~35đ / phiếu',
+    desc: 'Bản Gemini Flash mới nhất trên OpenRouter. Đọc chữ viết tay tiếng Việt xuất sắc, giá rẻ bằng 1/10 bản 3.6.',
+  },
+  {
+    id: 'openai/gpt-4o-mini',
+    name: 'OpenAI GPT-4o Mini',
+    shortName: 'GPT-4o Mini',
+    badge: 'Cực Kỳ Ổn Định',
+    badgeColor: 'bg-blue-100 text-blue-800',
+    price: '~55đ / phiếu',
+    desc: 'Mô hình vision nhẹ và ổn định của OpenAI, trích xuất cấu trúc bảng phiếu kho rất chuẩn xác.',
+  },
+  {
+    id: 'qwen/qwen2.5-vl-72b-instruct',
+    name: 'Qwen 2.5 VL 72B',
+    shortName: 'Qwen 2.5 VL 72B',
+    badge: 'Đỉnh Cao Chữ Viết Tay',
+    badgeColor: 'bg-purple-100 text-purple-800',
+    price: '~85đ / phiếu',
+    desc: 'Mô hình Vision 72B chuyên biệt cho tài liệu & chữ viết tay châu Á, độ chính xác nhận diện số viết tay rất cao.',
+  },
+  {
+    id: 'qwen/qwen3-vl-8b-instruct',
+    name: 'Qwen 3 VL 8B',
+    shortName: 'Qwen 3 VL 8B',
+    badge: 'Siêu Rẻ Nhất',
+    badgeColor: 'bg-amber-100 text-amber-800',
+    price: '~15đ / phiếu',
+    desc: 'Thế hệ Qwen 3 mới nhất, siêu nhẹ & siêu rẻ (~15.000đ cho 1.000 phiếu kho quét).',
+  },
+];
+
 const DEFAULT_FIELD_PROMPTS = {
   soPhieu: 'Đọc kỹ số phiếu/số chứng từ ở đầu phiếu, bao gồm cả số in sẵn hoặc chữ viết tay bổ sung. Giữ nguyên toàn bộ ký tự và số.',
   ten: 'Lấy chính xác tên hàng, quy cách hoặc mã sản phẩm (đọc cả chữ viết tay tiếng Việt có dấu, chữ viết tắt như Thùng, Cuộn, Cây, Bộ, Hộp). Không gộp hai dòng hàng thành một.',
@@ -235,7 +274,7 @@ export default function Home() {
   const [apiKey, setApiKey] = useState("");
   const [backupKeys, setBackupKeys] = useState([]);
   const [openRouterKey, setOpenRouterKey] = useState("");
-  const [openRouterModel, setOpenRouterModel] = useState("google/gemini-2.0-flash-001");
+  const [openRouterModel, setOpenRouterModel] = useState("google/gemini-2.5-flash");
   const [openRouterTesting, setOpenRouterTesting] = useState(false);
   const [rateLimitedKeys, setRateLimitedKeys] = useState(new Set()); 
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
@@ -332,7 +371,11 @@ export default function Home() {
     setAiProvider(savedProvider);
     const savedOrKey = localStorage.getItem('openrouter_api_key') || '';
     setOpenRouterKey(savedOrKey);
-    const savedOrModel = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
+    let savedOrModel = localStorage.getItem('openrouter_model') || 'google/gemini-2.5-flash';
+    if (savedOrModel === 'google/gemini-2.0-flash-001') {
+      savedOrModel = 'google/gemini-2.5-flash';
+      localStorage.setItem('openrouter_model', savedOrModel);
+    }
     setOpenRouterModel(savedOrModel);
 
     const sheetUrl = localStorage.getItem('google_sheet_webhook_url') || '';
@@ -457,6 +500,9 @@ export default function Home() {
         code,
         apiKey: apiKey.trim(),
         backupKeys,
+        aiProvider,
+        openRouterKey: openRouterKey.trim(),
+        openRouterModel: openRouterModel.trim(),
         googleSheetUrl: googleSheetUrl.trim(),
         autoSyncSheet,
         selectedColumns,
@@ -517,6 +563,19 @@ export default function Home() {
       if (Array.isArray(data.backupKeys)) {
         setBackupKeys(data.backupKeys);
         localStorage.setItem('gemini_backup_api_keys', JSON.stringify(data.backupKeys));
+      }
+      if (data.aiProvider) {
+        setAiProvider(data.aiProvider);
+        localStorage.setItem('ai_provider', data.aiProvider);
+      }
+      if (data.openRouterKey !== undefined) {
+        setOpenRouterKey(data.openRouterKey);
+        localStorage.setItem('openrouter_api_key', data.openRouterKey);
+      }
+      if (data.openRouterModel) {
+        const modelToSet = data.openRouterModel === 'google/gemini-2.0-flash-001' ? 'google/gemini-2.5-flash' : data.openRouterModel;
+        setOpenRouterModel(modelToSet);
+        localStorage.setItem('openrouter_model', modelToSet);
       }
       if (data.googleSheetUrl !== undefined) {
         setGoogleSheetUrl(data.googleSheetUrl);
@@ -1371,7 +1430,7 @@ export default function Home() {
         'X-Title': 'Scan Pro Max',
       },
       body: JSON.stringify({
-        model: model || 'google/gemini-2.0-flash-001',
+        model: model || 'google/gemini-2.5-flash',
         messages: [
           {
             role: 'user',
@@ -2254,24 +2313,89 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         </div>
       </header>
 
-      {/* Sub-header Status Indicator Bar */}
+      {/* Sub-header Status Indicator Bar & Quick Provider Switcher */}
       <div className="bg-slate-100 border-b border-slate-200/80 py-2">
         <div className="max-w-[1200px] mx-auto px-4 flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span
-                className={`inline-block w-2.5 h-2.5 rounded-full ${
-                  availableApiCount > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            {/* Quick Provider Toggle */}
+            <div className="inline-flex items-center p-0.5 bg-slate-200/80 rounded-lg text-[11px] font-semibold">
+              <button
+                type="button"
+                onClick={() => {
+                  setAiProvider('gemini');
+                  localStorage.setItem('ai_provider', 'gemini');
+                  showToast('Đang dùng chế độ Google Gemini');
+                }}
+                className={`px-2 py-0.5 rounded-md transition-all ${
+                  aiProvider === 'gemini'
+                    ? 'bg-blue-600 text-white shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
                 }`}
-              />
-              <span className="font-semibold text-slate-700">
-                {totalApiCount > 0
-                  ? availableApiCount > 0
-                    ? `${availableApiCount}/${totalApiCount} API Gemini 3.6 Flash sẵn sàng`
-                    : 'API Gemini đang bị giới hạn tạm thời (429)'
-                  : 'Chế độ OCR Offline (Tesseract)'}
-              </span>
+              >
+                Gemini
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAiProvider('openrouter');
+                  localStorage.setItem('ai_provider', 'openrouter');
+                  showToast('Đang dùng chế độ OpenRouter');
+                }}
+                className={`px-2 py-0.5 rounded-md transition-all ${
+                  aiProvider === 'openrouter'
+                    ? 'bg-purple-600 text-white shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                OpenRouter
+              </button>
             </div>
+
+            {/* Provider Status Details */}
+            {aiProvider === 'openrouter' ? (
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`inline-block w-2.5 h-2.5 rounded-full ${
+                    openRouterKey.trim() ? 'bg-purple-500 animate-pulse' : 'bg-amber-500'
+                  }`}
+                />
+                <span className="font-semibold text-slate-700">
+                  {openRouterKey.trim() ? (
+                    <>
+                      <span className="text-purple-700 font-bold">OpenRouter</span>: {
+                        OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || openRouterModel
+                      } <span className="text-slate-400 font-normal">({OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.price || 'siêu rẻ'})</span>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSettingsTab('api');
+                        setSettingsOpen(true);
+                      }}
+                      className="text-amber-700 font-bold hover:underline"
+                    >
+                      ⚠️ Chưa dán OpenRouter Key (Bấm vào đây để dán)
+                    </button>
+                  )}
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span
+                  className={`inline-block w-2.5 h-2.5 rounded-full ${
+                    availableApiCount > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                  }`}
+                />
+                <span className="font-semibold text-slate-700">
+                  {totalApiCount > 0
+                    ? availableApiCount > 0
+                      ? `${availableApiCount}/${totalApiCount} API Gemini 3.6 Flash sẵn sàng`
+                      : 'API Gemini đang bị giới hạn tạm thời (429)'
+                    : 'Chế độ OCR Offline (Tesseract)'}
+                </span>
+              </div>
+            )}
 
             {cloudSyncCode && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold">
@@ -2573,17 +2697,27 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               <button
                 onClick={startScan}
                 disabled={isScanning}
-                className="mt-4 w-full py-4 rounded-xl bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-600 hover:opacity-95 text-white font-bold text-sm shadow-md shadow-blue-600/25 flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-50 transition-all"
+                className={`mt-4 w-full py-4 rounded-xl text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-50 transition-all ${
+                  aiProvider === 'openrouter'
+                    ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:opacity-95 shadow-purple-600/25'
+                    : 'bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-600 hover:opacity-95 shadow-blue-600/25'
+                }`}
               >
                 {isScanning ? (
                   <>
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Đang trích xuất dữ liệu phiếu...</span>
+                    <span>
+                      Đang trích xuất bằng {aiProvider === 'openrouter' ? `OpenRouter (${OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || 'AI'})` : 'Gemini 3.6 Flash'}...
+                    </span>
                   </>
                 ) : (
                   <>
                     <IconSparkles className="w-5 h-5" />
-                    <span>Bắt Đầu Quét Trích Xuất Dữ Liệu</span>
+                    <span>
+                      {aiProvider === 'openrouter'
+                        ? `Bắt Đầu Quét Bằng OpenRouter [${OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || openRouterModel}]`
+                        : 'Bắt Đầu Quét Trích Xuất (Gemini 3.6 Flash)'}
+                    </span>
                   </>
                 )}
               </button>
@@ -3202,10 +3336,16 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 <button
                   onClick={() => startBatchPdfScan()}
                   disabled={selectedPdfPagesCount === 0}
-                  className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95 text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-40"
+                  className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-40 ${
+                    aiProvider === 'openrouter'
+                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:opacity-95'
+                      : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95'
+                  }`}
                 >
                   <IconSparkles className="w-4 h-4" />
-                  <span>Quét {selectedPdfPagesCount} Ảnh/Trang Đã Chọn</span>
+                  <span>
+                    Quét {selectedPdfPagesCount} Ảnh/Trang {aiProvider === 'openrouter' ? '(OpenRouter)' : '(Gemini)'}
+                  </span>
                 </button>
               </div>
             </div>
@@ -3818,7 +3958,11 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   <div className="p-1.5 bg-slate-100 rounded-2xl flex items-center gap-1.5 text-xs font-bold border border-slate-200">
                     <button
                       type="button"
-                      onClick={() => setAiProvider('gemini')}
+                      onClick={() => {
+                        setAiProvider('gemini');
+                        localStorage.setItem('ai_provider', 'gemini');
+                        showToast('Đã chuyển sang Google Gemini 3.6 Flash');
+                      }}
                       className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
                         aiProvider === 'gemini'
                           ? 'bg-blue-600 text-white shadow-sm'
@@ -3829,7 +3973,11 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     </button>
                     <button
                       type="button"
-                      onClick={() => setAiProvider('openrouter')}
+                      onClick={() => {
+                        setAiProvider('openrouter');
+                        localStorage.setItem('ai_provider', 'openrouter');
+                        showToast('Đã chuyển sang OpenRouter AI');
+                      }}
                       className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
                         aiProvider === 'openrouter'
                           ? 'bg-purple-600 text-white shadow-sm'
@@ -3893,46 +4041,16 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                       <div className="space-y-2">
                         <label className="font-bold text-slate-700 block text-xs">Chọn Mô Hình AI OpenRouter</label>
                         <div className="grid grid-cols-1 gap-2">
-                          {[
-                            {
-                              id: 'google/gemini-2.0-flash-001',
-                              name: 'Gemini 2.0 Flash',
-                              badge: 'Khuyên Dùng • Cân Bằng Nhất',
-                              badgeColor: 'bg-emerald-100 text-emerald-800',
-                              price: '~45đ / phiếu',
-                              desc: 'Đọc chữ viết tay tiếng Việt xuất sắc, giá rẻ hơn 10 lần so với 3.6 Flash.',
-                            },
-                            {
-                              id: 'openai/gpt-4o-mini',
-                              name: 'OpenAI GPT-4o Mini',
-                              badge: 'Ổn Định Cao',
-                              badgeColor: 'bg-blue-100 text-blue-800',
-                              price: '~65đ / phiếu',
-                              desc: 'Mô hình vision nhẹ và cực kỳ ổn định của OpenAI, trích xuất bảng chuẩn.',
-                            },
-                            {
-                              id: 'qwen/qwen-2.5-vl-72b-instruct',
-                              name: 'Qwen 2.5 VL 72B',
-                              badge: 'Mạnh Nhất Về Tiếng Việt',
-                              badgeColor: 'bg-purple-100 text-purple-800',
-                              price: '~85đ / phiếu',
-                              desc: 'Mô hình Vision đầu bảng của Alibaba, siêu mạnh về tài liệu và chữ viết tay châu Á.',
-                            },
-                            {
-                              id: 'qwen/qwen-2.5-vl-7b-instruct',
-                              name: 'Qwen 2.5 VL 7B',
-                              badge: 'Siêu Rẻ Nhất',
-                              badgeColor: 'bg-amber-100 text-amber-800',
-                              price: '~15đ / phiếu',
-                              desc: 'Bản 7B siêu nhẹ, giá rẻ như cho không (~15.000đ cho 1.000 phiếu kho).',
-                            },
-                          ].map((m) => {
+                          {OPENROUTER_MODELS.map((m) => {
                             const isSelected = openRouterModel === m.id;
                             return (
                               <button
                                 key={m.id}
                                 type="button"
-                                onClick={() => setOpenRouterModel(m.id)}
+                                onClick={() => {
+                                  setOpenRouterModel(m.id);
+                                  localStorage.setItem('openrouter_model', m.id);
+                                }}
                                 className={`p-3 rounded-xl border text-left transition-all flex items-start justify-between gap-3 ${
                                   isSelected
                                     ? 'border-purple-500 bg-purple-50/70 shadow-sm ring-1 ring-purple-500'
