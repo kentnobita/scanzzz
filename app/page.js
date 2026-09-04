@@ -1307,6 +1307,124 @@ export default function Home() {
     });
   }, [selectedColumns]);
 
+  // Test OpenRouter Connection
+  const testOpenRouterConnection = async () => {
+    const key = openRouterKey.trim();
+    if (!key) {
+      showToast('Vui lòng nhập API Key OpenRouter trước khi test', 'error');
+      return;
+    }
+    setOpenRouterTesting(true);
+    try {
+      const res = await fetch('https://openrouter.ai/api/v1/auth/key', {
+        headers: { 'Authorization': 'Bearer ' + key }
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || ('Lỗi xác thực ' + res.status));
+      }
+      const info = await res.json();
+      const limitVal = info.data?.limit ? ('Hạn mức: ' + info.data.limit + ' USD') : 'Không giới hạn';
+      const label = info.data?.label || 'Key hợp lệ';
+      showToast('✅ Kết nối OpenRouter thành công! [' + label + ' • ' + limitVal + ']', 'success');
+    } catch (e) {
+      showToast('❌ Lỗi OpenRouter: ' + e.message, 'error');
+    } finally {
+      setOpenRouterTesting(false);
+    }
+  };
+
+  // Direct OpenRouter OCR (Supports 4 Cost-Effective Models)
+  const scanClientOpenRouterWithBase64 = async (base64Data, mimeType, key, model) => {
+    const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
+    const rules = ['soPhieu', ...selectedColumns]
+      .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
+      .join('\n');
+
+    const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
+      'Quy tắc:\n' +
+      '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
+      '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
+      '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
+      'Hướng dẫn cột:\n' + rules + '\n\n' +
+      'ĐỊNH DẠNG TRẢ VỀ:\n' +
+      'Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
+      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
+
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + key.trim(),
+        'Content-Type': 'application/json',
+        'HTTP-Referer': typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://scanzzz.vercel.app',
+        'X-Title': 'Scan Pro Max',
+      },
+      body: JSON.stringify({
+        model: model || 'google/gemini-2.0-flash-001',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: promptText },
+              { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64Data } },
+            ],
+          },
+        ],
+        temperature: 0.1,
+        response_format: { type: 'json_object' },
+      }),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const err = new Error(errData.error?.message || ('OpenRouter Error: ' + res.status));
+      err.status = res.status;
+      throw err;
+    }
+
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content;
+    if (!text) {
+      throw new Error('Không nhận được dữ liệu phản hồi từ OpenRouter');
+    }
+
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
+        parsed.items = parsed.rows.map((row) => {
+          const obj = {};
+          if (Array.isArray(row)) {
+            selectedColumns.forEach((colKey, idx) => {
+              obj[colKey] = row[idx] ?? '';
+            });
+          }
+          return obj;
+        });
+      }
+      return parsed;
+    } catch {
+      const m = text.match(/\{[\s\S]*\}/);
+      if (m) {
+        try {
+          const parsed = JSON.parse(m[0]);
+          if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
+            parsed.items = parsed.rows.map((row) => {
+              const obj = {};
+              if (Array.isArray(row)) {
+                selectedColumns.forEach((colKey, idx) => {
+                  obj[colKey] = row[idx] ?? '';
+                });
+              }
+              return obj;
+            });
+          }
+          return parsed;
+        } catch {}
+      }
+      return { soPhieu: '', rows: [[text]] };
+    }
+  };
+
   // Direct Gemini OCR with Google Generative AI (Optimized Compact 2D Matrix Output)
   const scanClientGeminiWithBase64 = async (base64Data, mimeType, key) => {
     const colListStr = selectedColumns.map((k, i) => `${i + 1}.${COLUMN_DEFS[k]?.short || k}`).join(', ');
@@ -1957,6 +2075,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
   const saveSettings = () => {
     localStorage.setItem('gemini_api_key', apiKey.trim());
+    localStorage.setItem('ai_provider', aiProvider);
+    localStorage.setItem('openrouter_api_key', openRouterKey.trim());
+    localStorage.setItem('openrouter_model', openRouterModel.trim());
     localStorage.setItem('google_sheet_webhook_url', googleSheetUrl.trim());
     localStorage.setItem('google_sheet_auto_sync', String(autoSyncSheet));
     localStorage.setItem('auto_cloud_sync_on_launch', String(autoCloudSyncOnLaunch));
