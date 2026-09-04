@@ -52,7 +52,7 @@
 - **Đặt lại ảnh gốc** dễ dàng.
 
 ### 7. ☁️ Đồng Bộ Cloud & Mã QR Đa Thiết Bị
-- Đồng bộ tức thì cấu hình API Key, Bộ đếm Quota, Cấu hình cột và Google Sheet giữa máy tính và điện thoại.
+- Đồng bộ tức thì cấu hình API Key, Cấu hình cột và Google Sheet giữa máy tính và điện thoại.
 - Chia sẻ cấu hình siêu tốc qua **Mã Đồng Bộ** (ví dụ `KHO-01`) hoặc **Quét Mã QR**.
 
 ### 8. 📊 Đồng Bộ Google Sheets 1 Chạm

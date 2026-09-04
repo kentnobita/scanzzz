@@ -1,7 +1,8 @@
-const CACHE_NAME = 'scan-phieu-v36-cache';
+const CACHE_NAME = 'scan-phieu-v37-cache';
 const STATIC_ASSETS = [
-  '/',
-  '/manifest.json'
+  '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -36,19 +37,36 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Network First for HTML navigation to prevent outdated JS chunks error
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Stale-While-Revalidate for static assets
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (response && response.status === 200 && response.type === 'basic') {
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
-        }
-        return response;
-      })
-      .catch(() => {
-        return caches.match(event.request);
-      })
+    caches.match(event.request).then((cachedResponse) => {
+      const fetchPromise = fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+            const copy = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          }
+          return networkResponse;
+        })
+        .catch(() => cachedResponse);
+
+      return cachedResponse || fetchPromise;
+    })
   );
 });

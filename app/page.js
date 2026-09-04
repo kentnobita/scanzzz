@@ -245,13 +245,8 @@ export default function Home() {
   });
 
   // Settings & Storage state
-  const [aiProvider, setAiProvider] = useState("gemini"); // "gemini" | "openrouter" | "groq"
   const [apiKey, setApiKey] = useState("");
   const [backupKeys, setBackupKeys] = useState([]);
-  const [openRouterKey, setOpenRouterKey] = useState("");
-  const [openRouterModel, setOpenRouterModel] = useState("qwen/qwen-2.5-vl-72b-instruct:free");
-  const [groqKey, setGroqKey] = useState("");
-  const [groqModel, setGroqModel] = useState("llama-3.2-11b-vision-preview");
   const [rateLimitedKeys, setRateLimitedKeys] = useState(new Set());
   const [selectedColumns, setSelectedColumns] = useState(DEFAULT_COLUMNS);
   const [fieldPrompts, setFieldPrompts] = useState(DEFAULT_FIELD_PROMPTS);
@@ -375,7 +370,7 @@ export default function Home() {
         setAutoCloudSyncOnLaunch(true);
         pullFromCloud(cleanCode, false);
       } else if (savedSyncCode && autoLaunchEnabled) {
-        // Automatically sync configuration and quota from Cloud on app launch
+        // Automatically sync configuration from Cloud on app launch
         pullFromCloud(savedSyncCode, true);
       }
     }
@@ -435,7 +430,7 @@ export default function Home() {
     if (mode === 'desktop') document.body.classList.add('view-desktop');
   };
 
-  // Cloud Sync Functions: API, Quota & Google Sheets Configuration
+  // Cloud Sync Functions: API & Google Sheets Configuration
   const pushToCloud = async (overrideCode = null, silent = false) => {
     const code = (overrideCode || cloudSyncCode || syncCodeInput).trim().toUpperCase();
     if (!code || code.length < 3) {
@@ -1284,32 +1279,16 @@ export default function Home() {
       .map((k) => `- ${k === 'soPhieu' ? 'Số phiếu' : COLUMN_DEFS[k]?.short || k} → trường ${k}: ${fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''}`)
       .join('\n');
 
-    const promptText = `Bạn là chuyên gia thị giác AI OCR chuyên đọc phiếu xuất kho / nhập kho / giao hàng Việt Nam, đặc biệt xử lý xuất sắc CHỮ VIẾT TAY và BẢNG BIỂU PHỨC TẠP.
-
-HƯỚNG DẪN NHẬN DIỆN CHỮ VIẾT TAY:
-1. Đọc chuẩn xác chữ viết tay tiếng Việt (chữ viết bút bi, bút mực, nét ngoáy, nét nghiêng, viết đè, viết tắt).
-2. Phân biệt rõ các ký tự số viết tay dễ nhầm lẫn:
-   - Số 0 và chữ O, D
-   - Số 1 và số 7, chữ l, I, /
-   - Số 2 và chữ Z
-   - Số 5 và chữ S, số 6
-   - Số 8 và chữ B, số 0
-3. Nếu một ô có cả chữ in và chữ viết tay sửa/ghi đè lên, ưu tiên lấy giá trị viết tay mới nhất.
-4. Quét từng dòng bảng từ trên xuống dưới theo chiều ngang, không bỏ sót dòng viết tay nhỏ hoặc dòng ở cuối bảng. Bỏ qua các dòng tổng cộng ("Tổng", "Cộng", "Tổng số lượng", "Ký nhận").
-
-QUY TẮC TRÍCH XUẤT CHO TỪNG CỘT:
+    const promptText = `Chuyên gia OCR phiếu kho Việt Nam (đọc chuẩn chữ in & chữ viết tay).
+Quy tắc:
+1. Đọc chính xác chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).
+2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.
+3. Ô nào không có dữ liệu hoặc không đọc được thì ĐỂ TRỐNG "" (chuỗi rỗng), tuyệt đối không chèn "???", không tự suy diễn dữ liệu.
+Cột cần trích xuất:
 ${rules}
 
-Nếu một trường hoàn toàn không đọc được, ghi "???". Không tự suy diễn dữ liệu không xuất hiện trên phiếu.
-
-Trả về đúng JSON thuần theo cấu trúc:
-{
-  "soPhieu": "số phiếu",
-  "items": [
-    {${schema}}
-  ]
-}
-Không trả markdown hoặc giải thích.`;
+Trả về đúng JSON thuần:
+{"soPhieu":"số phiếu","items":[{${schema}}]};`;
 
     const body = {
       contents: [
@@ -1930,7 +1909,7 @@ Không trả markdown hoặc giải thích.`;
     localStorage.setItem('view_mode', viewMode);
     applyViewMode(viewMode);
 
-    // If sync code is active, auto push API + Quota + Sheet settings to cloud
+    // If sync code is active, auto push API + Sheet settings to cloud
     if (cloudSyncCode) {
       pushToCloud(cloudSyncCode, true);
     }
@@ -2078,11 +2057,7 @@ Không trả markdown hoặc giải thích.`;
             <div className="flex items-center gap-2">
               <span
                 className={`inline-block w-2.5 h-2.5 rounded-full ${
-                  aiProvider === 'openrouter'
-                    ? openRouterKey ? 'bg-purple-500 animate-pulse' : 'bg-amber-500'
-                    : aiProvider === 'groq'
-                    ? groqKey ? 'bg-orange-500 animate-pulse' : 'bg-amber-500'
-                    : availableApiCount > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                  availableApiCount > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
                 }`}
               />
               <span className="font-semibold text-slate-700">
@@ -2184,7 +2159,7 @@ Không trả markdown hoặc giải thích.`;
               </div>
               <div className="flex items-center gap-1.5 font-bold">
                 <IconCloud className="w-3.5 h-3.5 text-blue-600" />
-                <span>Tự động đồng bộ cấu hình API, Bộ đếm & Google Sheet</span>
+                <span>Tự động đồng bộ cấu hình API & Google Sheet</span>
               </div>
             </div>
 
@@ -3407,7 +3382,7 @@ Không trả markdown hoặc giải thích.`;
                 MÃ ĐỒNG BỘ: {cloudSyncCode || syncCodeInput}
               </div>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Mở camera trên điện thoại và quét mã QR này để tự động nạp toàn bộ cấu hình API Gemini, Bộ đếm & Google Sheet!
+                Mở camera trên điện thoại và quét mã QR này để tự động nạp toàn bộ cấu hình API Gemini & Google Sheet!
               </p>
             </div>
 
@@ -3521,16 +3496,16 @@ Không trả markdown hoặc giải thích.`;
 
             {/* Tab Contents */}
             <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-xs">
-              {/* TAB 1: CLOUD SYNC (API, QUOTA COUNTER & GOOGLE SHEETS) */}
+              {/* TAB 1: CLOUD SYNC (API & GOOGLE SHEETS) */}
               {settingsTab === 'sync' && (
                 <div className="space-y-4">
                   <div className="p-3.5 bg-gradient-to-r from-blue-50 to-indigo-50/70 rounded-2xl border border-blue-200 space-y-2">
                     <div className="flex items-center gap-2 text-blue-950 font-bold">
                       <IconCloud className="w-5 h-5 text-blue-600" />
-                      <span>Đồng Bộ Cấu Hình API, Bộ Đếm, Google Sheet, Cột & Prompt</span>
+                      <span>Đồng Bộ Cấu Hình API, Google Sheet, Cột & Prompt</span>
                     </div>
                     <p className="text-[11px] text-blue-900 leading-relaxed">
-                      Chỉ cần nhập cùng một <strong>Mã Đồng Bộ</strong> hoặc <strong>Quét mã QR</strong> trên thiết bị khác, toàn bộ <strong>API Key Gemini</strong>, <strong>Bộ đếm lượt dùng (20 lượt)</strong>, <strong>Link Google Sheet</strong>, <strong>Cột trích xuất</strong> và <strong>Gợi ý Prompt</strong> sẽ được tự động đồng bộ ngay lập tức!
+                      Chỉ cần nhập cùng một <strong>Mã Đồng Bộ</strong> hoặc <strong>Quét mã QR</strong> trên thiết bị khác, toàn bộ <strong>API Key Gemini</strong>, <strong>Link Google Sheet</strong>, <strong>Cột trích xuất</strong> và <strong>Gợi ý Prompt</strong> sẽ được tự động đồng bộ ngay lập tức!
                     </p>
                   </div>
 
@@ -3574,7 +3549,7 @@ Không trả markdown hoặc giải thích.`;
                         <span>⚡ Tự động tải cấu hình đám mây khi mở trang web trên thiết bị này</span>
                       </div>
                       <div className="text-[11px] text-slate-600 leading-tight mt-0.5">
-                        Mỗi khi mở trang web, hệ thống sẽ tự động cập nhật API Key, Bộ đếm lượt quota và Google Sheet mới nhất từ Cloud mà không cần thao tác thủ công.
+                        Mỗi khi mở trang web, hệ thống sẽ tự động cập nhật API Key và Google Sheet mới nhất từ Cloud mà không cần thao tác thủ công.
                       </div>
                     </div>
                   </label>
@@ -3950,7 +3925,7 @@ Không trả markdown hoặc giải thích.`;
                       <span>Cài Đặt Ứng Dụng Đa Nền Tảng (PWA & Android APK)</span>
                     </div>
                     <p className="text-xs text-slate-600 leading-relaxed">
-                      Cả 2 phương án đều kết nối trực tiếp vào hệ thống, <strong>tự động đồng bộ 100% thời gian thực</strong> (API Key, Bộ đếm Quota, Cấu hình Cột & Google Sheet) với máy tính qua Cloud.
+                      Cả 2 phương án đều kết nối trực tiếp vào hệ thống, <strong>tự động đồng bộ 100% thời gian thực</strong> (API Key, Cấu hình Cột & Google Sheet) với máy tính qua Cloud.
                     </p>
                   </div>
 
@@ -4004,13 +3979,13 @@ Không trả markdown hoặc giải thích.`;
 
                     <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
                       <a
-                        href="https://github.com/kentnobita/scanzzz/releases/latest/download/ScanPhieuKho-v36.apk"
+                        href="https://github.com/kentnobita/scanzzz/releases/latest/download/ScanPhieuKho-v37.apk"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="w-full sm:w-auto px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all active:scale-95"
                       >
                         <IconUpload className="w-4 h-4 rotate-180" />
-                        <span>📥 Tải File Cài Đặt Android (ScanPhieuKho-v36.apk)</span>
+                        <span>📥 Tải File Cài Đặt Android (ScanPhieuKho-v37.apk)</span>
                       </a>
 
                       <a
@@ -4032,7 +4007,7 @@ Không trả markdown hoặc giải thích.`;
                       <span>Cơ Chế Đồng Bộ Đa Nền Tảng:</span>
                     </div>
                     <p className="text-slate-300 leading-relaxed">
-                      Bất kể bạn dùng <strong>Web Máy Tính</strong>, <strong>App PWA Điện Thoại</strong> hay <strong>App Android APK</strong>: Chỉ cần nhập cùng <strong>Mã Đồng Bộ Cloud</strong> (ví dụ <code>{cloudSyncCode || 'KHO-01'}</code>) hoặc quét mã QR, mọi API Key Gemini, bộ đếm Quota và cấu hình Google Sheet sẽ tự động đồng bộ ngay lập tức!
+                      Bất kể bạn dùng <strong>Web Máy Tính</strong>, <strong>App PWA Điện Thoại</strong> hay <strong>App Android APK</strong>: Chỉ cần nhập cùng <strong>Mã Đồng Bộ Cloud</strong> (ví dụ <code>{cloudSyncCode || 'KHO-01'}</code>) hoặc quét mã QR, mọi API Key Gemini và cấu hình Google Sheet sẽ tự động đồng bộ ngay lập tức!
                     </p>
                   </div>
                 </div>
