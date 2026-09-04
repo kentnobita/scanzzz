@@ -1272,23 +1272,59 @@ export default function Home() {
     }
   };
 
-  // Direct Gemini OCR with Google Generative AI
+  // Universal OCR Result Parser (Supports both Compact 2D Matrix rows & Legacy items object)
+  const parseOcrResultToItems = useCallback((resultData, pageNum = null, pageSoPhieu = '') => {
+    let rawList = [];
+    if (Array.isArray(resultData.rows)) {
+      rawList = resultData.rows.map((row) => {
+        const itemObj = {};
+        if (Array.isArray(row)) {
+          selectedColumns.forEach((colKey, idx) => {
+            itemObj[colKey] = row[idx] ?? '';
+          });
+        } else if (typeof row === 'object' && row !== null) {
+          selectedColumns.forEach((colKey) => {
+            itemObj[colKey] = row[colKey] ?? '';
+          });
+        }
+        return itemObj;
+      });
+    } else if (Array.isArray(resultData.items)) {
+      rawList = resultData.items;
+    }
+
+    return rawList.map((item) => {
+      const out = {};
+      if (pageNum !== null) out._pageNum = pageNum;
+      if (pageSoPhieu) out.soPhieu = pageSoPhieu;
+
+      selectedColumns.forEach((k) => {
+        let val = item?.[k] ?? '';
+        if (k === 'soOSPO') val = formatOSPO(val);
+        out[k] = typeof val === 'string' ? val.trim() : String(val || '');
+      });
+      return out;
+    });
+  }, [selectedColumns]);
+
+  // Direct Gemini OCR with Google Generative AI (Optimized Compact 2D Matrix Output)
   const scanClientGeminiWithBase64 = async (base64Data, mimeType, key) => {
-    const schema = selectedColumns.map((k) => `"${k}": "giá trị"`).join(',\n        ');
+    const colListStr = selectedColumns.map((k, i) => `${i + 1}.${COLUMN_DEFS[k]?.short || k}`).join(', ');
     const rules = ['soPhieu', ...selectedColumns]
-      .map((k) => `- ${k === 'soPhieu' ? 'Số phiếu' : COLUMN_DEFS[k]?.short || k} → trường ${k}: ${fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''}`)
+      .map((k) => `- ${k === 'soPhieu' ? 'Số phiếu' : COLUMN_DEFS[k]?.short || k}: ${fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''}`)
       .join('\n');
 
     const promptText = `Chuyên gia OCR phiếu kho Việt Nam (đọc chuẩn chữ in & chữ viết tay).
 Quy tắc:
-1. Đọc chính xác chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).
+1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).
 2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.
-3. Ô nào không có dữ liệu hoặc không đọc được thì ĐỂ TRỐNG "" (chuỗi rỗng), tuyệt đối không chèn "???", không tự suy diễn dữ liệu.
-Cột cần trích xuất:
+3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).
+Hướng dẫn cột:
 ${rules}
 
-Trả về đúng JSON thuần:
-{"soPhieu":"số phiếu","items":[{${schema}}]};`;
+ĐỊNH DẠNG TRẢ VỀ:
+Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [${colListStr}]):
+{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}`;
 
     const body = {
       contents: [
@@ -1328,10 +1364,38 @@ Trả về đúng JSON thuần:
     }
 
     try {
-      return JSON.parse(text);
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
+        parsed.items = parsed.rows.map((row) => {
+          const obj = {};
+          if (Array.isArray(row)) {
+            selectedColumns.forEach((colKey, idx) => {
+              obj[colKey] = row[idx] ?? '';
+            });
+          }
+          return obj;
+        });
+      }
+      return parsed;
     } catch {
       const m = text.match(/\{[\s\S]*\}/);
-      if (m) return JSON.parse(m[0]);
+      if (m) {
+        try {
+          const parsed = JSON.parse(m[0]);
+          if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
+            parsed.items = parsed.rows.map((row) => {
+              const obj = {};
+              if (Array.isArray(row)) {
+                selectedColumns.forEach((colKey, idx) => {
+                  obj[colKey] = row[idx] ?? '';
+                });
+              }
+              return obj;
+            });
+          }
+          return parsed;
+        } catch {}
+      }
       return { soPhieu: '', items: [{ ten: text }] };
     }
   };
@@ -1448,15 +1512,7 @@ Trả về đúng JSON thuần:
       setEngineBadge(engine);
       setScanProgress({ active: true, percent: 100, text: '✅ Trích xuất thành công!' });
 
-      const normalizedItems = (Array.isArray(resultData.items) ? resultData.items : []).map((item) => {
-        const out = {};
-        selectedColumns.forEach((k) => {
-          let val = item?.[k] ?? '';
-          if (k === 'soOSPO') val = formatOSPO(val);
-          out[k] = val;
-        });
-        return out;
-      });
+      const normalizedItems = parseOcrResultToItems(resultData, null, resultData.soPhieu || '');
 
       const singlePageResult = [
         {
@@ -1561,15 +1617,7 @@ Trả về đúng JSON thuần:
             detectedFirstSoPhieu = pageSoPhieu;
           }
 
-          const normalized = (Array.isArray(pageResult.items) ? pageResult.items : []).map((item) => {
-            const out = { _pageNum: pageNum, soPhieu: pageSoPhieu };
-            selectedColumns.forEach((k) => {
-              let val = item?.[k] ?? '';
-              if (k === 'soOSPO') val = formatOSPO(val);
-              out[k] = val;
-            });
-            return out;
-          });
+          const normalized = parseOcrResultToItems(pageResult, pageNum, pageSoPhieu);
 
           accumulatedItems = [...accumulatedItems, ...normalized];
 
