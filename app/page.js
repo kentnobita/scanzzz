@@ -229,6 +229,15 @@ export default function Home() {
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [pdfPages, setPdfPages] = useState([]);
   const [selectedPdfIndex, setSelectedPdfIndex] = useState(0);
+
+  // Settings & Storage state
+  const [aiProvider, setAiProvider] = useState('gemini'); // 'gemini' | 'openrouter'
+  const [apiKey, setApiKey] = useState("");
+  const [backupKeys, setBackupKeys] = useState([]);
+  const [openRouterKey, setOpenRouterKey] = useState("");
+  const [openRouterModel, setOpenRouterModel] = useState("google/gemini-2.0-flash-001");
+  const [openRouterTesting, setOpenRouterTesting] = useState(false);
+  const [rateLimitedKeys, setRateLimitedKeys] = useState(new Set()); 
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
 
   // Per-page Results separation
@@ -244,10 +253,6 @@ export default function Home() {
     pageStatuses: [],
   });
 
-  // Settings & Storage state
-  const [apiKey, setApiKey] = useState("");
-  const [backupKeys, setBackupKeys] = useState([]);
-  const [rateLimitedKeys, setRateLimitedKeys] = useState(new Set());
   const [selectedColumns, setSelectedColumns] = useState(DEFAULT_COLUMNS);
   const [fieldPrompts, setFieldPrompts] = useState(DEFAULT_FIELD_PROMPTS);
   const [viewMode, setViewMode] = useState('auto');
@@ -316,6 +321,20 @@ export default function Home() {
     const key = localStorage.getItem('gemini_api_key') || '';
     setApiKey(key);
 
+    try {
+      const bKeys = JSON.parse(localStorage.getItem('gemini_backup_api_keys') || '[]');
+      setBackupKeys(Array.isArray(bKeys) ? bKeys.filter((k) => k !== key) : []);
+    } catch {
+      setBackupKeys([]);
+    }
+
+    const savedProvider = localStorage.getItem('ai_provider') || 'gemini';
+    setAiProvider(savedProvider);
+    const savedOrKey = localStorage.getItem('openrouter_api_key') || '';
+    setOpenRouterKey(savedOrKey);
+    const savedOrModel = localStorage.getItem('openrouter_model') || 'google/gemini-2.0-flash-001';
+    setOpenRouterModel(savedOrModel);
+
     const sheetUrl = localStorage.getItem('google_sheet_webhook_url') || '';
     setGoogleSheetUrl(sheetUrl);
 
@@ -329,14 +348,6 @@ export default function Home() {
     const savedAutoLaunch = localStorage.getItem('auto_cloud_sync_on_launch');
     const autoLaunchEnabled = savedAutoLaunch === null ? true : savedAutoLaunch === 'true';
     setAutoCloudSyncOnLaunch(autoLaunchEnabled);
-
-    try {
-      const bKeys = JSON.parse(localStorage.getItem('gemini_backup_api_keys') || '[]');
-      setBackupKeys(Array.isArray(bKeys) ? bKeys.filter((k) => k !== key) : []);
-    } catch {
-      setBackupKeys([]);
-    }
-
 
     try {
       const cols = JSON.parse(localStorage.getItem('scan_columns') || '[]');
@@ -1569,8 +1580,24 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     return { soPhieu: sp, items };
   };
 
-  // OCR Single Image Helper with Failover (Google Gemini 3.6 Flash)
+  // OCR Single Image Helper with Failover (Google Gemini 3.6 Flash & OpenRouter)
   const executeOcrOnImage = async (base64Data, mimeType, progressPrefix = '') => {
+    // 1. OPENROUTER PROVIDER
+    if (aiProvider === 'openrouter') {
+      const orKey = openRouterKey.trim();
+      if (!orKey) {
+        throw new Error('Chưa cấu hình API Key OpenRouter! Vui lòng vào Cài đặt ⚙️ -> Tab API -> Chọn OpenRouter và dán Key (sk-or-v1-...).');
+      }
+      setScanProgress({
+        active: true,
+        percent: 45,
+        text: `${progressPrefix} Đang gọi OpenRouter (${openRouterModel})...`,
+      });
+      const res = await scanClientOpenRouterWithBase64(base64Data, mimeType, orKey, openRouterModel);
+      return { data: res, engine: 'openrouter' };
+    }
+
+    // 2. GOOGLE GEMINI PROVIDER (with Failover)
     const allKeys = getGeminiApiKeys();
     const apiKeys = allKeys.filter((k) => !rateLimitedKeys.has(k));
     const keysToTry = apiKeys.length > 0 ? apiKeys : allKeys;
