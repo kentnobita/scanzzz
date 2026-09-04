@@ -1469,16 +1469,24 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
           });
           return { data: res, engine: 'gemini' };
         } catch (error) {
-          const is429 = error?.status === 429;
-          if (is429) {
+          const status = error?.status;
+          const msg = String(error?.message || '');
+          const is429 = status === 429;
+          const isAuthError = status === 400 || status === 401 || status === 403 || msg.includes('authentication') || msg.includes('API key not valid');
+
+          if (is429 || isAuthError) {
             setRateLimitedKeys((prev) => new Set(prev).add(key));
             if (i < keysToTry.length - 1) {
+              const reasonText = is429 ? 'bị giới hạn (429)' : 'không hợp lệ';
               setScanProgress({
                 active: true,
                 percent: 50,
-                text: `${progressPrefix} ↪ API bị giới hạn (429), đang chuyển sang API dự phòng...`,
+                text: `${progressPrefix} ↪ Key ${reasonText}, đang chuyển sang API dự phòng #${i + 1}...`,
               });
               continue;
+            }
+            if (isAuthError) {
+              throw new Error('API Key Google không hợp lệ hoặc chưa bật Generative Language API. Key Google phải bắt đầu bằng "AIzaSy...". Hãy kiểm tra lại trong Cài đặt ⚙️.');
             }
             throw new Error('Tất cả API key Gemini đang bị giới hạn (429). Vui lòng thử lại sau ít phút.');
           }
