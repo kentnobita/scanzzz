@@ -20,6 +20,7 @@ export default function Error({ error, reset }) {
         });
       }
       localStorage.removeItem('view_mode');
+      localStorage.removeItem('scan_history');
     } catch (e) {
       console.error(e);
     }

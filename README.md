@@ -1,125 +1,57 @@
-# Scan Pro Max — Hệ Thống Trích Xuất Dữ Liệu Phiếu Kho & Giao Hàng Bằng AI Vision 📦🚀
+# Scan Pro Max — Hệ Thống Quét & Trích Xuất Phiếu Kho Bằng AI 📦🚀
 
 <p align="center">
-  <img src="public/icon-192.png" width="96" height="96" alt="Scan Pro Max Logo" style="border-radius: 20px;" />
+  <img src="public/icon-192.png" width="88" height="88" alt="Scan Pro Max Logo" style="border-radius: 18px;" />
 </p>
 
 <p align="center">
-  <strong>Ứng dụng quét và trích xuất dữ liệu phiếu xuất/nhập kho, biên bản giao hàng thông minh bằng AI Vision đa nền tảng (Web, PWA & Android Native APK).</strong>
+  <strong>Ứng dụng quét, đọc OCR và trích xuất dữ liệu phiếu kho / giao hàng thông minh bằng AI Vision đa nền tảng (Web, PWA & Android App).</strong>
 </p>
 
 <p align="center">
   <a href="https://scanzzz.vercel.app"><img src="https://img.shields.io/badge/Web_App-Live_on_Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel" /></a>
   <a href="https://github.com/kentnobita/scanzzz/releases/latest"><img src="https://img.shields.io/badge/Android_App-Download_.APK-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" /></a>
-  <a href="https://t.me/vd81997"><img src="https://img.shields.io/badge/Liên_Hệ-Đắc_dzaii-229ED9?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram" /></a>
+  <a href="https://t.me/vd81997"><img src="https://img.shields.io/badge/Liên_Hệ-Telegram-229ED9?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram" /></a>
 </p>
 
 ---
 
-## 🌟 Tính Năng Nổi Bật
+## 🌟 Tính Năng Chính
 
-### 1. 🧠 AI Vision OCR Tiên Tiến (Gemini 3.6 Flash)
-- Sử dụng mô hình **Google Gemini 3.6 Flash** mới nhất của Google AI Studio.
-- Tối ưu hóa prompt siêu ngắn gọn, tiết kiệm hơn **70% token đầu vào** và tăng tốc độ phản hồi 35%.
-- Nhận diện chính xác cả **chữ in** và **chữ viết tay** (bút bi, bút mực, chữ sửa đổi, ghi đè).
-- Tự động bóc tách: Số phiếu, Tên/Mã sản phẩm, Số O.S/P.O, Đơn vị tính, Số lượng chứng từ, Số lượng thực nhập/xuất, Số Pallet, Ghi chú.
-
-### 2. 🔢 Chuẩn Hóa Cột Số O.S / P.O (Quy Tắc 5 Chữ Số Định Dạng `xxxxx`)
-- Tự động chuyển đổi các dạng số viết tắt:
-  - `8-999` $\rightarrow$ `80999`
-  - `8-99` $\rightarrow$ `80099`
-  - `8-9` $\rightarrow$ `80009`
-  - `8-1999` $\rightarrow$ `81999`
-  - `8-x999` $\rightarrow$ `8x999`
-
-### 3. ⚡ Tự Động Luân Chuyển API Key Dự Phòng (Failover 429)
-- Quản lý danh sách nhiều API Key dự phòng (nạp qua file `.TXT`).
-- Tự động nhảy sang key dự phòng tiếp theo khi một key gặp lỗi giới hạn tốc độ (429 Rate Limit), đảm bảo quá trình quét liên tục không ngắt quãng.
-
-### 4. 🖼️ Chọn Nhiều Ảnh & Nạp PDF Nhiều Trang (Batch Scan)
-- Hỗ trợ chọn cùng lúc **nhiều file ảnh** (`.jpg`, `.png`, `.webp`) hoặc kéo thả nhiều file vào ứng dụng.
-- Nạp tài liệu PDF nhiều trang, hiển thị lưới thumbnail trực quan.
-- Hỗ trợ **Quét Hàng Loạt** với thanh tiến trình AI theo thời gian thực hoặc **Quét Riêng** từng ảnh theo ý muốn.
-
-### 5. 🕘 Lịch Sử Lưu Trữ 50 Phiếu (Cơ Chế FIFO Tự Động)
-- Lưu tối đa **50 phiếu đã quét** gần nhất trên thiết bị.
-- Tự động xóa phiếu cũ nhất khi có phiếu mới được lưu, đảm bảo dung lượng nhẹ và tối ưu.
-
-### 6. 🎨 Image Studio Chuyên Nghiệp
-- **Xoay ảnh 90° / 180°** theo mọi chiều.
-- **Cắt góc ảnh (Crop)** linh hoạt.
-- **Làm nét ảnh thông minh (Adaptive Unsharp Mask)** giúp AI đọc rõ các nét chữ mờ.
-- **Đặt lại ảnh gốc** dễ dàng.
-
-### 7. ☁️ Đồng Bộ Cloud & Mã QR Đa Thiết Bị
-- Đồng bộ tức thì cấu hình API Key, Cấu hình cột và Google Sheet giữa máy tính và điện thoại.
-- Chia sẻ cấu hình siêu tốc qua **Mã Đồng Bộ** (ví dụ `KHO-01`) hoặc **Quét Mã QR**.
-
-### 8. 📊 Đồng Bộ Google Sheets 1 Chạm
-- Gửi trực tiếp toàn bộ dữ liệu phiếu sang Google Sheets của doanh nghiệp qua Google Apps Script Proxy an toàn (hỗ trợ xử lý 302 redirect).
-
-### 9. 📱 Đa Nền Tảng: Web, PWA & Android Native APK
-- **Web App**: Giao diện Responsive tự động co giãn vừa vặn trên mọi kích cỡ màn hình.
-- **PWA (Progressive Web App)**: Cài đặt trực tiếp từ trình duyệt trên iPhone/Android không cần tải file, chạy full-screen mượt mà.
-- **Android Native APK**: Tích hợp sâu phần cứng Camera quét tự động và Đèn Flashlight qua Capacitor Native.
+- **🤖 Đa Mô Hình AI Vision**: Hỗ trợ linh hoạt Google Gemini (3.6 Flash) và OpenRouter (Gemini 2.5 Flash, Qwen 2.5 VL 72B, Qwen3 VL 8B, MiniMax 01). Tự động luân chuyển Key dự phòng khi gặp giới hạn 429.
+- **📄 Bóc Tách & Tự Động Gộp Dòng**: Đọc chuẩn xác chữ in và viết tay (Số phiếu, Tên hàng, Số OS/PO, Đơn vị tính, Số lượng, Số Pallet, Ghi chú). Tự động gộp mã hàng phân tách 2 dòng.
+- **🖼️ Quét Hàng Loạt & PDF**: Hỗ trợ nạp cùng lúc nhiều ảnh hoặc tài liệu PDF nhiều trang, hiển thị tiến trình quét AI theo thời gian thực.
+- **📊 Đồng Bộ Google Sheet**: Đẩy dữ liệu phiếu đã quét trực tiếp vào Google Spreadsheet của doanh nghiệp chỉ với 1 chạm hoặc tự động.
+- **☁️ Đồng Bộ Cấu Hình Cloud**: Chia sẻ nhanh Key AI, Google Sheet và mẫu cột giữa Máy tính & Điện thoại qua Mã Đồng Bộ hoặc Quét mã QR, hỗ trợ tùy chỉnh thời gian lưu trữ từ 5 phút đến 24 giờ.
+- **📱 Đa Nền Tảng**: Giao diện thích ứng hoàn hảo trên Desktop & Mobile, hỗ trợ cài đặt PWA và đóng gói ứng dụng Android APK.
 
 ---
 
-## 🛠️ Công Nghệ Sử Dụng
+## 🛠️ Công Nghệ
 
-- **Frontend**: [Next.js 14](https://nextjs.org/) (App Router), [React 18](https://react.dev/), [Tailwind CSS 3](https://tailwindcss.com/)
-- **Mobile Runtime**: [Capacitor 6](https://capacitorjs.com/) (Android Native)
-- **AI Vision Engine**: Google Gemini API (`gemini-3.6-flash` / `gemini-1.5-flash`)
-- **PDF Processing**: [PDF.js](https://mozilla.github.io/pdf.js/)
-- **CI/CD & Automation**: GitHub Actions (Tự động build file `.APK` và tạo GitHub Release)
+- **Frontend**: Next.js 14, React 18, Tailwind CSS
+- **Mobile Native**: Capacitor 6 (Android APK)
+- **AI OCR**: Google Gemini API & OpenRouter API
+- **Xử Lý PDF**: PDF.js
 
 ---
 
-## 🚀 Hướng Dẫn Cài Đặt & Chạy Cục Bộ
+## 🚀 Khởi Chạy Nhanh
 
-### 1. Yêu cầu môi trường
-- Node.js 18+ hoặc 20+
-- Trình quản lý gói `npm`
-
-### 2. Cài đặt các gói phụ thuộc
 ```bash
-git clone https://github.com/kentnobita/scanzzz.git
-cd scanzzz
+# Cài đặt dependencies
 npm install
-```
 
-### 3. Chạy môi trường phát triển (Localhost)
-```bash
+# Khởi chạy môi trường phát triển
 npm run dev
 ```
-Mở trình duyệt và truy cập: **`http://localhost:3000`**
 
-### 4. Build sản phẩm Web
-```bash
-npm run build
-npm run start
-```
+Truy cập: **`http://localhost:3000`**
 
 ---
 
-## 📦 Đóng Gói Ứng Dụng Android (.APK)
-
-Hệ thống đã tích hợp quy trình **GitHub Actions CI/CD** tự động:
-1. Mỗi khi có commit mới đẩy lên nhánh `main`, GitHub Actions sẽ tự động build file APK.
-2. File cài đặt `ScanPhieuKho-v37.apk` được phát hành tại mục [Releases](https://github.com/kentnobita/scanzzz/releases).
-
-Nếu muốn build thủ công trên máy:
-```bash
-npx cap sync android
-cd android
-./gradlew assembleDebug
-```
-File APK đầu ra sẽ nằm tại: `android/app/build/outputs/apk/debug/app-debug.apk`.
-
----
-
-## 👨‍💻 Tác Giả & Hỗ Trợ
+## 👨‍💻 Tác Giả
 
 - **Phát triển bởi**: **Đắc dzaii**
 - **Telegram**: [@vd81997](https://t.me/vd81997)
-- **GitHub Repository**: [kentnobita/scanzzz](https://github.com/kentnobita/scanzzz)
+- **GitHub**: [kentnobita/scanzzz](https://github.com/kentnobita/scanzzz)

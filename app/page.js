@@ -53,8 +53,7 @@ const OPENROUTER_MODELS = [
     shortName: 'Gemini 2.5 Flash',
     badge: 'Khuyên Dùng • Chuẩn & Nhanh',
     badgeColor: 'bg-emerald-100 text-emerald-800',
-    price: '~35đ / phiếu',
-    desc: 'Bản Gemini Flash mới nhất trên OpenRouter. Đọc chữ viết tay tiếng Việt xuất sắc, giá rẻ bằng 1/10 bản 3.6.',
+    desc: 'Bản Gemini Flash mới nhất trên OpenRouter. Đọc chữ viết tay tiếng Việt xuất sắc, tốc độ phản hồi nhanh.',
   },
   {
     id: 'openai/gpt-4o-mini',
@@ -62,7 +61,6 @@ const OPENROUTER_MODELS = [
     shortName: 'GPT-4o Mini',
     badge: 'Cực Kỳ Ổn Định',
     badgeColor: 'bg-blue-100 text-blue-800',
-    price: '~55đ / phiếu',
     desc: 'Mô hình vision nhẹ và ổn định của OpenAI, trích xuất cấu trúc bảng phiếu kho rất chuẩn xác.',
   },
   {
@@ -71,23 +69,21 @@ const OPENROUTER_MODELS = [
     shortName: 'Qwen 2.5 VL 72B',
     badge: 'Đỉnh Cao Chữ Viết Tay',
     badgeColor: 'bg-purple-100 text-purple-800',
-    price: '~85đ / phiếu',
     desc: 'Mô hình Vision 72B chuyên biệt cho tài liệu & chữ viết tay châu Á, độ chính xác nhận diện số viết tay rất cao.',
   },
   {
     id: 'qwen/qwen3-vl-8b-instruct',
     name: 'Qwen 3 VL 8B',
     shortName: 'Qwen 3 VL 8B',
-    badge: 'Siêu Rẻ Nhất',
+    badge: 'Tối Ưu Tốc Độ',
     badgeColor: 'bg-amber-100 text-amber-800',
-    price: '~15đ / phiếu',
-    desc: 'Thế hệ Qwen 3 mới nhất, siêu nhẹ & siêu rẻ (~15.000đ cho 1.000 phiếu kho quét).',
+    desc: 'Thế hệ Qwen 3 mới nhất, gọn nhẹ, xử lý các phiếu đơn giản nhanh chóng.',
   },
 ];
 
 const DEFAULT_FIELD_PROMPTS = {
   soPhieu: 'Đọc kỹ số phiếu/số chứng từ ở đầu phiếu, bao gồm cả số in sẵn hoặc chữ viết tay bổ sung. Giữ nguyên toàn bộ ký tự và số.',
-  ten: 'Lấy chính xác tên hàng, quy cách hoặc mã sản phẩm (đọc cả chữ viết tay tiếng Việt có dấu, chữ viết tắt như Thùng, Cuộn, Cây, Bộ, Hộp). Không gộp hai dòng hàng thành một.',
+  ten: 'Lấy chính xác tên hàng, quy cách hoặc mã sản phẩm (đọc cả chữ viết tay tiếng Việt có dấu, chữ viết tắt như Thùng, Cuộn, Cây, Bộ, Hộp). NGUYÊN TẮC GỘP DÒNG: Nếu một mặt hàng/sản phẩm được in/viết dàn trải thành 2 dòng (ví dụ dòng trên là tên/loại bao bì, dòng dưới là kích thước/quy cách mã nhưng chỉ có chung 1 số lượng, 1 STT hoặc 1 số OS/PO) thì PHẢI GỘP thành 1 dòng hàng duy nhất (ví dụ: "PE SHOE BOX (ECO) 290*180*110mm MK-A-1"). Chỉ tách thành các dòng khác nhau khi có các số lượng/STT/mã OS/PO riêng biệt.',
   soOSPO: 'Chỉ lấy số, không lấy thêm bất kỳ chữ hay ký tự nào. Tự động điều chỉnh theo định dạng 5 chữ số (xxxxx): nếu trên phiếu ghi dạng TiềnTố-HậuTố (ví dụ: 8-999 -> 80999, 8-99 -> 80099, 8-9 -> 80009, 8-1999 -> 81999, 8-x999 -> 8x999) thì phần sau dấu gạch nối luôn được bù số 0 ở đầu thành 4 chữ số ghép với số đầu.',
   donViTinh: 'Lấy đơn vị tính viết trên phiếu (ví dụ: EA, PCS, KG, BOX, CÁI, THÙNG, BỘ, CUỘN, CÂY). Không tự suy diễn.',
   soLuongChungTu: 'Chỉ lấy số lượng theo chứng từ (chỉ trả về số thuần). Nếu có chữ viết tay sửa đổi/ghi đè lên số in, ưu tiên lấy số viết tay mới nhất.',
@@ -307,6 +303,7 @@ export default function Home() {
   const [cloudSyncCode, setCloudSyncCode] = useState('');
   const [syncCodeInput, setSyncCodeInput] = useState('');
   const [autoCloudSyncOnLaunch, setAutoCloudSyncOnLaunch] = useState(true);
+  const [cloudSyncDuration, setCloudSyncDuration] = useState(1440); // Storage duration in minutes (default 24h = 1440m)
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [lastCloudSync, setLastCloudSync] = useState(null);
   const [qrModalOpen, setQrModalOpen] = useState(false);
@@ -392,6 +389,12 @@ export default function Home() {
     const autoLaunchEnabled = savedAutoLaunch === null ? true : savedAutoLaunch === 'true';
     setAutoCloudSyncOnLaunch(autoLaunchEnabled);
 
+    const savedDuration = localStorage.getItem('cloud_sync_duration');
+    if (savedDuration) {
+      const parsedDur = Number(savedDuration);
+      if (!isNaN(parsedDur) && parsedDur >= 5) setCloudSyncDuration(parsedDur);
+    }
+
     try {
       const cols = JSON.parse(localStorage.getItem('scan_columns') || '[]');
       if (Array.isArray(cols) && cols.length) setSelectedColumns(cols);
@@ -399,6 +402,10 @@ export default function Home() {
 
     try {
       const prompts = JSON.parse(localStorage.getItem('scan_field_prompts') || '{}');
+      if (prompts.ten && prompts.ten.includes('Không gộp hai dòng hàng thành một')) {
+        delete prompts.ten;
+        localStorage.setItem('scan_field_prompts', JSON.stringify(prompts));
+      }
       setFieldPrompts({ ...DEFAULT_FIELD_PROMPTS, ...prompts });
     } catch {}
 
@@ -408,7 +415,33 @@ export default function Home() {
 
     try {
       const localHist = JSON.parse(localStorage.getItem('scan_history') || '[]');
-      setScanHistory(Array.isArray(localHist) ? localHist.slice(0, MAX_HISTORY_ITEMS) : []);
+      if (Array.isArray(localHist)) {
+        // Sanitize any existing bloated items (strip heavy base64 previewUrl if present)
+        let needsResave = false;
+        const cleaned = localHist.map((item) => {
+          if (Array.isArray(item.pageResults)) {
+            const sanitizedPR = item.pageResults.map((pr) => {
+              if (pr.previewUrl && pr.previewUrl.length > 500) {
+                needsResave = true;
+                const { previewUrl, ...rest } = pr;
+                return rest;
+              }
+              return pr;
+            });
+            return { ...item, pageResults: sanitizedPR };
+          }
+          return item;
+        });
+
+        if (needsResave) {
+          try {
+            localStorage.setItem('scan_history', JSON.stringify(cleaned.slice(0, MAX_HISTORY_ITEMS)));
+          } catch (e) {
+            console.warn('Could not resave sanitized scan_history:', e);
+          }
+        }
+        setScanHistory(cleaned.slice(0, MAX_HISTORY_ITEMS));
+      }
     } catch {}
 
     // Auto-sync check on first load:
@@ -498,6 +531,7 @@ export default function Home() {
     try {
       const payload = {
         code,
+        durationMinutes: cloudSyncDuration,
         apiKey: apiKey.trim(),
         backupKeys,
         aiProvider,
@@ -515,16 +549,26 @@ export default function Home() {
         body: JSON.stringify(payload),
       });
 
+      const resJson = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'Lỗi server');
+        throw new Error(resJson.error || 'Lỗi server');
       }
 
       setCloudSyncCode(code);
       localStorage.setItem('cloud_sync_code', code);
+      localStorage.setItem('cloud_sync_duration', String(cloudSyncDuration));
       const nowStr = new Date().toLocaleTimeString('vi-VN');
-      setLastCloudSync({ time: nowStr, code });
-      if (!silent) showToast(`✅ Đã lưu cấu hình API & Sheet lên Cloud [${code}] thành công!`, 'success');
+      const formattedDuration = cloudSyncDuration >= 60 
+        ? `${Math.round(cloudSyncDuration / 60)} giờ` 
+        : `${cloudSyncDuration} phút`;
+
+      setLastCloudSync({ 
+        time: nowStr, 
+        code, 
+        duration: formattedDuration,
+        expiresAt: resJson.expiresAt 
+      });
+      if (!silent) showToast(`✅ Đã lưu cấu hình lên Cloud [${code}] (Lưu ${formattedDuration})!`, 'success');
       return true;
     } catch (e) {
       console.error('Cloud Push Error:', e);
@@ -593,15 +637,28 @@ export default function Home() {
         setFieldPrompts(data.fieldPrompts);
         localStorage.setItem('scan_field_prompts', JSON.stringify(data.fieldPrompts));
       }
+      if (data.durationMinutes) {
+        setCloudSyncDuration(data.durationMinutes);
+        localStorage.setItem('cloud_sync_duration', String(data.durationMinutes));
+      }
 
       setCloudSyncCode(code);
       setSyncCodeInput(code);
       localStorage.setItem('cloud_sync_code', code);
 
       const nowStr = new Date().toLocaleTimeString('vi-VN');
-      setLastCloudSync({ time: nowStr, code });
+      const formattedDuration = data.durationMinutes 
+        ? (data.durationMinutes >= 60 ? `${Math.round(data.durationMinutes / 60)} giờ` : `${data.durationMinutes} phút`)
+        : null;
+
+      setLastCloudSync({ 
+        time: nowStr, 
+        code, 
+        duration: formattedDuration,
+        expiresAt: data.expiresAt 
+      });
       if (!silent) {
-        showToast(`🎉 Đã đồng bộ cấu hình API & Google Sheet từ Cloud [${code}]!`, 'success');
+        showToast(`🎉 Đã đồng bộ cấu hình từ Cloud [${code}]!`, 'success');
       }
       return true;
     } catch (e) {
@@ -1363,7 +1420,7 @@ export default function Home() {
       rawList = resultData.items;
     }
 
-    return rawList.map((item) => {
+    const formattedList = rawList.map((item) => {
       const out = {};
       if (pageNum !== null) out._pageNum = pageNum;
       if (pageSoPhieu) out.soPhieu = pageSoPhieu;
@@ -1375,6 +1432,36 @@ export default function Home() {
       });
       return out;
     });
+
+    // 🌟 HẬU XỬ LÝ GỘP DÒNG THÔNG MINH (Fallback Client-side):
+    // Nếu có dòng chỉ có tên/quy cách mà không có số lượng, mã OS/PO, số pallet,
+    // thì tự động gộp phần tên đó vào dòng có số lượng liền trước (hoặc liền sau)
+    const mergedList = [];
+    for (let i = 0; i < formattedList.length; i++) {
+      const cur = formattedList[i];
+      const hasQty = !!(cur.soLuongChungTu || cur.soLuongThucNhap);
+      const hasOspo = !!cur.soOSPO;
+      const hasPallet = !!cur.soPallet;
+      const hasDataFields = hasQty || hasOspo || hasPallet;
+
+      // Nếu dòng hiện tại chỉ có tên mà không có số lượng/mã PO
+      if (!hasDataFields && cur.ten && cur.ten.trim()) {
+        if (mergedList.length > 0) {
+          // Gộp vào dòng trước đó
+          const prev = mergedList[mergedList.length - 1];
+          prev.ten = (prev.ten ? prev.ten + ' ' : '') + cur.ten.trim();
+          continue;
+        } else if (i + 1 < formattedList.length) {
+          // Gộp vào dòng kế tiếp nếu là dòng đầu tiên
+          const next = formattedList[i + 1];
+          next.ten = cur.ten.trim() + (next.ten ? ' ' + next.ten : '');
+          continue;
+        }
+      }
+      mergedList.push(cur);
+    }
+
+    return mergedList;
   }, [selectedColumns]);
 
   // Test OpenRouter Connection
@@ -1393,10 +1480,9 @@ export default function Home() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error?.message || ('Lỗi xác thực ' + res.status));
       }
-      const info = await res.json();
-      const limitVal = info.data?.limit ? ('Hạn mức: ' + info.data.limit + ' USD') : 'Không giới hạn';
+      const info = await res.json().catch(() => ({}));
       const label = info.data?.label || 'Key hợp lệ';
-      showToast('✅ Kết nối OpenRouter thành công! [' + label + ' • ' + limitVal + ']', 'success');
+      showToast('✅ Kết nối OpenRouter thành công! [' + label + ']', 'success');
     } catch (e) {
       showToast('❌ Lỗi OpenRouter: ' + e.message, 'error');
     } finally {
@@ -1412,10 +1498,11 @@ export default function Home() {
       .join('\n');
 
     const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
-      'Quy tắc:\n' +
+      'Quy tắc trích xuất quan trọng:\n' +
       '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
       '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
       '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
+      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1", hoặc dòng trên là mã và dòng dưới là quy cách) nhưng chỉ có chung 1 bộ số lượng, 1 STT hoặc 1 mã OS/PO thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất (nối tên thành 1 chuỗi hoàn chỉnh). Tuyệt đối không tách thành 2 dòng riêng biệt nếu dòng kia không có số lượng thực tế.\n' +
       'Hướng dẫn cột:\n' + rules + '\n\n' +
       'ĐỊNH DẠNG TRẢ VỀ:\n' +
       'Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
@@ -1503,10 +1590,11 @@ export default function Home() {
       .join('\n');
 
     const promptText = `Chuyên gia OCR phiếu kho Việt Nam (đọc chuẩn chữ in & chữ viết tay).
-Quy tắc:
+Quy tắc trích xuất quan trọng:
 1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).
 2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.
 3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).
+4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1", hoặc dòng trên là mã và dòng dưới là quy cách) nhưng chỉ có chung 1 bộ số lượng, 1 STT hoặc 1 mã OS/PO thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất (nối tên thành 1 chuỗi hoàn chỉnh). Tuyệt đối không tách thành 2 dòng riêng biệt nếu dòng kia không có số lượng thực tế.
 Hướng dẫn cột:
 ${rules}
 
@@ -1915,16 +2003,29 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     }
   };
 
-  // History Operations in LocalStorage
+  // History Operations in LocalStorage (Optimized lightweight storage to prevent QuotaExceededError on mobile)
   const saveHistoryRecord = (id, spVal, itemsVal, pageResultsVal = [], isNew = false) => {
     const currentPR = pageResultsVal.length ? pageResultsVal : pageResults;
+
+    // Remove heavy base64 / blob previewUrls from pageResults when persisting to localStorage
+    const lightweightPageResults = (currentPR || []).map((pr) => {
+      // Keep only metadata, do NOT store full base64 images in localStorage
+      return {
+        pageNum: pr.pageNum,
+        soPhieu: pr.soPhieu || '',
+        status: pr.status || 'done',
+        itemCount: pr.itemCount || (pr.items ? pr.items.length : 0),
+        items: pr.items || [],
+      };
+    });
+
     const record = {
       id,
       createdAt: isNew ? new Date().toISOString() : undefined,
       updatedAt: new Date().toISOString(),
       soPhieu: spVal,
       items: itemsVal,
-      pageResults: currentPR,
+      pageResults: lightweightPageResults,
       columns: selectedColumns,
     };
 
@@ -1939,9 +2040,30 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         record.createdAt = new Date().toISOString();
         next = [record, ...prev];
       }
-      // FIFO: keep at most MAX_HISTORY_ITEMS (newest first, oldest removed automatically)
-      const capped = next.slice(0, MAX_HISTORY_ITEMS);
-      localStorage.setItem('scan_history', JSON.stringify(capped));
+
+      // Keep at most MAX_HISTORY_ITEMS
+      let capped = next.slice(0, MAX_HISTORY_ITEMS);
+
+      // Safe saving with progressive fallback if quota is exceeded
+      try {
+        localStorage.setItem('scan_history', JSON.stringify(capped));
+      } catch (err) {
+        console.warn('Storage quota warning, trimming history to fit:', err);
+        try {
+          // If 50 is too large for mobile storage, reduce to 20
+          capped = next.slice(0, 20);
+          localStorage.setItem('scan_history', JSON.stringify(capped));
+        } catch (e2) {
+          try {
+            // Further reduce to 10 if storage is very tight
+            capped = next.slice(0, 10);
+            localStorage.setItem('scan_history', JSON.stringify(capped));
+          } catch (e3) {
+            console.error('Unable to save history to localStorage:', e3);
+          }
+        }
+      }
+
       return capped;
     });
 
@@ -2364,7 +2486,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     <>
                       <span className="text-purple-700 font-bold">OpenRouter</span>: {
                         OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || openRouterModel
-                      } <span className="text-slate-400 font-normal">({OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.price || 'siêu rẻ'})</span>
+                      }
                     </>
                   ) : (
                     <button
@@ -2885,17 +3007,22 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                         </div>
                         <div className="overflow-x-auto border border-slate-200 rounded-2xl">
                           <table className="w-full text-xs text-left border-collapse">
-                            <thead className="bg-slate-100 text-slate-600 uppercase font-bold text-[10px] border-b border-slate-200">
-                              <tr>
-                                <th className="p-2.5 text-center w-12">STT</th>
-                                {selectedColumns.map((k) => (
-                                  <th key={k} className="p-2.5 whitespace-nowrap">
-                                    {COLUMN_DEFS[k]?.short || k}
-                                  </th>
-                                ))}
-                                <th className="p-2.5 text-center w-12">Copy</th>
-                              </tr>
-                            </thead>
+                              <thead className="bg-slate-100 text-slate-600 uppercase font-bold text-[10px] border-b border-slate-200">
+                                <tr>
+                                  <th className="p-2.5 text-center w-10 text-[10px]">STT</th>
+                                  {selectedColumns.map((k) => (
+                                    <th
+                                      key={k}
+                                      className={`p-2.5 whitespace-nowrap text-[10px] ${
+                                        k === 'ten' ? 'min-w-[220px] sm:min-w-[280px]' : 'min-w-[85px]'
+                                      }`}
+                                    >
+                                      {COLUMN_DEFS[k]?.short || k}
+                                    </th>
+                                  ))}
+                                  <th className="p-2.5 text-center w-12 text-[10px]">Copy</th>
+                                </tr>
+                              </thead>
                             <tbody className="divide-y divide-slate-100">
                               {page.items.length > 0 ? (
                                 page.items.map((item, idx) => (
@@ -2904,22 +3031,32 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                                       {idx + 1}
                                     </td>
                                     {selectedColumns.map((k) => (
-                                      <td key={k} className="p-1.5">
-                                        <input
-                                          type="text"
-                                          value={item[k] || ''}
-                                          onChange={(e) => updatePageItemCell(page.pageNum, idx, k, e.target.value)}
-                                          onBlur={(e) => {
-                                            if (k === 'soOSPO') {
-                                              const formatted = formatOSPO(e.target.value);
-                                              if (formatted !== e.target.value) {
-                                                updatePageItemCell(page.pageNum, idx, k, formatted);
+                                      <td key={k} className={`p-1.5 ${k === 'ten' ? 'min-w-[220px] sm:min-w-[280px]' : 'min-w-[85px]'}`}>
+                                        {k === 'ten' ? (
+                                          <textarea
+                                            rows={Math.max(1, Math.ceil(((item[k] || '').length || 1) / 28))}
+                                            value={item[k] || ''}
+                                            onChange={(e) => updatePageItemCell(page.pageNum, idx, k, e.target.value)}
+                                            placeholder={COLUMN_DEFS[k]?.short}
+                                            className="w-full px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 focus:border-blue-500 focus:bg-white bg-transparent font-medium text-xs text-slate-900 outline-none transition-all resize-none leading-snug break-words"
+                                          />
+                                        ) : (
+                                          <input
+                                            type="text"
+                                            value={item[k] || ''}
+                                            onChange={(e) => updatePageItemCell(page.pageNum, idx, k, e.target.value)}
+                                            onBlur={(e) => {
+                                              if (k === 'soOSPO') {
+                                                const formatted = formatOSPO(e.target.value);
+                                                if (formatted !== e.target.value) {
+                                                  updatePageItemCell(page.pageNum, idx, k, formatted);
+                                                }
                                               }
-                                            }
-                                          }}
-                                          placeholder={COLUMN_DEFS[k]?.short}
-                                          className="w-full px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 focus:border-blue-500 focus:bg-white bg-transparent font-mono text-xs text-slate-800 outline-none transition-all"
-                                        />
+                                            }}
+                                            placeholder={COLUMN_DEFS[k]?.short}
+                                            className="w-full px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 focus:border-blue-500 focus:bg-white bg-transparent font-mono text-xs text-slate-800 outline-none transition-all"
+                                          />
+                                        )}
                                       </td>
                                     ))}
                                     <td className="p-2 text-center">
@@ -3056,13 +3193,18 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     <table className="w-full text-xs text-left border-collapse">
                       <thead className="bg-slate-100 text-slate-600 uppercase font-bold text-[10px] border-b border-slate-200">
                         <tr>
-                          <th className="p-2.5 text-center w-12">STT</th>
+                          <th className="p-2.5 text-center w-10 text-[10px]">STT</th>
                           {selectedColumns.map((k) => (
-                            <th key={k} className="p-2.5 whitespace-nowrap">
+                            <th
+                              key={k}
+                              className={`p-2.5 whitespace-nowrap text-[10px] ${
+                                k === 'ten' ? 'min-w-[220px] sm:min-w-[280px]' : 'min-w-[85px]'
+                              }`}
+                            >
                               {COLUMN_DEFS[k]?.short || k}
                             </th>
                           ))}
-                          <th className="p-2.5 text-center w-12">Copy</th>
+                          <th className="p-2.5 text-center w-12 text-[10px]">Copy</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -3072,22 +3214,32 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                               {idx + 1}
                             </td>
                             {selectedColumns.map((k) => (
-                              <td key={k} className="p-1.5">
-                                <input
-                                  type="text"
-                                  value={item[k] || ''}
-                                  onChange={(e) => updatePageItemCell(singleTabResult.pageNum, idx, k, e.target.value)}
-                                  onBlur={(e) => {
-                                    if (k === 'soOSPO') {
-                                      const formatted = formatOSPO(e.target.value);
-                                      if (formatted !== e.target.value) {
-                                        updatePageItemCell(singleTabResult.pageNum, idx, k, formatted);
+                              <td key={k} className={`p-1.5 ${k === 'ten' ? 'min-w-[220px] sm:min-w-[280px]' : 'min-w-[85px]'}`}>
+                                {k === 'ten' ? (
+                                  <textarea
+                                    rows={Math.max(1, Math.ceil(((item[k] || '').length || 1) / 28))}
+                                    value={item[k] || ''}
+                                    onChange={(e) => updatePageItemCell(singleTabResult.pageNum, idx, k, e.target.value)}
+                                    placeholder={COLUMN_DEFS[k]?.short}
+                                    className="w-full px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 focus:border-blue-500 focus:bg-white bg-transparent font-medium text-xs text-slate-900 outline-none transition-all resize-none leading-snug break-words"
+                                  />
+                                ) : (
+                                  <input
+                                    type="text"
+                                    value={item[k] || ''}
+                                    onChange={(e) => updatePageItemCell(singleTabResult.pageNum, idx, k, e.target.value)}
+                                    onBlur={(e) => {
+                                      if (k === 'soOSPO') {
+                                        const formatted = formatOSPO(e.target.value);
+                                        if (formatted !== e.target.value) {
+                                          updatePageItemCell(singleTabResult.pageNum, idx, k, formatted);
+                                        }
                                       }
-                                    }
-                                  }}
-                                  placeholder={COLUMN_DEFS[k]?.short}
-                                  className="w-full px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 focus:border-blue-500 focus:bg-white bg-transparent font-mono text-xs text-slate-800 outline-none transition-all"
-                                />
+                                    }}
+                                    placeholder={COLUMN_DEFS[k]?.short}
+                                    className="w-full px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 focus:border-blue-500 focus:bg-white bg-transparent font-mono text-xs text-slate-800 outline-none transition-all"
+                                  />
+                                )}
                               </td>
                             ))}
                             <td className="p-2 text-center">
@@ -3726,7 +3878,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 MÃ ĐỒNG BỘ: {cloudSyncCode || syncCodeInput}
               </div>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Mở camera trên điện thoại và quét mã QR này để tự động nạp toàn bộ cấu hình API Gemini & Google Sheet!
+                Mở camera trên điện thoại và quét mã QR này để tự động nạp toàn bộ cấu hình Mô Hình AI & Google Sheet!
               </p>
             </div>
 
@@ -3783,7 +3935,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
-                API Gemini
+                Mô Hình AI
               </button>
               <button
                 onClick={() => setSettingsTab('sheet')}
@@ -3849,7 +4001,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                       <span>Đồng Bộ Cấu Hình API, Google Sheet, Cột & Prompt</span>
                     </div>
                     <p className="text-[11px] text-blue-900 leading-relaxed">
-                      Chỉ cần nhập cùng một <strong>Mã Đồng Bộ</strong> hoặc <strong>Quét mã QR</strong> trên thiết bị khác, toàn bộ <strong>API Key Gemini</strong>, <strong>Link Google Sheet</strong>, <strong>Cột trích xuất</strong> và <strong>Gợi ý Prompt</strong> sẽ được tự động đồng bộ ngay lập tức!
+                      Chỉ cần nhập cùng một <strong>Mã Đồng Bộ</strong> hoặc <strong>Quét mã QR</strong> trên thiết bị khác, toàn bộ <strong>Mô Hình AI</strong>, <strong>Link Google Sheet</strong>, <strong>Cột trích xuất</strong> và <strong>Gợi ý Prompt</strong> sẽ được tự động đồng bộ ngay lập tức!
                     </p>
                   </div>
 
@@ -3873,6 +4025,64 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                         placeholder="Ví dụ: KHO-TONG, KHO-01, SCAN888..."
                         className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 font-mono font-bold text-sm text-blue-950 uppercase outline-none"
                       />
+                    </div>
+                  </div>
+
+                  {/* Custom Storage Duration Selector (5m ~ 24h) */}
+                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
+                        <span>⏳ Thời Gian Lưu Trữ Trên Máy Chủ</span>
+                      </label>
+                      <span className="text-[11px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                        {cloudSyncDuration >= 60 ? `${Math.round(cloudSyncDuration / 60)} Giờ` : `${cloudSyncDuration} Phút`}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+                      {[
+                        { label: '5 Phút', val: 5 },
+                        { label: '15 Phút', val: 15 },
+                        { label: '30 Phút', val: 30 },
+                        { label: '1 Giờ', val: 60 },
+                        { label: '4 Giờ', val: 240 },
+                        { label: '12 Giờ', val: 720 },
+                        { label: '24 Giờ', val: 1440 },
+                      ].map((item) => (
+                        <button
+                          key={item.val}
+                          type="button"
+                          onClick={() => {
+                            setCloudSyncDuration(item.val);
+                            localStorage.setItem('cloud_sync_duration', String(item.val));
+                          }}
+                          className={`py-1.5 px-2 rounded-xl text-[11px] font-bold border transition-all text-center ${
+                            cloudSyncDuration === item.val
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+                      <span>Tùy chỉnh phút (5 - 1440):</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="5"
+                          max="1440"
+                          value={cloudSyncDuration}
+                          onChange={(e) => {
+                            const val = Math.max(5, Math.min(1440, Number(e.target.value) || 5));
+                            setCloudSyncDuration(val);
+                            localStorage.setItem('cloud_sync_duration', String(val));
+                          }}
+                          className="w-16 px-2 py-1 bg-white border border-slate-200 rounded-lg text-center font-bold font-mono text-xs focus:border-blue-500 outline-none"
+                        />
+                        <span className="font-semibold text-slate-600">phút</span>
+                      </div>
                     </div>
                   </div>
 
@@ -3943,9 +4153,21 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   </div>
 
                   {lastCloudSync && (
-                    <div className="text-[11px] text-slate-500 flex items-center gap-1">
-                      <IconCheck className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Đồng bộ Cloud gần nhất: <strong>{lastCloudSync.time}</strong> (Mã: <strong>{lastCloudSync.code}</strong>)</span>
+                    <div className="p-2.5 bg-emerald-50/80 rounded-xl border border-emerald-200/80 text-[11px] text-emerald-900 flex flex-col gap-1">
+                      <div className="flex items-center gap-1 font-semibold">
+                        <IconCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                        <span>Đã đồng bộ Cloud lúc <strong>{lastCloudSync.time}</strong> (Mã: <strong>{lastCloudSync.code}</strong>)</span>
+                      </div>
+                      {lastCloudSync.duration && (
+                        <div className="text-[10.5px] text-emerald-700 pl-5 flex items-center gap-2">
+                          <span>Thời gian lưu trữ: <strong>{lastCloudSync.duration}</strong></span>
+                          {lastCloudSync.expiresAt && (
+                            <span className="text-emerald-600">
+                              (Hết hạn lúc {new Date(lastCloudSync.expiresAt).toLocaleTimeString('vi-VN')} {new Date(lastCloudSync.expiresAt).toLocaleDateString('vi-VN')})
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3984,7 +4206,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                       }`}
                     >
-                      <span>🟣 OpenRouter (4 Models Rẻ)</span>
+                      <span>🟣 OpenRouter (4 Models)</span>
                     </button>
                   </div>
 
@@ -3995,7 +4217,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                         <div className="font-bold text-purple-950 flex items-center justify-between">
                           <span className="flex items-center gap-1.5">
                             <IconSparkles className="w-4 h-4 text-purple-600" />
-                            <span>Cấu Hình OpenRouter (Tiết Kiệm Chi Phí)</span>
+                            <span>Cấu Hình OpenRouter AI</span>
                           </span>
                           <a
                             href="https://openrouter.ai/keys"
@@ -4008,7 +4230,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           </a>
                         </div>
                         <p className="text-[11px] text-purple-900 leading-relaxed">
-                          OpenRouter cho phép bạn dùng nhiều mô hình AI Vision mạnh mẽ với giá siêu rẻ (chỉ từ <strong>~15đ – 85đ / phiếu</strong>, rẻ hơn 5–20 lần so với Gemini 3.6).
+                          OpenRouter cho phép bạn dùng nhiều mô hình AI Vision mạnh mẽ để trích xuất dữ liệu phiếu kho song song với Gemini.
                         </p>
                       </div>
 
@@ -4065,10 +4287,11 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                                   <p className="text-[11px] text-slate-500 leading-tight">{m.desc}</p>
                                   <div className="font-mono text-[10px] text-purple-700 font-semibold">{m.id}</div>
                                 </div>
-                                <div className="text-right shrink-0">
-                                  <span className="font-bold text-xs text-purple-900">{m.price}</span>
-                                  {isSelected && <div className="text-[10px] text-purple-600 font-bold mt-1">✓ Đang chọn</div>}
-                                </div>
+                                {isSelected && (
+                                  <div className="text-right shrink-0">
+                                    <div className="text-[11px] text-purple-600 font-bold">✓ Đang chọn</div>
+                                  </div>
+                                )}
                               </button>
                             );
                           })}

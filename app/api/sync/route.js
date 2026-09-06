@@ -56,13 +56,15 @@ async function getUpstashValue(key) {
   return null;
 }
 
-async function setUpstashValue(key, value) {
+async function setUpstashValue(key, value, ttlSeconds = 86400) {
   const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) return false;
 
   try {
-    const res = await fetch(`${url}/set/sync_${encodeURIComponent(key)}`, {
+    const sec = Math.max(60, Number(ttlSeconds) || 86400);
+    // Upstash REST API supports EX parameter: POST /set/{key}/{value}?ex={seconds}
+    const res = await fetch(`${url}/set/sync_${encodeURIComponent(key)}?ex=${sec}`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -73,6 +75,15 @@ async function setUpstashValue(key, value) {
     return res.ok;
   } catch (e) {
     console.error('Upstash SET error:', e);
+  }
+  return false;
+}
+
+// Helper to check if payload has expired
+function isExpired(data) {
+  if (!data) return true;
+  if (data.expiresAt) {
+    return Date.now() > Number(data.expiresAt);
   }
   return false;
 }
@@ -88,22 +99,36 @@ export async function GET(request) {
   // 1. Try Upstash / Vercel KV first if configured
   const upstashData = await getUpstashValue(code);
   if (upstashData) {
+    if (isExpired(upstashData)) {
+      return NextResponse.json({ error: 'Mã đồng bộ này đã hết hạn lưu trữ trên máy chủ' }, { status: 404 });
+    }
     return NextResponse.json({ status: 'success', source: 'kv', data: upstashData });
   }
 
   // 2. Try memoryStore
   if (memoryStore.has(code)) {
-    return NextResponse.json({ status: 'success', source: 'memory', data: memoryStore.get(code) });
+    const memData = memoryStore.get(code);
+    if (isExpired(memData)) {
+      memoryStore.delete(code);
+      return NextResponse.json({ error: 'Mã đồng bộ này đã hết hạn lưu trữ trên máy chủ' }, { status: 404 });
+    }
+    return NextResponse.json({ status: 'success', source: 'memory', data: memData });
   }
 
   // 3. Try local file store
   const localStore = getLocalStore();
   if (localStore[code]) {
-    memoryStore.set(code, localStore[code]);
-    return NextResponse.json({ status: 'success', source: 'file', data: localStore[code] });
+    const fileData = localStore[code];
+    if (isExpired(fileData)) {
+      delete localStore[code];
+      saveLocalStore(localStore);
+      return NextResponse.json({ error: 'Mã đồng bộ này đã hết hạn lưu trữ trên máy chủ' }, { status: 404 });
+    }
+    memoryStore.set(code, fileData);
+    return NextResponse.json({ status: 'success', source: 'file', data: fileData });
   }
 
-  return NextResponse.json({ error: 'Không tìm thấy dữ liệu cho mã đồng bộ này' }, { status: 404 });
+  return NextResponse.json({ error: 'Không tìm thấy dữ liệu cho mã đồng bộ này (hoặc đã hết hạn)' }, { status: 404 });
 }
 
 export async function POST(request) {
@@ -115,10 +140,18 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Mã đồng bộ phải có ít nhất 3 ký tự' }, { status: 400 });
     }
 
+    // Storage duration: 5 mins ~ 24h (in minutes: 5, 15, 30, 60, 180, 720, 1440). Default: 1440 (24h)
+    const durationMinutes = Math.max(5, Math.min(1440, Number(body.durationMinutes) || 1440));
+    const ttlSeconds = durationMinutes * 60;
+    const now = Date.now();
+    const expiresAt = now + ttlSeconds * 1000;
+
     // Only synchronize API keys, quota counters, Google Sheets & columns/prompt configs
     const payload = {
       code,
-      updatedAt: new Date().toISOString(),
+      updatedAt: new Date(now).toISOString(),
+      expiresAt,
+      durationMinutes,
       apiKey: body.apiKey || '',
       backupKeys: Array.isArray(body.backupKeys) ? body.backupKeys : [],
       apiUsage: body.apiUsage && typeof body.apiUsage === 'object' ? body.apiUsage : {},
@@ -139,13 +172,19 @@ export async function POST(request) {
     localStore[code] = payload;
     saveLocalStore(localStore);
 
-    // 3. Save to Upstash / Vercel KV if configured
-    await setUpstashValue(code, payload);
+    // 3. Save to Upstash / Vercel KV if configured (with TTL)
+    await setUpstashValue(code, payload, ttlSeconds);
+
+    const formattedDuration = durationMinutes >= 60 
+      ? `${Math.round(durationMinutes / 60)} giờ` 
+      : `${durationMinutes} phút`;
 
     return NextResponse.json({
       status: 'success',
-      message: `Đã đồng bộ cấu hình API, Bộ đếm & Google Sheet cho mã ${code}`,
+      message: `Đã lưu cấu hình lên Cloud [${code}] thành công (Thời gian lưu: ${formattedDuration})`,
       updatedAt: payload.updatedAt,
+      expiresAt: payload.expiresAt,
+      durationMinutes,
       apiCount: (payload.apiKey ? 1 : 0) + payload.backupKeys.length,
     });
   } catch (error) {
