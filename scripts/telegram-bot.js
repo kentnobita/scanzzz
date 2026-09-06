@@ -492,6 +492,27 @@ async function handleMessage(msg) {
     });
   }
 
+  if (cleanText.startsWith('/key')) {
+    const args = cleanText.split(' ');
+    const newKey = (args[1] || '').trim();
+    if (!newKey || !newKey.startsWith('sk-or-')) {
+      return sendTelegram('sendMessage', {
+        chat_id: chatId,
+        text: '⚠️ Cú pháp: `/key <OpenRouter_API_Key>`\n(Key OpenRouter thường bắt đầu bằng `sk-or-v1-`...)',
+        parse_mode: 'Markdown'
+      });
+    }
+    const cfg = getBotConfig();
+    cfg.openRouterKey = newKey;
+    saveBotConfig(cfg);
+    const masked = newKey.slice(0, 10) + '...' + newKey.slice(-4);
+    return sendTelegram('sendMessage', {
+      chat_id: chatId,
+      text: `✅ Đã cập nhật OpenRouter API Key thành công: \`${masked}\``,
+      parse_mode: 'Markdown'
+    });
+  }
+
   if (cleanText.startsWith('/sheet')) {
     const args = cleanText.split(' ');
     const url = args.slice(1).join(' ').trim();
