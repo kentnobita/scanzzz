@@ -81,6 +81,41 @@ const OPENROUTER_MODELS = [
   },
 ];
 
+const APINEX_MODELS = [
+  {
+    id: 'free/gemini-3.8-flash',
+    name: 'Gemini 3.8 Flash',
+    shortName: 'Gemini 3.8 Flash',
+    badge: 'Khuyên Dùng • Cực Nhanh',
+    badgeColor: 'bg-emerald-100 text-emerald-800',
+    desc: 'Mô hình Gemini 3.8 Flash của Google trên APInex. Cửa sổ 1M token, tốc độ đọc và xử lý phiếu xuất kho rất tốt.',
+  },
+  {
+    id: 'free/qwen-3.8-max',
+    name: 'Qwen 3.8 MAX',
+    shortName: 'Qwen 3.8 MAX',
+    badge: 'Đỉnh Cao Chữ Viết Tay',
+    badgeColor: 'bg-purple-100 text-purple-800',
+    desc: 'Mô hình Qwen MAX mạnh nhất, đọc tốt tài liệu tiếng Việt và các dòng chữ viết tay phức tạp.',
+  },
+  {
+    id: 'free/gpt-5.6-luna',
+    name: 'GPT 5.6 Luna',
+    shortName: 'GPT 5.6 Luna',
+    badge: 'Ổn Định • Bóc Tách Chuẩn',
+    badgeColor: 'bg-teal-100 text-teal-800',
+    desc: 'Mô hình GPT 5.6 Luna tối ưu hóa bóc tách cấu trúc cột, số chứng từ và dòng bảng.',
+  },
+  {
+    id: 'free/muse-spark-1.3',
+    name: 'Muse Spark 1.3',
+    shortName: 'Muse Spark 1.3',
+    badge: 'Nhẹ Nhàng • Tiết Kiệm',
+    badgeColor: 'bg-amber-100 text-amber-800',
+    desc: 'Mô hình gọn nhẹ, phản hồi nhanh cho các phiếu kho dạng in rõ nét.',
+  },
+];
+
 const DEFAULT_FIELD_PROMPTS = {
   soPhieu: 'Đọc kỹ số phiếu/số chứng từ ở đầu phiếu, bao gồm cả số in sẵn hoặc chữ viết tay bổ sung. Giữ nguyên toàn bộ ký tự và số.',
   ten: 'Lấy chính xác tên hàng, quy cách hoặc mã sản phẩm (đọc cả chữ viết tay tiếng Việt có dấu, chữ viết tắt như Thùng, Cuộn, Cây, Bộ, Hộp). NGUYÊN TẮC GỘP DÒNG: Nếu một mặt hàng/sản phẩm được in/viết dàn trải thành 2 dòng (ví dụ dòng trên là tên/loại bao bì, dòng dưới là kích thước/quy cách mã nhưng chỉ có chung 1 số lượng, 1 STT hoặc 1 số OS/PO) thì PHẢI GỘP thành 1 dòng hàng duy nhất (ví dụ: "PE SHOE BOX (ECO) 290*180*110mm MK-A-1"). Chỉ tách thành các dòng khác nhau khi có các số lượng/STT/mã OS/PO riêng biệt.',
@@ -266,12 +301,15 @@ export default function Home() {
   const [selectedPdfIndex, setSelectedPdfIndex] = useState(0);
 
   // Settings & Storage state
-  const [aiProvider, setAiProvider] = useState('gemini'); // 'gemini' | 'openrouter'
+  const [aiProvider, setAiProvider] = useState('gemini'); // 'gemini' | 'openrouter' | 'apinex'
   const [apiKey, setApiKey] = useState("");
   const [backupKeys, setBackupKeys] = useState([]);
   const [openRouterKey, setOpenRouterKey] = useState("");
   const [openRouterModel, setOpenRouterModel] = useState("google/gemini-2.5-flash");
   const [openRouterTesting, setOpenRouterTesting] = useState(false);
+  const [apinexKey, setApinexKey] = useState("");
+  const [apinexModel, setApinexModel] = useState("free/gemini-3.8-flash");
+  const [apinexTesting, setApinexTesting] = useState(false);
   const [rateLimitedKeys, setRateLimitedKeys] = useState(new Set()); 
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
 
@@ -374,6 +412,11 @@ export default function Home() {
       localStorage.setItem('openrouter_model', savedOrModel);
     }
     setOpenRouterModel(savedOrModel);
+
+    const savedApxKey = localStorage.getItem('apinex_api_key') || '';
+    setApinexKey(savedApxKey);
+    const savedApxModel = localStorage.getItem('apinex_model') || 'free/gemini-3.8-flash';
+    setApinexModel(savedApxModel);
 
     const sheetUrl = localStorage.getItem('google_sheet_webhook_url') || '';
     setGoogleSheetUrl(sheetUrl);
@@ -537,6 +580,8 @@ export default function Home() {
         aiProvider,
         openRouterKey: openRouterKey.trim(),
         openRouterModel: openRouterModel.trim(),
+        apinexKey: apinexKey.trim(),
+        apinexModel: apinexModel.trim(),
         googleSheetUrl: googleSheetUrl.trim(),
         autoSyncSheet,
         selectedColumns,
@@ -620,6 +665,14 @@ export default function Home() {
         const modelToSet = data.openRouterModel === 'google/gemini-2.0-flash-001' ? 'google/gemini-2.5-flash' : data.openRouterModel;
         setOpenRouterModel(modelToSet);
         localStorage.setItem('openrouter_model', modelToSet);
+      }
+      if (data.apinexKey !== undefined) {
+        setApinexKey(data.apinexKey);
+        localStorage.setItem('apinex_api_key', data.apinexKey);
+      }
+      if (data.apinexModel) {
+        setApinexModel(data.apinexModel);
+        localStorage.setItem('apinex_model', data.apinexModel);
       }
       if (data.googleSheetUrl !== undefined) {
         setGoogleSheetUrl(data.googleSheetUrl);
@@ -1582,6 +1635,122 @@ export default function Home() {
     }
   };
 
+  // Test APInex Connection
+  const testApinexConnection = async () => {
+    const key = apinexKey.trim();
+    if (!key) {
+      showToast('Vui lòng nhập API Key APInex trước khi test', 'error');
+      return;
+    }
+    setApinexTesting(true);
+    try {
+      const res = await fetch('/api/apinex', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'test', key })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || ('Lỗi xác thực ' + res.status));
+      }
+      showToast('✅ Kết nối APInex thành công! Key hoạt động tốt.', 'success');
+    } catch (e) {
+      showToast('❌ Lỗi APInex: ' + e.message, 'error');
+    } finally {
+      setApinexTesting(false);
+    }
+  };
+
+  // Direct APInex OCR (Supports Free Top-Tier Vision Models)
+  const scanClientApinexWithBase64 = async (base64Data, mimeType, key, model) => {
+    const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
+    const rules = ['soPhieu', ...selectedColumns]
+      .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
+      .join('\n');
+
+    const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
+      'Quy tắc trích xuất quan trọng:\n' +
+      '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
+      '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
+      '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
+      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1", hoặc dòng trên là mã và dòng dưới là quy cách) nhưng chỉ có chung 1 bộ số lượng, 1 STT hoặc 1 mã OS/PO thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất (nối tên thành 1 chuỗi hoàn chỉnh). Tuyệt đối không tách thành 2 dòng riêng biệt nếu dòng kia không có số lượng thực tế.\n' +
+      'Hướng dẫn cột:\n' + rules + '\n\n' +
+      'ĐỊNH DẠNG TRẢ VỀ:\n' +
+      'Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
+      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
+
+    const res = await fetch('/api/apinex', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        key: key.trim(),
+        model: model || 'free/gemini-3.8-flash',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: promptText },
+              { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64Data } },
+            ],
+          },
+        ],
+        temperature: 0.1,
+        response_format: { type: 'json_object' },
+      }),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const err = new Error(errData.error?.message || ('APInex Error: ' + res.status));
+      err.status = res.status;
+      throw err;
+    }
+
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content;
+    if (!text) {
+      throw new Error('Không nhận được dữ liệu phản hồi từ APInex');
+    }
+
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
+        parsed.items = parsed.rows.map((row) => {
+          const obj = {};
+          if (Array.isArray(row)) {
+            selectedColumns.forEach((colKey, idx) => {
+              obj[colKey] = row[idx] ?? '';
+            });
+          }
+          return obj;
+        });
+      }
+      return parsed;
+    } catch {
+      const m = text.match(/\{[\s\S]*\}/);
+      if (m) {
+        try {
+          const parsed = JSON.parse(m[0]);
+          if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
+            parsed.items = parsed.rows.map((row) => {
+              const obj = {};
+              if (Array.isArray(row)) {
+                selectedColumns.forEach((colKey, idx) => {
+                  obj[colKey] = row[idx] ?? '';
+                });
+              }
+              return obj;
+            });
+          }
+          return parsed;
+        } catch {}
+      }
+      return { soPhieu: '', rows: [[text]] };
+    }
+  };
+
   // Direct Gemini OCR with Google Generative AI (Optimized Compact 2D Matrix Output)
   const scanClientGeminiWithBase64 = async (base64Data, mimeType, key) => {
     const colListStr = selectedColumns.map((k, i) => `${i + 1}.${COLUMN_DEFS[k]?.short || k}`).join(', ');
@@ -1744,7 +1913,22 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       return { data: res, engine: 'openrouter' };
     }
 
-    // 2. GOOGLE GEMINI PROVIDER (with Failover)
+    // 2. APINEX PROVIDER
+    if (aiProvider === 'apinex') {
+      const apxKey = apinexKey.trim();
+      if (!apxKey) {
+        throw new Error('Chưa cấu hình API Key APInex! Vui lòng vào Cài đặt ⚙️ -> Tab API -> Chọn APInex và dán Key (sk-apx...).');
+      }
+      setScanProgress({
+        active: true,
+        percent: 45,
+        text: `${progressPrefix} Đang gọi APInex (${apinexModel})...`,
+      });
+      const res = await scanClientApinexWithBase64(base64Data, mimeType, apxKey, apinexModel);
+      return { data: res, engine: 'apinex' };
+    }
+
+    // 3. GOOGLE GEMINI PROVIDER (with Failover)
     const allKeys = getGeminiApiKeys();
     const apiKeys = allKeys.filter((k) => !rateLimitedKeys.has(k));
     const keysToTry = apiKeys.length > 0 ? apiKeys : allKeys;
@@ -2286,6 +2470,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     localStorage.setItem('ai_provider', aiProvider);
     localStorage.setItem('openrouter_api_key', openRouterKey.trim());
     localStorage.setItem('openrouter_model', openRouterModel.trim());
+    localStorage.setItem('apinex_api_key', apinexKey.trim());
+    localStorage.setItem('apinex_model', apinexModel.trim());
     localStorage.setItem('google_sheet_webhook_url', googleSheetUrl.trim());
     localStorage.setItem('google_sheet_auto_sync', String(autoSyncSheet));
     localStorage.setItem('auto_cloud_sync_on_launch', String(autoCloudSyncOnLaunch));
@@ -2471,10 +2657,53 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               >
                 OpenRouter
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAiProvider('apinex');
+                  localStorage.setItem('ai_provider', 'apinex');
+                  showToast('Đang dùng chế độ APInex (Free 1M)');
+                }}
+                className={`px-2 py-0.5 rounded-md transition-all ${
+                  aiProvider === 'apinex'
+                    ? 'bg-emerald-600 text-white shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                APInex (Free)
+              </button>
             </div>
 
             {/* Provider Status Details */}
-            {aiProvider === 'openrouter' ? (
+            {aiProvider === 'apinex' ? (
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`inline-block w-2.5 h-2.5 rounded-full ${
+                    apinexKey.trim() ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                  }`}
+                />
+                <span className="font-semibold text-slate-700">
+                  {apinexKey.trim() ? (
+                    <>
+                      <span className="text-emerald-700 font-bold">APInex</span>: {
+                        APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || apinexModel
+                      }
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSettingsTab('api');
+                        setSettingsOpen(true);
+                      }}
+                      className="text-amber-700 font-bold hover:underline"
+                    >
+                      ⚠️ Chưa dán APInex Key (Bấm vào đây để dán)
+                    </button>
+                  )}
+                </span>
+              </div>
+            ) : aiProvider === 'openrouter' ? (
               <div className="flex items-center gap-1.5">
                 <span
                   className={`inline-block w-2.5 h-2.5 rounded-full ${
@@ -2820,7 +3049,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 onClick={startScan}
                 disabled={isScanning}
                 className={`mt-4 w-full py-4 rounded-xl text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-50 transition-all ${
-                  aiProvider === 'openrouter'
+                  aiProvider === 'apinex'
+                    ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:opacity-95 shadow-emerald-600/25'
+                    : aiProvider === 'openrouter'
                     ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:opacity-95 shadow-purple-600/25'
                     : 'bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-600 hover:opacity-95 shadow-blue-600/25'
                 }`}
@@ -2829,14 +3060,22 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   <>
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     <span>
-                      Đang trích xuất bằng {aiProvider === 'openrouter' ? `OpenRouter (${OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || 'AI'})` : 'Gemini 3.6 Flash'}...
+                      Đang trích xuất bằng {
+                        aiProvider === 'apinex'
+                          ? `APInex (${APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || 'AI'})`
+                          : aiProvider === 'openrouter'
+                          ? `OpenRouter (${OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || 'AI'})`
+                          : 'Gemini 3.6 Flash'
+                      }...
                     </span>
                   </>
                 ) : (
                   <>
                     <IconSparkles className="w-5 h-5" />
                     <span>
-                      {aiProvider === 'openrouter'
+                      {aiProvider === 'apinex'
+                        ? `Bắt Đầu Quét Bằng APInex [${APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || apinexModel}]`
+                        : aiProvider === 'openrouter'
                         ? `Bắt Đầu Quét Bằng OpenRouter [${OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || openRouterModel}]`
                         : 'Bắt Đầu Quét Trích Xuất (Gemini 3.6 Flash)'}
                     </span>
@@ -2867,7 +3106,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">Kết quả trích xuất</h3>
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                        engineBadge === 'openrouter'
+                        engineBadge === 'apinex'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : engineBadge === 'openrouter'
                           ? 'bg-purple-100 text-purple-800 border border-purple-200'
                           : engineBadge === 'groq'
                           ? 'bg-orange-100 text-orange-800 border border-orange-200'
@@ -2876,7 +3117,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           : 'bg-amber-100 text-amber-800 border border-amber-200'
                       }`}
                     >
-                      {engineBadge === 'openrouter'
+                      {engineBadge === 'apinex'
+                        ? `✨ APInex (${APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || apinexModel})`
+                        : engineBadge === 'openrouter'
                         ? `✨ OpenRouter (${openRouterModel.split('/')[1]?.split(':')[0] || 'Qwen 2.5 VL'})`
                         : engineBadge === 'groq'
                         ? `✨ Groq (${groqModel})`
@@ -4206,9 +4449,126 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                       }`}
                     >
-                      <span>🟣 OpenRouter (4 Models)</span>
+                      <span>🟣 OpenRouter</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAiProvider('apinex');
+                        localStorage.setItem('ai_provider', 'apinex');
+                        showToast('Đã chuyển sang APInex AI (Free 1M)');
+                      }}
+                      className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                        aiProvider === 'apinex'
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                    >
+                      <span>⚡ APInex (Free 1M)</span>
                     </button>
                   </div>
+
+                  {/* APINEX SECTION */}
+                  {aiProvider === 'apinex' && (
+                    <div className="space-y-4 animate-fade-in">
+                      <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200 space-y-2">
+                        <div className="font-bold text-emerald-950 flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <IconSparkles className="w-4 h-4 text-emerald-600" />
+                            <span>Cấu Hình APInex AI (1M Token Free)</span>
+                          </span>
+                          <a
+                            href="https://apinex.bond"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-emerald-700 hover:underline flex items-center gap-1 font-semibold text-[11px]"
+                          >
+                            <span>Trang chủ apinex.bond</span>
+                            <IconExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                        <p className="text-[11px] text-emerald-900 leading-relaxed">
+                          APInex cung cấp <strong>1.000.000 token miễn phí</strong> với các mô hình Vision hàng đầu thế giới (Gemini 3.8 Flash, Qwen 3.8 MAX, DeepSeek V4 Pro, GPT 5.6 Luna...).
+                        </p>
+                      </div>
+
+                      {/* APInex API Key Input */}
+                      <div className="space-y-1.5">
+                        <label className="font-bold text-slate-700 flex items-center justify-between text-xs">
+                          <span>API Key APInex</span>
+                          <button
+                            type="button"
+                            onClick={testApinexConnection}
+                            disabled={apinexTesting || !apinexKey.trim()}
+                            className="text-emerald-600 hover:underline font-semibold text-[11px] disabled:opacity-50"
+                          >
+                            {apinexTesting ? 'Đang test...' : '⚡ Test Kết Nối'}
+                          </button>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="password"
+                            value={apinexKey}
+                            onChange={(e) => setApinexKey(e.target.value)}
+                            placeholder="Dán key sk-apx... tại đây"
+                            className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 font-mono text-xs outline-none"
+                          />
+                        </div>
+                        <p className="text-[11px] text-slate-400">Key được lưu an toàn trên máy và tự động đồng bộ qua mã Cloud Sync.</p>
+                      </div>
+
+                      {/* APInex Models Selector */}
+                      <div className="space-y-2">
+                        <label className="font-bold text-slate-700 block text-xs">Chọn Mô Hình AI Miễn Phí (APInex Free)</label>
+                        <div className="grid grid-cols-1 gap-2">
+                          {APINEX_MODELS.map((m) => {
+                            const isSelected = apinexModel === m.id;
+                            return (
+                              <button
+                                key={m.id}
+                                type="button"
+                                onClick={() => {
+                                  setApinexModel(m.id);
+                                  localStorage.setItem('apinex_model', m.id);
+                                }}
+                                className={`p-3 rounded-xl border text-left transition-all flex items-start justify-between gap-3 ${
+                                  isSelected
+                                    ? 'border-emerald-500 bg-emerald-50/70 shadow-sm ring-1 ring-emerald-500'
+                                    : 'border-slate-200 bg-white hover:bg-slate-50'
+                                }`}
+                              >
+                                <div className="space-y-1 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-slate-900 text-xs">{m.name}</span>
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${m.badgeColor}`}>{m.badge}</span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 leading-tight">{m.desc}</p>
+                                  <div className="font-mono text-[10px] text-emerald-700 font-semibold">{m.id}</div>
+                                </div>
+                                {isSelected && (
+                                  <div className="text-right shrink-0">
+                                    <div className="text-[11px] text-emerald-600 font-bold">✓ Đang chọn</div>
+                                  </div>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Custom APInex Model Input */}
+                        <div className="pt-1">
+                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">Hoặc nhập mã model APInex tùy chỉnh:</label>
+                          <input
+                            type="text"
+                            value={apinexModel}
+                            onChange={(e) => setApinexModel(e.target.value)}
+                            placeholder="Ví dụ: free/gemini-3.8-flash hoặc free/qwen-3.8-max"
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 font-mono text-xs outline-none bg-slate-50"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* OPENROUTER SECTION */}
                   {aiProvider === 'openrouter' && (

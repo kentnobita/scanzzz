@@ -158,6 +158,8 @@ export async function POST(request) {
       aiProvider: body.aiProvider || 'gemini',
       openRouterKey: body.openRouterKey || '',
       openRouterModel: body.openRouterModel || 'google/gemini-2.5-flash',
+      apinexKey: body.apinexKey || '',
+      apinexModel: body.apinexModel || 'free/gemini-3.8-flash',
       googleSheetUrl: body.googleSheetUrl || '',
       autoSyncSheet: !!body.autoSyncSheet,
       selectedColumns: body.selectedColumns || [],
