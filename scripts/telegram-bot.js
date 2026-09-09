@@ -403,17 +403,13 @@ function getActiveProviderInfo(cfg) {
 }
 
 async function scanWithKira(base64Data, mimeType, key, model, selectedColumns, fieldPrompts) {
-  let effectiveModel = (model || 'gemini-3.6-flash').trim();
-  // Kira AI only supports Vision on Gemini models
-  if (!effectiveModel.startsWith('gemini-')) {
-    console.log(`[Bot Kira AI] Mô hình ${effectiveModel} không hỗ trợ đọc ảnh trên Kira, tự động chuyển sang gemini-3.6-flash`);
-    effectiveModel = 'gemini-3.6-flash';
-  }
+  const effectiveModel = (model || 'qwen3.8-27b-free').trim();
+  const isFree = effectiveModel.includes('-free') || effectiveModel.startsWith('kira-');
 
-  // Kira AI payload limit: max ~130KB base64. Auto-compress with mupdf if larger
+  // Kira AI payload limit: auto-compress with mupdf if larger than 90KB base64
   let payloadBase64 = base64Data;
   let payloadMime = mimeType;
-  if (base64Data && base64Data.length > 120000) {
+  if (base64Data && base64Data.length > 90000) {
     try {
       const mupdf = await getMupdf();
       const rawBuf = Buffer.from(base64Data, 'base64');
@@ -421,13 +417,13 @@ async function scanWithKira(base64Data, mimeType, key, model, selectedColumns, f
       const page = doc.loadPage(0);
       const bounds = page.getBounds();
       const maxDim = Math.max(bounds[2] - bounds[0], bounds[3] - bounds[1]);
-      const scale = maxDim > 900 ? (900 / maxDim) : 0.75;
+      const scale = maxDim > 800 ? (800 / maxDim) : 0.7;
       const pixmap = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB);
       const pngBuf = Buffer.from(pixmap.asPNG());
       if (pngBuf.length < rawBuf.length) {
         payloadBase64 = pngBuf.toString('base64');
         payloadMime = 'image/png';
-        console.log(`[Bot Kira AI] Đã tối ưu kích thước ảnh từ ${rawBuf.length}b -> ${pngBuf.length}b để tránh lỗi 502 Kira`);
+        console.log(`[Bot Kira AI] Đã tối ưu kích thước ảnh từ ${rawBuf.length}b -> ${pngBuf.length}b cho model ${effectiveModel}`);
       }
     } catch (compressErr) {
       console.warn('[Bot Kira AI] Không thể nén ảnh bằng mupdf:', compressErr.message);
@@ -450,48 +446,57 @@ async function scanWithKira(base64Data, mimeType, key, model, selectedColumns, f
     'Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
     '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
 
-  const sendRequest = async (mName) => {
+  const sendRequest = async () => {
+    const reqBody = {
+      model: effectiveModel,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: promptText },
+            { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } }
+          ]
+        }
+      ],
+      temperature: 0.1
+    };
+    if (isFree) {
+      reqBody.max_tokens = 650;
+      if (!effectiveModel.includes('qwen')) {
+        reqBody.response_format = { type: 'json_object' };
+      }
+    } else {
+      reqBody.response_format = { type: 'json_object' };
+    }
+
     return await fetch('https://kiraai.vn/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + key.trim(),
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        model: mName,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: promptText },
-              { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } }
-            ]
-          }
-        ],
-        temperature: 0.1,
-        response_format: { type: 'json_object' }
-      })
+      body: JSON.stringify(reqBody)
     });
   };
 
-  let res = await sendRequest(effectiveModel);
+  let res = await sendRequest();
 
-  // Auto retry with gemini-3.6-flash if 502 occurred
-  if (res.status === 502 && effectiveModel !== 'gemini-3.6-flash') {
-    console.warn(`[Bot Kira AI] Gặp lỗi 502 với ${effectiveModel}, tự động thử lại bằng gemini-3.6-flash...`);
-    effectiveModel = 'gemini-3.6-flash';
-    res = await sendRequest(effectiveModel);
+  // If rate limit / 502 occurs on free tier, wait 2.5s and retry once with same model
+  if ((res.status === 502 || res.status === 500 || res.status === 429) && isFree) {
+    console.warn(`[Bot Kira AI] Model ${effectiveModel} phản hồi ${res.status}, chờ 2.5s rồi thử lại...`);
+    await new Promise(r => setTimeout(r, 2500));
+    res = await sendRequest();
   }
 
   if (!res.ok) {
     const errorText = await res.text().catch(() => '');
-    let errMsg = `Kira AI Error: ${res.status}`;
+    let errMsg = `Kira AI (${effectiveModel}) Error: ${res.status}`;
     try {
       const errJson = JSON.parse(errorText);
       if (errJson.error?.message) errMsg = errJson.error.message;
     } catch {
       if (res.status === 502) {
-        errMsg = 'Máy chủ Kira AI trả về lỗi 502 (Bad Gateway). Chỉ các model gemini-* mới hỗ trợ đọc ảnh phiếu trên Kira AI. Vui lòng gõ /model gemini-3.6-flash.';
+        errMsg = `Mô hình Free [${effectiveModel}] đang tạm thời quá tải hoặc ảnh gửi quá nhanh (502 Bad Gateway). Vui lòng bấm [Thử lại 🔄] sau vài giây hoặc đổi mô hình /model qwen3.8-27b-free.`;
       }
     }
     throw new Error(errMsg);
@@ -637,8 +642,7 @@ async function performOcr(cfg, base64Data, mimeType) {
     if (!cfg.kiraKey) {
       throw new Error('Chưa có Kira AI API Key! Gõ /key kira_... hoặc đồng bộ /sync VIP888');
     }
-    let model = cfg.kiraModel || 'gemini-3.6-flash';
-    if (!model.startsWith('gemini-')) model = 'gemini-3.6-flash';
+    const model = cfg.kiraModel || 'qwen3.8-27b-free';
     const ocrRaw = await scanWithKira(base64Data, mimeType, cfg.kiraKey, model, selectedColumns, fieldPrompts);
     return { ocrRaw, modelUsed: `Kira AI (${model})` };
   } else {
@@ -1476,12 +1480,14 @@ async function handleMessage(msg) {
         text: '💡 *Các mô hình gợi ý:*\n\n' +
           '⚡ *Google Gemini trực tiếp:*\n' +
           '• `/model gemini-3.6-flash` (Mô hình chính - Siêu nhanh & chuẩn)\n\n' +
-          '🌟 *Kira AI (kiraai.vn):*\n' +
-          '• `/model gemini-3.6-flash` (Khuyên dùng - Vision đọc phiếu chuẩn nhất)\n' +
-          '• `/model gemini-3.8-flash` (Mô hình mới - Tốc độ cao)\n' +
-          '• `/model gemini-3.7-flash`\n' +
-          '• `/model gemini-3.5-flash-lite`\n' +
-          '_(Lưu ý: Trên Kira AI chỉ các model gemini-* mới hỗ trợ đọc ảnh)_\n\n' +
+          '🌟 *Kira AI (kiraai.vn - Free 100M tokens/ngày):*\n' +
+          '• `/model qwen3.8-27b-free` (Khuyên dùng - Vision đọc phiếu tốt)\n' +
+          '• `/model qwen3.8-flash-free` (Nhanh & nhẹ)\n' +
+          '• `/model glm-5.3-flash-free` (Đa phương thức)\n' +
+          '• `/model mimo-v2.5-free`\n' +
+          '• `/model hy3-free`\n' +
+          '• `/model kira-auto`\n' +
+          '• `/model gemini-3.6-flash` (VIP)\n\n' +
           '🔥 *APInex (Free 1M Token):*\n' +
           '• `/model free/gemini-3.8-flash` (Khuyên dùng - Cực nhanh)\n' +
           '• `/model free/qwen-3.8-max` (Đỉnh cao chữ viết tay tiếng Việt)\n' +

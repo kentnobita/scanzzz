@@ -49,43 +49,38 @@ export async function POST(req) {
 
     // Proxy Chat Completions
     const chatPayload = payload || body;
-    let selectedModel = chatPayload.model || 'gemini-3.6-flash';
+    const selectedModel = chatPayload.model || 'qwen3.8-27b-free';
 
-    // Check if request contains image
-    const hasImage = chatPayload.messages?.some(m =>
-      Array.isArray(m.content) && m.content.some(c => c.type === 'image_url' || c.image_url)
-    );
-
-    // Kira AI only supports Vision (reading images) on Gemini models
-    // Non-Gemini models (qwen, gpt, minimax, deepseek, kira-auto) trigger 502 Bad Gateway on Kira
-    if (hasImage && !selectedModel.startsWith('gemini-')) {
-      console.log(`[Kira AI Proxy] Model ${selectedModel} does not support Vision on Kira AI, auto-switching to gemini-3.6-flash`);
-      selectedModel = 'gemini-3.6-flash';
-    }
-
-    const sendChatRequest = async (modelToUse) => {
-      return await fetch('https://kiraai.vn/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey.trim()}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: modelToUse,
-          messages: chatPayload.messages,
-          temperature: chatPayload.temperature ?? 0.1,
-          response_format: chatPayload.response_format || { type: 'json_object' }
-        })
-      });
+    // Free models on Kira AI have strict parameter rules:
+    // 1. max_tokens must be <= 650 to prevent upstream 502 Bad Gateway
+    // 2. response_format { type: 'json_object' } can cause 500/502 on some free models (like Qwen free)
+    const isFreeModel = selectedModel.includes('-free') || selectedModel.startsWith('kira-');
+    
+    const requestBody = {
+      model: selectedModel,
+      messages: chatPayload.messages,
+      temperature: chatPayload.temperature ?? 0.1
     };
 
-    let res = await sendChatRequest(selectedModel);
-
-    // If 502 Bad Gateway occurs and image was sent with a different model, retry with gemini-3.6-flash
-    if (res.status === 502 && hasImage && selectedModel !== 'gemini-3.6-flash') {
-      console.warn(`[Kira AI Proxy] Received 502 with ${selectedModel}, retrying with gemini-3.6-flash...`);
-      res = await sendChatRequest('gemini-3.6-flash');
+    if (isFreeModel) {
+      requestBody.max_tokens = Math.min(chatPayload.max_tokens || 650, 650);
+      // Only include response_format for non-free or when explicitly supported
+      if (chatPayload.response_format && !selectedModel.includes('qwen')) {
+        requestBody.response_format = chatPayload.response_format;
+      }
+    } else {
+      if (chatPayload.max_tokens) requestBody.max_tokens = chatPayload.max_tokens;
+      if (chatPayload.response_format) requestBody.response_format = chatPayload.response_format;
     }
+
+    const res = await fetch('https://kiraai.vn/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey.trim()}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody)
+    });
 
     if (!res.ok) {
       const errorText = await res.text().catch(() => '');
@@ -93,12 +88,11 @@ export async function POST(req) {
       try {
         const errorJson = JSON.parse(errorText);
         if (errorJson.error?.message) errMsg = errorJson.error.message;
-      } catch {
-        if (res.status === 502) {
-          errMsg = 'Máy chủ Kira AI báo lỗi 502 (Bad Gateway). Nguyên nhân: Trên Kira AI, chỉ các mô hình Gemini (gemini-3.6-flash, gemini-3.8-flash) mới hỗ trợ đọc ảnh, hoặc ảnh có dung lượng vượt giới hạn của Kira AI. Vui lòng thử chọn gemini-3.6-flash hoặc chụp lại ảnh rõ nét.';
-        } else if (res.status === 504) {
-          errMsg = 'Máy chủ Kira AI phản hồi quá lâu (504 Gateway Timeout). Vui lòng thử lại sau.';
-        }
+      } catch (parseErr) {}
+      if (res.status === 502) {
+        errMsg = 'Máy chủ Kira AI báo lỗi 502 (Bad Gateway). Mô hình Free đang tạm thời quá tải hoặc ảnh vượt dung lượng cho phép. Hãy thử lại sau 3-5 giây hoặc chọn mô hình Free khác như qwen3.8-27b-free, qwen3.8-flash-free.';
+      } else if (res.status === 504) {
+        errMsg = 'Máy chủ Kira AI phản hồi quá lâu (504 Gateway Timeout). Vui lòng thử lại sau ít giây.';
       }
       return NextResponse.json({ error: { message: errMsg } }, { status: res.status });
     }

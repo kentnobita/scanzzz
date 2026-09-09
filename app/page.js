@@ -311,7 +311,7 @@ export default function Home() {
   const [apinexModel, setApinexModel] = useState("free/gemini-3.8-flash");
   const [apinexTesting, setApinexTesting] = useState(false);
   const [kiraKey, setKiraKey] = useState("");
-  const [kiraModel, setKiraModel] = useState("gemini-3.6-flash");
+  const [kiraModel, setKiraModel] = useState("qwen3.8-27b-free");
   const [kiraTesting, setKiraTesting] = useState(false);
   const [rateLimitedKeys, setRateLimitedKeys] = useState(new Set()); 
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
@@ -336,7 +336,7 @@ export default function Home() {
 
   const getActiveProviderLabel = (short = false) => {
     if (aiProvider === 'kira') {
-      return short ? 'Kira AI' : `Kira (${kiraModel || 'gemini-3.6-flash'})`;
+      return short ? 'Kira AI' : `Kira (${kiraModel || 'qwen3.8-27b-free'})`;
     }
     if (aiProvider === 'apinex') {
       const apxName = APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || apinexModel;
@@ -438,12 +438,7 @@ export default function Home() {
 
     const savedKiraKey = localStorage.getItem('kira_api_key') || '';
     setKiraKey(savedKiraKey);
-    let savedKiraModel = localStorage.getItem('kira_model') || 'gemini-3.6-flash';
-    // Auto-migrate from old default qwen3.8-max which caused 502
-    if (!savedKiraModel || savedKiraModel === 'qwen3.8-max') {
-      savedKiraModel = 'gemini-3.6-flash';
-      localStorage.setItem('kira_model', savedKiraModel);
-    }
+    const savedKiraModel = localStorage.getItem('kira_model') || 'qwen3.8-27b-free';
     setKiraModel(savedKiraModel);
 
     const sheetUrl = localStorage.getItem('google_sheet_webhook_url') || '';
@@ -1824,24 +1819,20 @@ export default function Home() {
     }
   };
 
-  // Direct Kira AI OCR (with auto-compression & Gemini model enforcement)
+  // Direct Kira AI OCR (supports both Free & VIP models faithfully)
   const scanClientKiraWithBase64 = async (base64Data, mimeType, key, model) => {
-    let effectiveModel = model?.trim() || 'gemini-3.6-flash';
-    // Kira AI only supports Vision on Gemini models
-    if (!effectiveModel.startsWith('gemini-')) {
-      effectiveModel = 'gemini-3.6-flash';
-    }
+    const effectiveModel = model?.trim() || 'qwen3.8-27b-free';
 
-    // Kira AI has a strict payload limit (~130KB base64). Auto-compress in browser if needed.
+    // Auto-compress image to ensure fast processing and prevent payload limit / 502
     let payloadBase64 = base64Data;
     let payloadMime = mimeType;
-    if (base64Data && base64Data.length > 120000) {
+    if (base64Data && base64Data.length > 90000) {
       try {
         const compressed = await new Promise((resolve) => {
           const img = new Image();
           img.onload = () => {
             const canvas = document.createElement('canvas');
-            const maxDim = 1200;
+            const maxDim = 1000;
             let w = img.width, h = img.height;
             if (w > maxDim || h > maxDim) {
               if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
@@ -1851,7 +1842,7 @@ export default function Home() {
             canvas.height = h;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, w, h);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.78);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.74);
             resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg' });
           };
           img.onerror = () => resolve(null);
@@ -1882,26 +1873,37 @@ export default function Home() {
       'Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
       '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
 
+    const isFree = effectiveModel.includes('-free') || effectiveModel.startsWith('kira-');
+    const reqPayload = {
+      key: key.trim(),
+      model: effectiveModel,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: promptText },
+            { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } },
+          ],
+        },
+      ],
+      temperature: 0.1,
+    };
+
+    if (isFree) {
+      reqPayload.max_tokens = 650;
+      if (!effectiveModel.includes('qwen')) {
+        reqPayload.response_format = { type: 'json_object' };
+      }
+    } else {
+      reqPayload.response_format = { type: 'json_object' };
+    }
+
     const res = await fetch('/api/kira', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        key: key.trim(),
-        model: effectiveModel,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: promptText },
-              { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } },
-            ],
-          },
-        ],
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-      }),
+      body: JSON.stringify(reqPayload),
     });
 
     if (!res.ok) {
@@ -4925,14 +4927,17 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           placeholder="Nhập mã mô hình, ví dụ: qwen3.8-max"
                           className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-100 font-mono text-xs outline-none bg-slate-50 font-semibold text-slate-800"
                         />
-                        <div className="space-y-1 pt-1">
-                          <div className="text-[11px] font-semibold text-slate-500">Mô hình đọc ảnh (Vision) hoạt động tốt trên Kira AI:</div>
+                        <div className="space-y-1.5 pt-1">
+                          <div className="text-[11px] font-semibold text-slate-500">Mô hình MIỄN PHÍ của Kira AI (100M tokens/ngày):</div>
                           <div className="flex flex-wrap gap-1.5">
                             {[
-                              { id: 'gemini-3.6-flash', label: 'gemini-3.6-flash (Khuyên dùng)' },
-                              { id: 'gemini-3.8-flash', label: 'gemini-3.8-flash (Mới)' },
-                              { id: 'gemini-3.7-flash', label: 'gemini-3.7-flash' },
-                              { id: 'gemini-3.5-flash-lite', label: 'gemini-3.5-flash-lite' }
+                              { id: 'qwen3.8-27b-free', label: '🌟 qwen3.8-27b-free (Khuyên dùng)' },
+                              { id: 'qwen3.8-flash-free', label: '⚡ qwen3.8-flash-free (Nhanh)' },
+                              { id: 'glm-5.3-flash-free', label: '✨ glm-5.3-flash-free' },
+                              { id: 'mimo-v2.5-free', label: 'mimo-v2.5-free' },
+                              { id: 'hy3-free', label: 'hy3-free' },
+                              { id: 'kira-auto', label: 'kira-auto' },
+                              { id: 'gemini-3.6-flash', label: 'gemini-3.6-flash (VIP)' }
                             ].map((sug) => (
                               <button
                                 key={sug.id}
@@ -4952,8 +4957,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                               </button>
                             ))}
                           </div>
-                          <p className="text-[10px] text-amber-800 bg-amber-100/70 p-2 rounded-lg mt-1 leading-normal">
-                            💡 <strong>Lưu ý quan trọng:</strong> Máy chủ Kira AI chỉ hỗ trợ đọc ảnh phiếu kho đối với các mô hình <code>gemini-*</code>. Các mô hình Qwen/GPT/Minimax trên Kira AI chỉ xử lý văn bản, nếu gửi ảnh quét sẽ bị máy chủ Kira trả về lỗi 502 Bad Gateway.
+                          <p className="text-[10px] text-amber-900 bg-amber-100/70 p-2 rounded-lg mt-1 leading-normal">
+                            💡 <strong>Mẹo dùng Free Model mượt mà:</strong> Các mô hình miễn phí của Kira AI có giới hạn tần suất (Rate Limit). Nếu gặp lỗi 502/500, vui lòng chờ khoảng 3-5 giây rồi bấm quét lại, hoặc chuyển đổi linh hoạt giữa <code>qwen3.8-27b-free</code> và <code>qwen3.8-flash-free</code>.
                           </p>
                         </div>
                       </div>
