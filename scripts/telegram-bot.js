@@ -1,6 +1,25 @@
 const fs = require('fs');
 const path = require('path');
 
+// Tự động nạp biến môi trường từ .env.local hoặc .env (nếu có) mà không để lộ key vào Git
+try {
+  ['.env.local', '.env'].forEach((envFile) => {
+    const envPath = path.join(process.cwd(), envFile);
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, 'utf8');
+      content.split('\n').forEach((line) => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+          const [k, ...v] = trimmed.split('=');
+          const key = k.trim();
+          const val = v.join('=').trim().replace(/^['"]|['"]$/g, '');
+          if (!process.env[key]) process.env[key] = val;
+        }
+      });
+    }
+  });
+} catch (e) {}
+
 let mupdfModule = null;
 async function getMupdf() {
   if (!mupdfModule) {
@@ -55,13 +74,15 @@ function getBotConfig() {
   } catch (e) {}
 
   return {
-    aiProvider: defaultSync.aiProvider || 'openrouter',
-    openRouterKey: defaultSync.openRouterKey || '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',
-    openRouterModel: defaultSync.openRouterModel || 'minimax/minimax-m3:free',
-    apinexKey: defaultSync.apinexKey || '',
-    apinexModel: defaultSync.apinexModel || 'free/gemini-3.8-flash',
-    geminiKey: defaultSync.apiKey || '',
-    googleSheetUrl: defaultSync.googleSheetUrl || 'https://script.google.com/macros/s/AKfycbxvSkHl-Ebg-VDX88B-iF0BhiH6ujtJ9ZKk-MroWOlU2ky4K4IBG40zyt2qsMfBa0gE/exec',
+    aiProvider: defaultSync.aiProvider || process.env.AI_PROVIDER || 'gemini',
+    geminiKey: defaultSync.apiKey || process.env.GEMINI_API_KEY || '',
+    openRouterKey: defaultSync.openRouterKey || process.env.OPENROUTER_API_KEY || '',
+    openRouterModel: defaultSync.openRouterModel || process.env.OPENROUTER_MODEL || 'minimax/minimax-m3:free',
+    apinexKey: defaultSync.apinexKey || process.env.APINEX_API_KEY || '',
+    apinexModel: defaultSync.apinexModel || process.env.APINEX_MODEL || 'free/gemini-3.8-flash',
+    kiraKey: defaultSync.kiraKey || process.env.KIRA_API_KEY || '',
+    kiraModel: defaultSync.kiraModel || process.env.KIRA_MODEL || 'qwen3.8-max',
+    googleSheetUrl: defaultSync.googleSheetUrl || process.env.GOOGLE_SHEET_URL || 'https://script.google.com/macros/s/AKfycbxvSkHl-Ebg-VDX88B-iF0BhiH6ujtJ9ZKk-MroWOlU2ky4K4IBG40zyt2qsMfBa0gE/exec',
     autoSyncSheet: true,
     cloudSyncCode: defaultSync.code || 'VIP888',
     selectedColumns: defaultSync.selectedColumns && defaultSync.selectedColumns.length ? defaultSync.selectedColumns : DEFAULT_COLUMNS,
@@ -362,6 +383,14 @@ function getActiveProviderInfo(cfg) {
       key: cfg.apinexKey,
       keyHint: 'APInex API Key (`sk-apx...`)'
     };
+  } else if (provider === 'kira') {
+    return {
+      provider: 'kira',
+      providerName: 'Kira AI',
+      model: cfg.kiraModel || 'qwen3.8-max',
+      key: cfg.kiraKey,
+      keyHint: 'Kira AI API Key (`kira_...`)'
+    };
   } else {
     return {
       provider: 'openrouter',
@@ -370,6 +399,85 @@ function getActiveProviderInfo(cfg) {
       key: cfg.openRouterKey,
       keyHint: 'OpenRouter API Key (`sk-or-...`)'
     };
+  }
+}
+
+async function scanWithKira(base64Data, mimeType, key, model, selectedColumns, fieldPrompts) {
+  const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
+  const rules = ['soPhieu', ...selectedColumns]
+    .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
+    .join('\n');
+
+  const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
+    'Quy tắc trích xuất quan trọng:\n' +
+    '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
+    '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
+    '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
+    '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1", hoặc dòng trên là mã và dòng dưới là quy cách) nhưng chỉ có chung 1 bộ số lượng, 1 STT hoặc 1 mã OS/PO thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất (nối tên thành 1 chuỗi hoàn chỉnh). Tuyệt đối không tách thành 2 dòng riêng biệt nếu dòng kia không có số lượng thực tế.\n' +
+    'Hướng dẫn cột:\n' + rules + '\n\n' +
+    'ĐỊNH DẠNG TRẢ VỀ:\n' +
+    'Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
+    '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
+
+  const res = await fetch('https://kiraai.vn/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + key.trim(),
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: model || 'qwen3.8-max',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: promptText },
+            { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64Data } }
+          ]
+        }
+      ],
+      temperature: 0.1,
+      response_format: { type: 'json_object' }
+    })
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || ('Kira AI Error: ' + res.status));
+  }
+
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error('Không nhận được dữ liệu từ Kira AI');
+
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
+      parsed.items = parsed.rows.map((row) => {
+        const obj = {};
+        if (Array.isArray(row)) {
+          selectedColumns.forEach((colKey, idx) => { obj[colKey] = row[idx] ?? ''; });
+        }
+        return obj;
+      });
+    }
+    return parsed;
+  } catch {
+    const m = text.match(/\{[\s\S]*\}/);
+    if (m) {
+      const parsed = JSON.parse(m[0]);
+      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
+        parsed.items = parsed.rows.map((row) => {
+          const obj = {};
+          if (Array.isArray(row)) {
+            selectedColumns.forEach((colKey, idx) => { obj[colKey] = row[idx] ?? ''; });
+          }
+          return obj;
+        });
+      }
+      return parsed;
+    }
+    throw new Error('Dữ liệu Kira AI trả về không đúng định dạng JSON');
   }
 }
 
@@ -474,6 +582,13 @@ async function performOcr(cfg, base64Data, mimeType) {
     const model = cfg.apinexModel || 'free/gemini-3.8-flash';
     const ocrRaw = await scanWithApinex(base64Data, mimeType, cfg.apinexKey, model, selectedColumns, fieldPrompts);
     return { ocrRaw, modelUsed: `APInex (${model})` };
+  } else if (provider === 'kira') {
+    if (!cfg.kiraKey) {
+      throw new Error('Chưa có Kira AI API Key! Gõ /key kira_... hoặc đồng bộ /sync VIP888');
+    }
+    const model = cfg.kiraModel || 'qwen3.8-max';
+    const ocrRaw = await scanWithKira(base64Data, mimeType, cfg.kiraKey, model, selectedColumns, fieldPrompts);
+    return { ocrRaw, modelUsed: `Kira AI (${model})` };
   } else {
     if (!cfg.openRouterKey) {
       throw new Error('Chưa có OpenRouter API Key! Gõ /key sk-or... hoặc đồng bộ /sync VIP888');
@@ -1104,9 +1219,9 @@ async function handleMessage(msg) {
         '• Sau khi xử lý xong, file/ảnh gốc sẽ được tự động dọn dẹp để khung chat luôn gọn gàng.\n' +
         '• Nếu gặp lỗi mạng/máy chủ, bot sẽ hiện nút *[🔄 Thử Xử Lý Lại]* để bạn bấm lại ngay!\n\n' +
         '⚙️ *Các lệnh quản lý:*\n' +
-        '• `/provider <gemini|apinex|openrouter>`: Đổi nhà cung cấp AI\n' +
+        '• `/provider <gemini|apinex|kira|openrouter>`: Đổi nhà cung cấp AI\n' +
         '• `/model <Tên>`: Đổi mô hình AI\n' +
-        '• `/key <Key>`: Đặt API key (tự nhận diện Google `AIzaSy...`, APInex `sk-apx...`, OpenRouter `sk-or-...`)\n' +
+        '• `/key <Key>`: Đặt API key (tự nhận diện Google `AIzaSy...`, APInex `sk-apx...`, Kira `kira_...`, OpenRouter `sk-or-...`)\n' +
         '• `/status`: Xem cấu hình AI & Google Sheet hiện tại\n' +
         '• `/sync <Mã>`: Kéo cấu hình từ Web về (Ví dụ: `/sync VIP888`)\n' +
         '• `/sheet <Link>`: Cập nhật link Webhook Google Sheet\n\n' +
@@ -1120,6 +1235,7 @@ async function handleMessage(msg) {
     const info = getActiveProviderInfo(cfg);
     const maskedGeminiKey = cfg.geminiKey ? (cfg.geminiKey.slice(0, 8) + '...' + cfg.geminiKey.slice(-4)) : 'Chưa có';
     const maskedApxKey = cfg.apinexKey ? (cfg.apinexKey.slice(0, 10) + '...' + cfg.apinexKey.slice(-4)) : 'Chưa có';
+    const maskedKiraKey = cfg.kiraKey ? (cfg.kiraKey.slice(0, 8) + '...' + cfg.kiraKey.slice(-4)) : 'Chưa có';
     const maskedOrKey = cfg.openRouterKey ? (cfg.openRouterKey.slice(0, 10) + '...' + cfg.openRouterKey.slice(-4)) : 'Chưa có';
 
     return sendTelegram('sendMessage', {
@@ -1129,6 +1245,7 @@ async function handleMessage(msg) {
         `• Mô hình AI: *${info.model}*\n` +
         `• Google Gemini Key: \`${maskedGeminiKey}\`\n` +
         `• APInex Key: \`${maskedApxKey}\`\n` +
+        `• Kira AI Key: \`${maskedKiraKey}\`\n` +
         `• OpenRouter Key: \`${maskedOrKey}\`\n` +
         `• Google Sheet: ${cfg.googleSheetUrl ? '✅ Đã kết nối' : '❌ Chưa có'}\n` +
         `• Tự động đẩy Sheet: *${cfg.autoSyncSheet ? 'BẬT' : 'TẮT'}*\n` +
@@ -1149,33 +1266,60 @@ async function handleMessage(msg) {
       });
     }
 
+    const cfg = getBotConfig();
     try {
       let cloudData = null;
-      try {
-        const res = await fetch(`http://localhost:3000/api/sync?code=${encodeURIComponent(code)}`);
-        if (res.ok) {
-          const json = await res.json();
-          cloudData = json.data;
-        }
-      } catch (e) {}
+      let matchedSource = '';
+
+      // Danh sách các địa chỉ máy chủ thử đồng bộ theo thứ tự ưu tiên
+      const endpoints = [];
+      if (cfg.serverUrl) endpoints.push(`${cfg.serverUrl.replace(/\/+$/, '')}/api/sync`);
+      if (process.env.WEB_APP_URL) endpoints.push(`${process.env.WEB_APP_URL.replace(/\/+$/, '')}/api/sync`);
+      endpoints.push('https://scanzzz.vercel.app/api/sync');
+      endpoints.push('http://localhost:3000/api/sync');
+
+      for (const ep of endpoints) {
+        try {
+          const res = await fetch(`${ep}?code=${encodeURIComponent(code)}`);
+          if (res.ok) {
+            const json = await res.json();
+            if (json && json.data) {
+              cloudData = json.data;
+              matchedSource = ep;
+              break;
+            }
+          }
+        } catch (e) {}
+      }
 
       if (!cloudData && fs.existsSync(SYNC_STORE)) {
-        const store = JSON.parse(fs.readFileSync(SYNC_STORE, 'utf8'));
-        if (store[code]) cloudData = store[code];
+        try {
+          const store = JSON.parse(fs.readFileSync(SYNC_STORE, 'utf8'));
+          if (store[code]) {
+            cloudData = store[code];
+            matchedSource = 'Bộ nhớ cục bộ (.data)';
+          }
+        } catch (e) {}
       }
 
       if (!cloudData) {
         return sendTelegram('sendMessage', {
           chat_id: chatId,
-          text: `❌ Không tìm thấy dữ liệu cho mã đồng bộ [${code}] trên server!`
+          text: `❌ Không tìm thấy dữ liệu cho mã [${code}] trên Cloud (https://scanzzz.vercel.app) hoặc mã đã hết hạn!\n\n` +
+            `👉 *Cách khắc phục:*\n` +
+            `1. Mở Web (https://scanzzz.vercel.app hoặc localhost:3000), vào Cài đặt ⚙️ -> bấm *Lưu lên Cloud* với mã *${code}*.\n` +
+            `2. Hoặc nếu chạy khác mạng, dùng lệnh \`/server <link_web>\` để chỉ định máy chủ.\n` +
+            `3. Hoặc gõ trực tiếp \`/key <Key>\` để nạp nhanh API key vào bot mà không cần đồng bộ web.`,
+          parse_mode: 'Markdown'
         });
       }
 
-      const cfg = getBotConfig();
       if (cloudData.openRouterKey) cfg.openRouterKey = cloudData.openRouterKey;
       if (cloudData.openRouterModel) cfg.openRouterModel = cloudData.openRouterModel;
       if (cloudData.apinexKey) cfg.apinexKey = cloudData.apinexKey;
       if (cloudData.apinexModel) cfg.apinexModel = cloudData.apinexModel;
+      if (cloudData.kiraKey) cfg.kiraKey = cloudData.kiraKey;
+      if (cloudData.kiraModel) cfg.kiraModel = cloudData.kiraModel;
       if (cloudData.apiKey) cfg.geminiKey = cloudData.apiKey;
       if (cloudData.googleSheetUrl) cfg.googleSheetUrl = cloudData.googleSheetUrl;
       if (cloudData.aiProvider) cfg.aiProvider = cloudData.aiProvider;
@@ -1188,6 +1332,7 @@ async function handleMessage(msg) {
       return sendTelegram('sendMessage', {
         chat_id: chatId,
         text: `🎉 *Đã đồng bộ thành công từ Cloud [${code}]!*\n\n` +
+          `• Nguồn máy chủ: \`${matchedSource}\`\n` +
           `• Nhà cung cấp: *${info.providerName}*\n` +
           `• Mô hình AI: *${info.model}*\n` +
           `• Google Sheet: ${cfg.googleSheetUrl ? '✅ Đã kết nối' : 'Chưa có'}\n` +
@@ -1197,6 +1342,29 @@ async function handleMessage(msg) {
     } catch (e) {
       return sendTelegram('sendMessage', { chat_id: chatId, text: '❌ Lỗi đồng bộ: ' + e.message });
     }
+  }
+
+  if (cleanText.startsWith('/server')) {
+    const args = cleanText.split(' ');
+    const sUrl = (args[1] || '').trim();
+    const cfg = getBotConfig();
+    if (!sUrl) {
+      return sendTelegram('sendMessage', {
+        chat_id: chatId,
+        text: `🌐 *Máy chủ Web hiện tại:* \`${cfg.serverUrl || 'https://scanzzz.vercel.app'}\`\n\n` +
+          '• Đổi máy chủ: `/server <URL>`\n' +
+          '• Ví dụ Cloud: `/server https://scanzzz.vercel.app`\n' +
+          '• Hoặc mạng LAN (Termux chung Wifi máy tính): `/server http://192.168.1.x:3000`',
+        parse_mode: 'Markdown'
+      });
+    }
+    cfg.serverUrl = sUrl;
+    saveBotConfig(cfg);
+    return sendTelegram('sendMessage', {
+      chat_id: chatId,
+      text: `✅ Đã lưu máy chủ Web: \`${sUrl}\`\nGiờ bạn có thể gõ \`/sync <Mã>\` để đồng bộ từ máy chủ này.`,
+      parse_mode: 'Markdown'
+    });
   }
 
   if (cleanText.startsWith('/provider')) {
@@ -1220,6 +1388,14 @@ async function handleMessage(msg) {
         text: `✅ Đã chuyển nhà cung cấp sang *APInex* (Mô hình: *${cfg.apinexModel || 'free/gemini-3.8-flash'}*)!`,
         parse_mode: 'Markdown'
       });
+    } else if (prov === 'kira' || prov === 'kiraai') {
+      cfg.aiProvider = 'kira';
+      saveBotConfig(cfg);
+      return sendTelegram('sendMessage', {
+        chat_id: chatId,
+        text: `✅ Đã chuyển nhà cung cấp sang *Kira AI* (Mô hình: *${cfg.kiraModel || 'qwen3.8-max'}*)!`,
+        parse_mode: 'Markdown'
+      });
     } else if (prov === 'openrouter' || prov === 'or') {
       cfg.aiProvider = 'openrouter';
       saveBotConfig(cfg);
@@ -1232,7 +1408,7 @@ async function handleMessage(msg) {
       const info = getActiveProviderInfo(cfg);
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: '💡 Cú pháp: `/provider <gemini|apinex|openrouter>`\n' +
+        text: '💡 Cú pháp: `/provider <gemini|apinex|kira|openrouter>`\n' +
           `• Hiện tại đang dùng: *${info.providerName}* (${info.model})`,
         parse_mode: 'Markdown'
       });
@@ -1248,6 +1424,10 @@ async function handleMessage(msg) {
         text: '💡 *Các mô hình gợi ý:*\n\n' +
           '⚡ *Google Gemini trực tiếp:*\n' +
           '• `/model gemini-3.6-flash` (Mô hình chính - Siêu nhanh & chuẩn)\n\n' +
+          '🌟 *Kira AI (kiraai.vn):*\n' +
+          '• `/model qwen3.8-max` (Khuyên dùng - Vision đỉnh cao)\n' +
+          '• `/model gpt-5.6-luna-free` (Mô hình miễn phí)\n' +
+          '• `/model qwen3.8-flash` (Nhanh & nhẹ)\n\n' +
           '🔥 *APInex (Free 1M Token):*\n' +
           '• `/model free/gemini-3.8-flash` (Khuyên dùng - Cực nhanh)\n' +
           '• `/model free/qwen-3.8-max` (Đỉnh cao chữ viết tay tiếng Việt)\n' +
@@ -1257,7 +1437,7 @@ async function handleMessage(msg) {
           '• `/model minimax/minimax-m3:free`\n' +
           '• `/model google/gemini-2.5-flash`\n' +
           '• `/model qwen/qwen2.5-vl-72b-instruct`\n\n' +
-          '_(Có thể gõ `/model <mã_bất_kỳ>` để dùng model tùy chỉnh)_',
+          '_(Có thể gõ `/model <mã_bất_kỳ>` để nhập thủ công mã model tùy ý)_',
         parse_mode: 'Markdown'
       });
     }
@@ -1268,8 +1448,13 @@ async function handleMessage(msg) {
     } else if (modelName.startsWith('free/')) {
       cfg.aiProvider = 'apinex';
       cfg.apinexModel = modelName;
+    } else if (modelName.startsWith('kira_') || modelName.startsWith('kira-')) {
+      cfg.aiProvider = 'kira';
+      cfg.kiraModel = modelName;
     } else {
-      if (cfg.aiProvider === 'apinex') {
+      if (cfg.aiProvider === 'kira') {
+        cfg.kiraModel = modelName;
+      } else if (cfg.aiProvider === 'apinex') {
         cfg.apinexModel = modelName;
       } else {
         cfg.openRouterModel = modelName;
@@ -1293,6 +1478,7 @@ async function handleMessage(msg) {
         text: '⚠️ Cú pháp: `/key <API_Key>`\n' +
           '• Google Key: bắt đầu bằng `AIzaSy...` (tự động chuyển sang Google Gemini)\n' +
           '• APInex Key: bắt đầu bằng `sk-apx...` (tự động chuyển sang APInex)\n' +
+          '• Kira Key: bắt đầu bằng `kira_...` (tự động chuyển sang Kira AI)\n' +
           '• OpenRouter Key: bắt đầu bằng `sk-or-` (tự động chuyển sang OpenRouter)',
         parse_mode: 'Markdown'
       });
@@ -1319,6 +1505,15 @@ async function handleMessage(msg) {
         text: `✅ Đã lưu APInex API Key: \`${masked}\`\n(Đã tự động chuyển Provider sang *APINEX*)`,
         parse_mode: 'Markdown'
       });
+    } else if (newKey.startsWith('kira_') || newKey.startsWith('kira')) {
+      cfg.kiraKey = newKey;
+      cfg.aiProvider = 'kira';
+      saveBotConfig(cfg);
+      return sendTelegram('sendMessage', {
+        chat_id: chatId,
+        text: `✅ Đã lưu Kira AI API Key: \`${masked}\`\n(Đã tự động chuyển Provider sang *KIRA AI*)`,
+        parse_mode: 'Markdown'
+      });
     } else if (newKey.startsWith('sk-or-')) {
       cfg.openRouterKey = newKey;
       cfg.aiProvider = 'openrouter';
@@ -1333,6 +1528,8 @@ async function handleMessage(msg) {
         cfg.geminiKey = newKey;
       } else if (cfg.aiProvider === 'apinex') {
         cfg.apinexKey = newKey;
+      } else if (cfg.aiProvider === 'kira') {
+        cfg.kiraKey = newKey;
       } else {
         cfg.openRouterKey = newKey;
       }

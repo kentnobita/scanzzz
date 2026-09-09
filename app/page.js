@@ -301,7 +301,7 @@ export default function Home() {
   const [selectedPdfIndex, setSelectedPdfIndex] = useState(0);
 
   // Settings & Storage state
-  const [aiProvider, setAiProvider] = useState('gemini'); // 'gemini' | 'openrouter' | 'apinex'
+  const [aiProvider, setAiProvider] = useState('gemini'); // 'gemini' | 'openrouter' | 'apinex' | 'kira'
   const [apiKey, setApiKey] = useState("");
   const [backupKeys, setBackupKeys] = useState([]);
   const [openRouterKey, setOpenRouterKey] = useState("");
@@ -310,6 +310,9 @@ export default function Home() {
   const [apinexKey, setApinexKey] = useState("");
   const [apinexModel, setApinexModel] = useState("free/gemini-3.8-flash");
   const [apinexTesting, setApinexTesting] = useState(false);
+  const [kiraKey, setKiraKey] = useState("");
+  const [kiraModel, setKiraModel] = useState("qwen3.8-max");
+  const [kiraTesting, setKiraTesting] = useState(false);
   const [rateLimitedKeys, setRateLimitedKeys] = useState(new Set()); 
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
 
@@ -330,6 +333,21 @@ export default function Home() {
   const [fieldPrompts, setFieldPrompts] = useState(DEFAULT_FIELD_PROMPTS);
   const [viewMode, setViewMode] = useState('auto');
   const [scanHistory, setScanHistory] = useState([]);
+
+  const getActiveProviderLabel = (short = false) => {
+    if (aiProvider === 'kira') {
+      return short ? 'Kira AI' : `Kira (${kiraModel || 'qwen3.8-max'})`;
+    }
+    if (aiProvider === 'apinex') {
+      const apxName = APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || apinexModel;
+      return short ? 'APInex' : `APInex (${apxName})`;
+    }
+    if (aiProvider === 'openrouter') {
+      const orName = OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || openRouterModel;
+      return short ? 'OpenRouter' : `OpenRouter (${orName})`;
+    }
+    return short ? 'Gemini' : 'Gemini 3.6 Flash';
+  };
 
   // Google Sheets Integration State
   const [googleSheetUrl, setGoogleSheetUrl] = useState('');
@@ -417,6 +435,11 @@ export default function Home() {
     setApinexKey(savedApxKey);
     const savedApxModel = localStorage.getItem('apinex_model') || 'free/gemini-3.8-flash';
     setApinexModel(savedApxModel);
+
+    const savedKiraKey = localStorage.getItem('kira_api_key') || '';
+    setKiraKey(savedKiraKey);
+    const savedKiraModel = localStorage.getItem('kira_model') || 'qwen3.8-max';
+    setKiraModel(savedKiraModel);
 
     const sheetUrl = localStorage.getItem('google_sheet_webhook_url') || '';
     setGoogleSheetUrl(sheetUrl);
@@ -582,6 +605,8 @@ export default function Home() {
         openRouterModel: openRouterModel.trim(),
         apinexKey: apinexKey.trim(),
         apinexModel: apinexModel.trim(),
+        kiraKey: kiraKey.trim(),
+        kiraModel: kiraModel.trim(),
         googleSheetUrl: googleSheetUrl.trim(),
         autoSyncSheet,
         selectedColumns,
@@ -593,6 +618,15 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+
+      // Đồng thời sao lưu lên Cloud Vercel để Termux / thiết bị khác có thể đồng bộ ngay
+      if (typeof window !== 'undefined' && !window.location.host.includes('scanzzz.vercel.app')) {
+        fetch('https://scanzzz.vercel.app/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).catch(() => {});
+      }
 
       const resJson = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -673,6 +707,14 @@ export default function Home() {
       if (data.apinexModel) {
         setApinexModel(data.apinexModel);
         localStorage.setItem('apinex_model', data.apinexModel);
+      }
+      if (data.kiraKey !== undefined) {
+        setKiraKey(data.kiraKey);
+        localStorage.setItem('kira_api_key', data.kiraKey);
+      }
+      if (data.kiraModel) {
+        setKiraModel(data.kiraModel);
+        localStorage.setItem('kira_model', data.kiraModel);
       }
       if (data.googleSheetUrl !== undefined) {
         setGoogleSheetUrl(data.googleSheetUrl);
@@ -1751,6 +1793,122 @@ export default function Home() {
     }
   };
 
+  // Test Kira AI Connection
+  const testKiraConnection = async () => {
+    const key = kiraKey.trim();
+    if (!key) {
+      showToast('Vui lòng nhập API Key Kira AI (bắt đầu bằng kira_...) trước khi test', 'error');
+      return;
+    }
+    setKiraTesting(true);
+    try {
+      const res = await fetch('/api/kira', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'test', key, model: kiraModel.trim() || 'qwen3.8-max' })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || ('Lỗi xác thực ' + res.status));
+      }
+      showToast('✅ Kết nối Kira AI thành công! Key hoạt động tốt.', 'success');
+    } catch (e) {
+      showToast('❌ Lỗi Kira AI: ' + e.message, 'error');
+    } finally {
+      setKiraTesting(false);
+    }
+  };
+
+  // Direct Kira AI OCR
+  const scanClientKiraWithBase64 = async (base64Data, mimeType, key, model) => {
+    const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
+    const rules = ['soPhieu', ...selectedColumns]
+      .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
+      .join('\n');
+
+    const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
+      'Quy tắc trích xuất quan trọng:\n' +
+      '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
+      '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
+      '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
+      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1", hoặc dòng trên là mã và dòng dưới là quy cách) nhưng chỉ có chung 1 bộ số lượng, 1 STT hoặc 1 mã OS/PO thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất (nối tên thành 1 chuỗi hoàn chỉnh). Tuyệt đối không tách thành 2 dòng riêng biệt nếu dòng kia không có số lượng thực tế.\n' +
+      'Hướng dẫn cột:\n' + rules + '\n\n' +
+      'ĐỊNH DẠNG TRẢ VỀ:\n' +
+      'Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
+      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
+
+    const res = await fetch('/api/kira', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        key: key.trim(),
+        model: model || 'qwen3.8-max',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: promptText },
+              { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64Data } },
+            ],
+          },
+        ],
+        temperature: 0.1,
+        response_format: { type: 'json_object' },
+      }),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const err = new Error(errData.error?.message || ('Kira AI Error: ' + res.status));
+      err.status = res.status;
+      throw err;
+    }
+
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content;
+    if (!text) {
+      throw new Error('Không nhận được dữ liệu phản hồi từ Kira AI');
+    }
+
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
+        parsed.items = parsed.rows.map((row) => {
+          const obj = {};
+          if (Array.isArray(row)) {
+            selectedColumns.forEach((colKey, idx) => {
+              obj[colKey] = row[idx] ?? '';
+            });
+          }
+          return obj;
+        });
+      }
+      return parsed;
+    } catch {
+      const m = text.match(/\{[\s\S]*\}/);
+      if (m) {
+        try {
+          const parsed = JSON.parse(m[0]);
+          if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
+            parsed.items = parsed.rows.map((row) => {
+              const obj = {};
+              if (Array.isArray(row)) {
+                selectedColumns.forEach((colKey, idx) => {
+                  obj[colKey] = row[idx] ?? '';
+                });
+              }
+              return obj;
+            });
+          }
+          return parsed;
+        } catch {}
+      }
+      return { soPhieu: '', rows: [[text]] };
+    }
+  };
+
   // Direct Gemini OCR with Google Generative AI (Optimized Compact 2D Matrix Output)
   const scanClientGeminiWithBase64 = async (base64Data, mimeType, key) => {
     const colListStr = selectedColumns.map((k, i) => `${i + 1}.${COLUMN_DEFS[k]?.short || k}`).join(', ');
@@ -1928,7 +2086,23 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       return { data: res, engine: 'apinex' };
     }
 
-    // 3. GOOGLE GEMINI PROVIDER (with Failover)
+    // 3. KIRA AI PROVIDER
+    if (aiProvider === 'kira') {
+      const kKey = kiraKey.trim();
+      if (!kKey) {
+        throw new Error('Chưa cấu hình API Key Kira AI! Vui lòng vào Cài đặt ⚙️ -> Tab API -> Chọn Kira AI và dán Key (bắt đầu bằng kira_...).');
+      }
+      const modelToUse = kiraModel.trim() || 'qwen3.8-max';
+      setScanProgress({
+        active: true,
+        percent: 45,
+        text: `${progressPrefix} Đang gọi Kira AI (${modelToUse})...`,
+      });
+      const res = await scanClientKiraWithBase64(base64Data, mimeType, kKey, modelToUse);
+      return { data: res, engine: 'kira' };
+    }
+
+    // 4. GOOGLE GEMINI PROVIDER (with Failover)
     const allKeys = getGeminiApiKeys();
     const apiKeys = allKeys.filter((k) => !rateLimitedKeys.has(k));
     const keysToTry = apiKeys.length > 0 ? apiKeys : allKeys;
@@ -2472,6 +2646,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     localStorage.setItem('openrouter_model', openRouterModel.trim());
     localStorage.setItem('apinex_api_key', apinexKey.trim());
     localStorage.setItem('apinex_model', apinexModel.trim());
+    localStorage.setItem('kira_api_key', kiraKey.trim());
+    localStorage.setItem('kira_model', kiraModel.trim());
     localStorage.setItem('google_sheet_webhook_url', googleSheetUrl.trim());
     localStorage.setItem('google_sheet_auto_sync', String(autoSyncSheet));
     localStorage.setItem('auto_cloud_sync_on_launch', String(autoCloudSyncOnLaunch));
@@ -2672,10 +2848,51 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               >
                 APInex (Free)
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAiProvider('kira');
+                  localStorage.setItem('ai_provider', 'kira');
+                  showToast('Đang dùng chế độ Kira AI (VN)');
+                }}
+                className={`px-2 py-0.5 rounded-md transition-all ${
+                  aiProvider === 'kira'
+                    ? 'bg-amber-600 text-white shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Kira AI
+              </button>
             </div>
 
             {/* Provider Status Details */}
-            {aiProvider === 'apinex' ? (
+            {aiProvider === 'kira' ? (
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`inline-block w-2.5 h-2.5 rounded-full ${
+                    kiraKey.trim() ? 'bg-amber-500 animate-pulse' : 'bg-rose-500'
+                  }`}
+                />
+                <span className="font-semibold text-slate-700">
+                  {kiraKey.trim() ? (
+                    <>
+                      <span className="text-amber-700 font-bold">Kira AI</span>: {kiraModel || 'qwen3.8-max'}
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSettingsTab('api');
+                        setSettingsOpen(true);
+                      }}
+                      className="text-amber-700 font-bold hover:underline"
+                    >
+                      ⚠️ Chưa dán Kira AI Key (Bấm vào đây để dán)
+                    </button>
+                  )}
+                </span>
+              </div>
+            ) : aiProvider === 'apinex' ? (
               <div className="flex items-center gap-1.5">
                 <span
                   className={`inline-block w-2.5 h-2.5 rounded-full ${
@@ -3049,7 +3266,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 onClick={startScan}
                 disabled={isScanning}
                 className={`mt-4 w-full py-4 rounded-xl text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-50 transition-all ${
-                  aiProvider === 'apinex'
+                  aiProvider === 'kira'
+                    ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:opacity-95 shadow-amber-600/25'
+                    : aiProvider === 'apinex'
                     ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:opacity-95 shadow-emerald-600/25'
                     : aiProvider === 'openrouter'
                     ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:opacity-95 shadow-purple-600/25'
@@ -3061,7 +3280,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     <span>
                       Đang trích xuất bằng {
-                        aiProvider === 'apinex'
+                        aiProvider === 'kira'
+                          ? `Kira AI (${kiraModel || 'qwen3.8-max'})`
+                          : aiProvider === 'apinex'
                           ? `APInex (${APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || 'AI'})`
                           : aiProvider === 'openrouter'
                           ? `OpenRouter (${OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || 'AI'})`
@@ -3073,7 +3294,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   <>
                     <IconSparkles className="w-5 h-5" />
                     <span>
-                      {aiProvider === 'apinex'
+                      {aiProvider === 'kira'
+                        ? `Bắt Đầu Quét Bằng Kira AI [${kiraModel || 'qwen3.8-max'}]`
+                        : aiProvider === 'apinex'
                         ? `Bắt Đầu Quét Bằng APInex [${APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || apinexModel}]`
                         : aiProvider === 'openrouter'
                         ? `Bắt Đầu Quét Bằng OpenRouter [${OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || openRouterModel}]`
@@ -3106,7 +3329,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">Kết quả trích xuất</h3>
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                        engineBadge === 'apinex'
+                        engineBadge === 'kira'
+                          ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                          : engineBadge === 'apinex'
                           ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                           : engineBadge === 'openrouter'
                           ? 'bg-purple-100 text-purple-800 border border-purple-200'
@@ -3117,7 +3342,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           : 'bg-amber-100 text-amber-800 border border-amber-200'
                       }`}
                     >
-                      {engineBadge === 'apinex'
+                      {engineBadge === 'kira'
+                        ? `✨ Kira AI (${kiraModel || 'qwen3.8-max'})`
+                        : engineBadge === 'apinex'
                         ? `✨ APInex (${APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || apinexModel})`
                         : engineBadge === 'openrouter'
                         ? `✨ OpenRouter (${openRouterModel.split('/')[1]?.split(':')[0] || 'Qwen 2.5 VL'})`
@@ -3732,14 +3959,18 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   onClick={() => startBatchPdfScan()}
                   disabled={selectedPdfPagesCount === 0}
                   className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-40 ${
-                    aiProvider === 'openrouter'
+                    aiProvider === 'kira'
+                      ? 'bg-gradient-to-r from-amber-600 to-orange-600 hover:opacity-95'
+                      : aiProvider === 'apinex'
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-95'
+                      : aiProvider === 'openrouter'
                       ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:opacity-95'
                       : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95'
                   }`}
                 >
                   <IconSparkles className="w-4 h-4" />
                   <span>
-                    Quét {selectedPdfPagesCount} Ảnh/Trang {aiProvider === 'openrouter' ? '(OpenRouter)' : '(Gemini)'}
+                    Quét {selectedPdfPagesCount} Ảnh/Trang ({getActiveProviderLabel()})
                   </span>
                 </button>
               </div>
@@ -4464,7 +4695,22 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                       }`}
                     >
-                      <span>⚡ APInex (Free 1M)</span>
+                      <span>⚡ APInex (Free)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAiProvider('kira');
+                        localStorage.setItem('ai_provider', 'kira');
+                        showToast('Đã chuyển sang Kira AI (VN)');
+                      }}
+                      className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                        aiProvider === 'kira'
+                          ? 'bg-amber-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                    >
+                      <span>🌟 Kira AI</span>
                     </button>
                   </div>
 
@@ -4565,6 +4811,103 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                             placeholder="Ví dụ: free/gemini-3.8-flash hoặc free/qwen-3.8-max"
                             className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 font-mono text-xs outline-none bg-slate-50"
                           />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* KIRA AI SECTION */}
+                  {aiProvider === 'kira' && (
+                    <div className="space-y-4 animate-fade-in">
+                      <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200 space-y-2">
+                        <div className="font-bold text-amber-950 flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <IconSparkles className="w-4 h-4 text-amber-600" />
+                            <span>Cấu Hình Kira AI (kiraai.vn)</span>
+                          </span>
+                          <a
+                            href="https://kiraai.vn"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-amber-700 hover:underline flex items-center gap-1 font-semibold text-[11px]"
+                          >
+                            <span>Trang chủ kiraai.vn</span>
+                            <IconExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                        <p className="text-[11px] text-amber-900 leading-relaxed">
+                          Kira AI là nền tảng API tương thích chuẩn OpenAI tối ưu tại Việt Nam, cung cấp hạn mức miễn phí lớn hàng ngày (150M - 250M token). <em>Lưu ý: Chỉ nhập các mô hình có hỗ trợ đọc ảnh (Vision) để quét phiếu.</em>
+                        </p>
+                      </div>
+
+                      {/* Kira AI API Key Input */}
+                      <div className="space-y-1.5">
+                        <label className="font-bold text-slate-700 flex items-center justify-between text-xs">
+                          <span>API Key Kira AI</span>
+                          <button
+                            type="button"
+                            onClick={testKiraConnection}
+                            disabled={kiraTesting || !kiraKey.trim()}
+                            className="text-amber-600 hover:underline font-semibold text-[11px] disabled:opacity-50"
+                          >
+                            {kiraTesting ? 'Đang test...' : '⚡ Test Kết Nối'}
+                          </button>
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="password"
+                            value={kiraKey}
+                            onChange={(e) => setKiraKey(e.target.value)}
+                            placeholder="Dán key kira_... tại đây"
+                            className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-100 font-mono text-xs outline-none"
+                          />
+                        </div>
+                        <p className="text-[11px] text-slate-400">Key của Kira thường có định dạng tiền tố <code className="text-amber-700 font-bold">kira_...</code></p>
+                      </div>
+
+                      {/* Kira Model Input (Manual Input as requested) */}
+                      <div className="space-y-2">
+                        <label className="font-bold text-slate-700 block text-xs">
+                          Mã Mô Hình Kira AI (Nhập thủ công)
+                        </label>
+                        <input
+                          type="text"
+                          value={kiraModel}
+                          onChange={(e) => {
+                            setKiraModel(e.target.value);
+                            localStorage.setItem('kira_model', e.target.value);
+                          }}
+                          placeholder="Nhập mã mô hình, ví dụ: qwen3.8-max"
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-100 font-mono text-xs outline-none bg-slate-50 font-semibold text-slate-800"
+                        />
+                        <div className="space-y-1 pt-1">
+                          <div className="text-[11px] font-semibold text-slate-500">Gợi ý nhanh các mã mô hình Vision phổ biến:</div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[
+                              { id: 'qwen3.8-max', label: 'qwen3.8-max (Khuyên dùng)' },
+                              { id: 'gpt-5.6-luna-free', label: 'gpt-5.6-luna-free' },
+                              { id: 'qwen3.8-flash', label: 'qwen3.8-flash' },
+                              { id: 'gemini-3-flash', label: 'gemini-3-flash' },
+                              { id: 'minimax-m3', label: 'minimax-m3' }
+                            ].map((sug) => (
+                              <button
+                                key={sug.id}
+                                type="button"
+                                onClick={() => {
+                                  setKiraModel(sug.id);
+                                  localStorage.setItem('kira_model', sug.id);
+                                  showToast(`Đã chọn mô hình: ${sug.id}`);
+                                }}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-all ${
+                                  kiraModel === sug.id
+                                    ? 'bg-amber-100 text-amber-800 border-amber-300 font-bold shadow-xs'
+                                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                                }`}
+                              >
+                                {sug.label}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     </div>

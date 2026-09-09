@@ -140,8 +140,8 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Mã đồng bộ phải có ít nhất 3 ký tự' }, { status: 400 });
     }
 
-    // Storage duration: 5 mins ~ 24h (in minutes: 5, 15, 30, 60, 180, 720, 1440). Default: 1440 (24h)
-    const durationMinutes = Math.max(5, Math.min(1440, Number(body.durationMinutes) || 1440));
+    // Storage duration: 60 mins ~ 24h (in minutes: 60, 180, 720, 1440). Default: 1440 (24h)
+    const durationMinutes = Math.max(60, Math.min(1440, Number(body.durationMinutes) || 1440));
     const ttlSeconds = durationMinutes * 60;
     const now = Date.now();
     const expiresAt = now + ttlSeconds * 1000;
@@ -160,6 +160,8 @@ export async function POST(request) {
       openRouterModel: body.openRouterModel || 'google/gemini-2.5-flash',
       apinexKey: body.apinexKey || '',
       apinexModel: body.apinexModel || 'free/gemini-3.8-flash',
+      kiraKey: body.kiraKey || '',
+      kiraModel: body.kiraModel || 'qwen3.8-max',
       googleSheetUrl: body.googleSheetUrl || '',
       autoSyncSheet: !!body.autoSyncSheet,
       selectedColumns: body.selectedColumns || [],
