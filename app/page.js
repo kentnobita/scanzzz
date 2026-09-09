@@ -311,7 +311,7 @@ export default function Home() {
   const [apinexModel, setApinexModel] = useState("free/gemini-3.8-flash");
   const [apinexTesting, setApinexTesting] = useState(false);
   const [kiraKey, setKiraKey] = useState("");
-  const [kiraModel, setKiraModel] = useState("qwen3.8-max");
+  const [kiraModel, setKiraModel] = useState("gemini-3.6-flash");
   const [kiraTesting, setKiraTesting] = useState(false);
   const [rateLimitedKeys, setRateLimitedKeys] = useState(new Set()); 
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
@@ -336,7 +336,7 @@ export default function Home() {
 
   const getActiveProviderLabel = (short = false) => {
     if (aiProvider === 'kira') {
-      return short ? 'Kira AI' : `Kira (${kiraModel || 'qwen3.8-max'})`;
+      return short ? 'Kira AI' : `Kira (${kiraModel || 'gemini-3.6-flash'})`;
     }
     if (aiProvider === 'apinex') {
       const apxName = APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || apinexModel;
@@ -438,7 +438,12 @@ export default function Home() {
 
     const savedKiraKey = localStorage.getItem('kira_api_key') || '';
     setKiraKey(savedKiraKey);
-    const savedKiraModel = localStorage.getItem('kira_model') || 'qwen3.8-max';
+    let savedKiraModel = localStorage.getItem('kira_model') || 'gemini-3.6-flash';
+    // Auto-migrate from old default qwen3.8-max which caused 502
+    if (!savedKiraModel || savedKiraModel === 'qwen3.8-max') {
+      savedKiraModel = 'gemini-3.6-flash';
+      localStorage.setItem('kira_model', savedKiraModel);
+    }
     setKiraModel(savedKiraModel);
 
     const sheetUrl = localStorage.getItem('google_sheet_webhook_url') || '';
@@ -1819,8 +1824,48 @@ export default function Home() {
     }
   };
 
-  // Direct Kira AI OCR
+  // Direct Kira AI OCR (with auto-compression & Gemini model enforcement)
   const scanClientKiraWithBase64 = async (base64Data, mimeType, key, model) => {
+    let effectiveModel = model?.trim() || 'gemini-3.6-flash';
+    // Kira AI only supports Vision on Gemini models
+    if (!effectiveModel.startsWith('gemini-')) {
+      effectiveModel = 'gemini-3.6-flash';
+    }
+
+    // Kira AI has a strict payload limit (~130KB base64). Auto-compress in browser if needed.
+    let payloadBase64 = base64Data;
+    let payloadMime = mimeType;
+    if (base64Data && base64Data.length > 120000) {
+      try {
+        const compressed = await new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const maxDim = 1200;
+            let w = img.width, h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+              else { w = Math.round((w * maxDim) / h); h = maxDim; }
+            }
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.78);
+            resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg' });
+          };
+          img.onerror = () => resolve(null);
+          img.src = `data:${mimeType};base64,${base64Data}`;
+        });
+        if (compressed?.base64) {
+          payloadBase64 = compressed.base64;
+          payloadMime = compressed.mime;
+        }
+      } catch (e) {
+        console.warn('Không thể nén ảnh cho Kira AI:', e);
+      }
+    }
+
     const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
     const rules = ['soPhieu', ...selectedColumns]
       .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
@@ -1844,13 +1889,13 @@ export default function Home() {
       },
       body: JSON.stringify({
         key: key.trim(),
-        model: model || 'qwen3.8-max',
+        model: effectiveModel,
         messages: [
           {
             role: 'user',
             content: [
               { type: 'text', text: promptText },
-              { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64Data } },
+              { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } },
             ],
           },
         ],
@@ -4881,14 +4926,13 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-100 font-mono text-xs outline-none bg-slate-50 font-semibold text-slate-800"
                         />
                         <div className="space-y-1 pt-1">
-                          <div className="text-[11px] font-semibold text-slate-500">Gợi ý nhanh các mã mô hình Vision phổ biến:</div>
+                          <div className="text-[11px] font-semibold text-slate-500">Mô hình đọc ảnh (Vision) hoạt động tốt trên Kira AI:</div>
                           <div className="flex flex-wrap gap-1.5">
                             {[
-                              { id: 'qwen3.8-max', label: 'qwen3.8-max (Khuyên dùng)' },
-                              { id: 'gpt-5.6-luna-free', label: 'gpt-5.6-luna-free' },
-                              { id: 'qwen3.8-flash', label: 'qwen3.8-flash' },
-                              { id: 'gemini-3-flash', label: 'gemini-3-flash' },
-                              { id: 'minimax-m3', label: 'minimax-m3' }
+                              { id: 'gemini-3.6-flash', label: 'gemini-3.6-flash (Khuyên dùng)' },
+                              { id: 'gemini-3.8-flash', label: 'gemini-3.8-flash (Mới)' },
+                              { id: 'gemini-3.7-flash', label: 'gemini-3.7-flash' },
+                              { id: 'gemini-3.5-flash-lite', label: 'gemini-3.5-flash-lite' }
                             ].map((sug) => (
                               <button
                                 key={sug.id}
@@ -4908,6 +4952,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                               </button>
                             ))}
                           </div>
+                          <p className="text-[10px] text-amber-800 bg-amber-100/70 p-2 rounded-lg mt-1 leading-normal">
+                            💡 <strong>Lưu ý quan trọng:</strong> Máy chủ Kira AI chỉ hỗ trợ đọc ảnh phiếu kho đối với các mô hình <code>gemini-*</code>. Các mô hình Qwen/GPT/Minimax trên Kira AI chỉ xử lý văn bản, nếu gửi ảnh quét sẽ bị máy chủ Kira trả về lỗi 502 Bad Gateway.
+                          </p>
                         </div>
                       </div>
                     </div>

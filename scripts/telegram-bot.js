@@ -403,6 +403,37 @@ function getActiveProviderInfo(cfg) {
 }
 
 async function scanWithKira(base64Data, mimeType, key, model, selectedColumns, fieldPrompts) {
+  let effectiveModel = (model || 'gemini-3.6-flash').trim();
+  // Kira AI only supports Vision on Gemini models
+  if (!effectiveModel.startsWith('gemini-')) {
+    console.log(`[Bot Kira AI] Mô hình ${effectiveModel} không hỗ trợ đọc ảnh trên Kira, tự động chuyển sang gemini-3.6-flash`);
+    effectiveModel = 'gemini-3.6-flash';
+  }
+
+  // Kira AI payload limit: max ~130KB base64. Auto-compress with mupdf if larger
+  let payloadBase64 = base64Data;
+  let payloadMime = mimeType;
+  if (base64Data && base64Data.length > 120000) {
+    try {
+      const mupdf = await getMupdf();
+      const rawBuf = Buffer.from(base64Data, 'base64');
+      const doc = mupdf.Document.openDocument(rawBuf, mimeType.startsWith('image/') ? mimeType : 'image/jpeg');
+      const page = doc.loadPage(0);
+      const bounds = page.getBounds();
+      const maxDim = Math.max(bounds[2] - bounds[0], bounds[3] - bounds[1]);
+      const scale = maxDim > 900 ? (900 / maxDim) : 0.75;
+      const pixmap = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB);
+      const pngBuf = Buffer.from(pixmap.asPNG());
+      if (pngBuf.length < rawBuf.length) {
+        payloadBase64 = pngBuf.toString('base64');
+        payloadMime = 'image/png';
+        console.log(`[Bot Kira AI] Đã tối ưu kích thước ảnh từ ${rawBuf.length}b -> ${pngBuf.length}b để tránh lỗi 502 Kira`);
+      }
+    } catch (compressErr) {
+      console.warn('[Bot Kira AI] Không thể nén ảnh bằng mupdf:', compressErr.message);
+    }
+  }
+
   const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
   const rules = ['soPhieu', ...selectedColumns]
     .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
@@ -419,31 +450,51 @@ async function scanWithKira(base64Data, mimeType, key, model, selectedColumns, f
     'Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
     '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
 
-  const res = await fetch('https://kiraai.vn/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + key.trim(),
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: model || 'qwen3.8-max',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: promptText },
-            { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64Data } }
-          ]
-        }
-      ],
-      temperature: 0.1,
-      response_format: { type: 'json_object' }
-    })
-  });
+  const sendRequest = async (mName) => {
+    return await fetch('https://kiraai.vn/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + key.trim(),
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: mName,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: promptText },
+              { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } }
+            ]
+          }
+        ],
+        temperature: 0.1,
+        response_format: { type: 'json_object' }
+      })
+    });
+  };
+
+  let res = await sendRequest(effectiveModel);
+
+  // Auto retry with gemini-3.6-flash if 502 occurred
+  if (res.status === 502 && effectiveModel !== 'gemini-3.6-flash') {
+    console.warn(`[Bot Kira AI] Gặp lỗi 502 với ${effectiveModel}, tự động thử lại bằng gemini-3.6-flash...`);
+    effectiveModel = 'gemini-3.6-flash';
+    res = await sendRequest(effectiveModel);
+  }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || ('Kira AI Error: ' + res.status));
+    const errorText = await res.text().catch(() => '');
+    let errMsg = `Kira AI Error: ${res.status}`;
+    try {
+      const errJson = JSON.parse(errorText);
+      if (errJson.error?.message) errMsg = errJson.error.message;
+    } catch {
+      if (res.status === 502) {
+        errMsg = 'Máy chủ Kira AI trả về lỗi 502 (Bad Gateway). Chỉ các model gemini-* mới hỗ trợ đọc ảnh phiếu trên Kira AI. Vui lòng gõ /model gemini-3.6-flash.';
+      }
+    }
+    throw new Error(errMsg);
   }
 
   const data = await res.json();
@@ -586,7 +637,8 @@ async function performOcr(cfg, base64Data, mimeType) {
     if (!cfg.kiraKey) {
       throw new Error('Chưa có Kira AI API Key! Gõ /key kira_... hoặc đồng bộ /sync VIP888');
     }
-    const model = cfg.kiraModel || 'qwen3.8-max';
+    let model = cfg.kiraModel || 'gemini-3.6-flash';
+    if (!model.startsWith('gemini-')) model = 'gemini-3.6-flash';
     const ocrRaw = await scanWithKira(base64Data, mimeType, cfg.kiraKey, model, selectedColumns, fieldPrompts);
     return { ocrRaw, modelUsed: `Kira AI (${model})` };
   } else {
@@ -1425,9 +1477,11 @@ async function handleMessage(msg) {
           '⚡ *Google Gemini trực tiếp:*\n' +
           '• `/model gemini-3.6-flash` (Mô hình chính - Siêu nhanh & chuẩn)\n\n' +
           '🌟 *Kira AI (kiraai.vn):*\n' +
-          '• `/model qwen3.8-max` (Khuyên dùng - Vision đỉnh cao)\n' +
-          '• `/model gpt-5.6-luna-free` (Mô hình miễn phí)\n' +
-          '• `/model qwen3.8-flash` (Nhanh & nhẹ)\n\n' +
+          '• `/model gemini-3.6-flash` (Khuyên dùng - Vision đọc phiếu chuẩn nhất)\n' +
+          '• `/model gemini-3.8-flash` (Mô hình mới - Tốc độ cao)\n' +
+          '• `/model gemini-3.7-flash`\n' +
+          '• `/model gemini-3.5-flash-lite`\n' +
+          '_(Lưu ý: Trên Kira AI chỉ các model gemini-* mới hỗ trợ đọc ảnh)_\n\n' +
           '🔥 *APInex (Free 1M Token):*\n' +
           '• `/model free/gemini-3.8-flash` (Khuyên dùng - Cực nhanh)\n' +
           '• `/model free/qwen-3.8-max` (Đỉnh cao chữ viết tay tiếng Việt)\n' +
