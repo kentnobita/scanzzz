@@ -1889,12 +1889,8 @@ export default function Home() {
       temperature: 0.1,
     };
 
-    if (isFree) {
-      reqPayload.max_tokens = 650;
-      if (!effectiveModel.includes('qwen')) {
-        reqPayload.response_format = { type: 'json_object' };
-      }
-    } else {
+    reqPayload.max_tokens = 2500;
+    if (!effectiveModel.includes('qwen')) {
       reqPayload.response_format = { type: 'json_object' };
     }
 
@@ -1914,15 +1910,22 @@ export default function Home() {
     }
 
     const data = await res.json();
-    const text = data.choices?.[0]?.message?.content;
+    const msg = data.choices?.[0]?.message;
+    let text = (msg?.content || '').trim();
+    if (!text && msg?.reasoning_content) {
+      text = msg.reasoning_content.trim();
+    }
     if (!text) {
-      throw new Error('Không nhận được dữ liệu phản hồi từ Kira AI');
+      throw new Error('Không nhận được dữ liệu phản hồi từ Kira AI. Vui lòng thử lại.');
     }
 
     try {
       const parsed = JSON.parse(text);
       if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
         parsed.items = parsed.rows.map((row) => {
+          if (typeof row === 'object' && row !== null && !Array.isArray(row)) {
+            return row;
+          }
           const obj = {};
           if (Array.isArray(row)) {
             selectedColumns.forEach((colKey, idx) => {
@@ -1940,6 +1943,9 @@ export default function Home() {
           const parsed = JSON.parse(m[0]);
           if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
             parsed.items = parsed.rows.map((row) => {
+              if (typeof row === 'object' && row !== null && !Array.isArray(row)) {
+                return row;
+              }
               const obj = {};
               if (Array.isArray(row)) {
                 selectedColumns.forEach((colKey, idx) => {

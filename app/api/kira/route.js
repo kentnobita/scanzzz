@@ -59,18 +59,12 @@ export async function POST(req) {
     const requestBody = {
       model: selectedModel,
       messages: chatPayload.messages,
-      temperature: chatPayload.temperature ?? 0.1
+      temperature: chatPayload.temperature ?? 0.1,
+      max_tokens: chatPayload.max_tokens || 2500
     };
 
-    if (isFreeModel) {
-      requestBody.max_tokens = Math.min(chatPayload.max_tokens || 650, 650);
-      // Only include response_format for non-free or when explicitly supported
-      if (chatPayload.response_format && !selectedModel.includes('qwen')) {
-        requestBody.response_format = chatPayload.response_format;
-      }
-    } else {
-      if (chatPayload.max_tokens) requestBody.max_tokens = chatPayload.max_tokens;
-      if (chatPayload.response_format) requestBody.response_format = chatPayload.response_format;
+    if (chatPayload.response_format && !selectedModel.includes('qwen')) {
+      requestBody.response_format = chatPayload.response_format;
     }
 
     const res = await fetch('https://kiraai.vn/api/v1/chat/completions', {
@@ -98,6 +92,15 @@ export async function POST(req) {
     }
 
     const data = await res.json();
+    
+    // For reasoning models (e.g. GLM, Qwen): if content is empty but reasoning_content has the output, fallback to it
+    if (data.choices?.[0]?.message) {
+      const msg = data.choices[0].message;
+      if (!msg.content && msg.reasoning_content) {
+        msg.content = msg.reasoning_content;
+      }
+    }
+
     return NextResponse.json(data);
   } catch (err) {
     console.error('Kira AI Proxy Error:', err);
