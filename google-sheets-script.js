@@ -56,13 +56,36 @@ function doPost(e) {
       rows.push(["", "", "", "", "", "", "", "", "", ""]);
     }
 
-    // 3. Chuyển đổi dữ liệu từng dòng hàng của phiếu mới
+    // 3. Chuyển đổi dữ liệu từng dòng hàng (Tự động chèn 1 dòng trống nếu chuyển số phiếu hoặc chuyển trang trong cùng 1 request)
+    var lastSoPhieu = "";
+    var lastPage = null;
+
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
+
+      // Nếu là dòng phân cách trống được chỉ định
+      if (item.isSeparator) {
+        rows.push(["", "", "", "", "", "", "", "", "", ""]);
+        continue;
+      }
+
+      var currentSoPhieu = (item.soPhieu || defaultSoPhieu || "").toString().trim();
+      var currentPage = (item._pageNum !== undefined && item._pageNum !== null) ? item._pageNum : defaultPageNum;
+
+      if (i > 0) {
+        var isDiffSlip = (currentSoPhieu && lastSoPhieu && currentSoPhieu !== lastSoPhieu);
+        var isDiffPage = (currentPage && lastPage && currentPage !== lastPage);
+        if (isDiffSlip || isDiffPage) {
+          rows.push(["", "", "", "", "", "", "", "", "", ""]);
+        }
+      }
+      lastSoPhieu = currentSoPhieu;
+      lastPage = currentPage;
+
       rows.push([
         time,
-        item.soPhieu || defaultSoPhieu,
-        item._pageNum || defaultPageNum,
+        currentSoPhieu,
+        currentPage,
         item.ten || "",
         item.soOSPO || "",
         item.donViTinh || "",

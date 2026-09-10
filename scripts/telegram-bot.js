@@ -77,7 +77,7 @@ function getBotConfig() {
     aiProvider: defaultSync.aiProvider || process.env.AI_PROVIDER || 'gemini',
     geminiKey: defaultSync.apiKey || process.env.GEMINI_API_KEY || '',
     openRouterKey: defaultSync.openRouterKey || process.env.OPENROUTER_API_KEY || '',
-    openRouterModel: defaultSync.openRouterModel || process.env.OPENROUTER_MODEL || 'minimax/minimax-m3:free',
+    openRouterModel: defaultSync.openRouterModel || process.env.OPENROUTER_MODEL || 'nex-agi/nex-n2.5-pro:free',
     apinexKey: defaultSync.apinexKey || process.env.APINEX_API_KEY || '',
     apinexModel: defaultSync.apinexModel || process.env.APINEX_MODEL || 'free/gemini-3.8-flash',
     kiraKey: defaultSync.kiraKey || process.env.KIRA_API_KEY || '',
@@ -192,6 +192,84 @@ function parseOcrResultToItems(resultData, selectedColumns) {
   return merged;
 }
 
+function robustParseOcrJson(rawText, selectedColumns = DEFAULT_COLUMNS) {
+  if (!rawText || typeof rawText !== 'string') return { soPhieu: '', items: [] };
+  let text = rawText.trim();
+  text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+
+  const toFormatted = (parsed) => {
+    if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
+      parsed.items = parsed.rows
+        .filter((r) => Array.isArray(r) || (typeof r === 'object' && r !== null))
+        .map((row) => {
+          if (typeof row === 'object' && !Array.isArray(row)) return row;
+          const obj = {};
+          selectedColumns.forEach((colKey, idx) => { obj[colKey] = row[idx] ?? ''; });
+          return obj;
+        });
+    }
+    return parsed;
+  };
+
+  try {
+    const p = JSON.parse(text);
+    if (p && (Array.isArray(p.rows) || Array.isArray(p.items))) return toFormatted(p);
+  } catch (e1) {}
+
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const candidate = text.substring(firstBrace, lastBrace + 1);
+    try {
+      const p = JSON.parse(candidate);
+      if (p && (Array.isArray(p.rows) || Array.isArray(p.items))) return toFormatted(p);
+    } catch (e2) {}
+
+    try {
+      const sanitized = candidate
+        .replace(/[\u0000-\u001F]+/g, (match) => (match.includes('\n') ? ' ' : ''))
+        .replace(/,\s*([\]}])/g, '$1');
+      const p = JSON.parse(sanitized);
+      if (p && (Array.isArray(p.rows) || Array.isArray(p.items))) return toFormatted(p);
+    } catch (e3) {}
+  }
+
+  if (firstBrace !== -1) {
+    let candidate = text.substring(firstBrace).trim().replace(/,\s*$/, '');
+    const endings = [']}', ']]}', '"]}', '"]]}', '}'];
+    for (const end of endings) {
+      try {
+        const p = JSON.parse(candidate + end);
+        if (p && (Array.isArray(p.rows) || Array.isArray(p.items))) return toFormatted(p);
+      } catch (e4) {}
+    }
+  }
+
+  let detectedSoPhieu = '';
+  const spMatch = text.match(/"soPhieu"\s*:\s*"([^"]*)"/i);
+  if (spMatch) detectedSoPhieu = spMatch[1].trim();
+
+  const rows = [];
+  const rowRegex = /\[\s*((?:"(?:\\.|[^"\\])*"|[^,\]]*?)(?:\s*,\s*(?:"(?:\\.|[^"\\])*"|[^,\]]*?))*)\s*\]/g;
+  let match;
+  while ((match = rowRegex.exec(text)) !== null) {
+    const inside = match[0];
+    try {
+      const parsedRow = JSON.parse(inside);
+      if (Array.isArray(parsedRow) && parsedRow.length >= 2) rows.push(parsedRow);
+    } catch {
+      const cells = [];
+      const cellRegex = /"((?:\\.|[^"\\])*)"/g;
+      let cMatch;
+      while ((cMatch = cellRegex.exec(inside)) !== null) cells.push(cMatch[1]);
+      if (cells.length >= 2) rows.push(cells);
+    }
+  }
+
+  if (rows.length > 0) return toFormatted({ soPhieu: detectedSoPhieu, rows });
+  return { soPhieu: detectedSoPhieu, items: [{ ten: text }] };
+}
+
 async function scanWithOpenRouter(base64Data, mimeType, key, model, selectedColumns, fieldPrompts) {
   const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
   const rules = ['soPhieu', ...selectedColumns]
@@ -199,6 +277,10 @@ async function scanWithOpenRouter(base64Data, mimeType, key, model, selectedColu
     .join('\n');
 
   const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
+    'YÊU CẦU BẮT BUỘC:\n' +
+    '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON.\n' +
+    '- Định dạng trả về duy nhất là chuỗi JSON:\n' +
+    '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}\n\n' +
     'Quy tắc trích xuất quan trọng:\n' +
     '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
     '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
@@ -209,6 +291,31 @@ async function scanWithOpenRouter(base64Data, mimeType, key, model, selectedColu
     'Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
     '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
 
+  const selectedModel = model || 'nex-agi/nex-n2.5-pro:free';
+  const reqBody = {
+    model: selectedModel,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: promptText },
+          { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64Data } }
+        ]
+      }
+    ],
+    temperature: 0.1,
+    max_tokens: 3000,
+  };
+
+  if (selectedModel.includes('nex') || selectedModel.includes('free') || selectedModel.includes('thinking')) {
+    reqBody.include_reasoning = false;
+    reqBody.reasoning = { effort: 'none' };
+  }
+
+  if (!selectedModel.includes('qwen')) {
+    reqBody.response_format = { type: 'json_object' };
+  }
+
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -217,20 +324,7 @@ async function scanWithOpenRouter(base64Data, mimeType, key, model, selectedColu
       'HTTP-Referer': 'https://scanzzz.vercel.app',
       'X-Title': 'Scan Pro Max Telegram Bot'
     },
-    body: JSON.stringify({
-      model: model || 'minimax/minimax-m3:free',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: promptText },
-            { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64Data } }
-          ]
-        }
-      ],
-      temperature: 0.1,
-      response_format: { type: 'json_object' }
-    })
+    body: JSON.stringify(reqBody)
   });
 
   if (!res.ok) {
@@ -239,38 +333,12 @@ async function scanWithOpenRouter(base64Data, mimeType, key, model, selectedColu
   }
 
   const data = await res.json();
-  const text = data.choices?.[0]?.message?.content;
+  const msg = data.choices?.[0]?.message;
+  let text = (msg?.content || '').trim();
+  if (!text && msg?.reasoning) text = msg.reasoning.trim();
   if (!text) throw new Error('Không nhận được dữ liệu từ OpenRouter');
 
-  try {
-    const parsed = JSON.parse(text);
-    if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-      parsed.items = parsed.rows.map((row) => {
-        const obj = {};
-        if (Array.isArray(row)) {
-          selectedColumns.forEach((colKey, idx) => { obj[colKey] = row[idx] ?? ''; });
-        }
-        return obj;
-      });
-    }
-    return parsed;
-  } catch {
-    const m = text.match(/\{[\s\S]*\}/);
-    if (m) {
-      const parsed = JSON.parse(m[0]);
-      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-        parsed.items = parsed.rows.map((row) => {
-          const obj = {};
-          if (Array.isArray(row)) {
-            selectedColumns.forEach((colKey, idx) => { obj[colKey] = row[idx] ?? ''; });
-          }
-          return obj;
-        });
-      }
-      return parsed;
-    }
-    throw new Error('Dữ liệu AI trả về không đúng định dạng JSON');
-  }
+  return robustParseOcrJson(text, selectedColumns);
 }
 
 async function scanWithApinex(base64Data, mimeType, key, model, selectedColumns, fieldPrompts) {
@@ -565,7 +633,7 @@ async function scanWithGemini(base64Data, mimeType, key, selectedColumns, fieldP
     ],
     generationConfig: {
       temperature: 0.1,
-      maxOutputTokens: 65536,
+      maxOutputTokens: 16384,
       topP: 0.95,
       responseMimeType: 'application/json'
     }
@@ -589,35 +657,7 @@ async function scanWithGemini(base64Data, mimeType, key, selectedColumns, fieldP
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error('Không nhận được dữ liệu từ Gemini');
 
-  try {
-    const parsed = JSON.parse(text);
-    if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-      parsed.items = parsed.rows.map((row) => {
-        const obj = {};
-        if (Array.isArray(row)) {
-          selectedColumns.forEach((colKey, idx) => { obj[colKey] = row[idx] ?? ''; });
-        }
-        return obj;
-      });
-    }
-    return parsed;
-  } catch {
-    const m = text.match(/\{[\s\S]*\}/);
-    if (m) {
-      const parsed = JSON.parse(m[0]);
-      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-        parsed.items = parsed.rows.map((row) => {
-          const obj = {};
-          if (Array.isArray(row)) {
-            selectedColumns.forEach((colKey, idx) => { obj[colKey] = row[idx] ?? ''; });
-          }
-          return obj;
-        });
-      }
-      return parsed;
-    }
-    throw new Error('Dữ liệu Gemini trả về không đúng định dạng JSON');
-  }
+  return robustParseOcrJson(text, selectedColumns);
 }
 
 async function performOcr(cfg, base64Data, mimeType) {
@@ -655,30 +695,89 @@ async function performOcr(cfg, base64Data, mimeType) {
   }
 }
 
+function partitionItemsIntoSlipGroups(itemsList, defaultSoPhieu, defaultPageNum) {
+  if (!itemsList || !itemsList.length) return [];
+  const groups = [];
+  let currentGroup = [];
+  let lastGroupKey = null;
+
+  for (let i = 0; i < itemsList.length; i++) {
+    const item = itemsList[i];
+    const itemSp = (item.soPhieu || defaultSoPhieu || '').trim();
+    const itemPage = item._pageNum !== undefined && item._pageNum !== null ? item._pageNum : (defaultPageNum || 1);
+    const groupKey = `${itemSp}___${itemPage}`;
+
+    if (currentGroup.length > 0 && lastGroupKey !== null && groupKey !== lastGroupKey) {
+      groups.push({
+        soPhieu: currentGroup[0].soPhieu || defaultSoPhieu || '',
+        pageNum: currentGroup[0]._pageNum || defaultPageNum || 1,
+        items: currentGroup,
+      });
+      currentGroup = [];
+    }
+
+    currentGroup.push(item);
+    lastGroupKey = groupKey;
+  }
+
+  if (currentGroup.length > 0) {
+    groups.push({
+      soPhieu: currentGroup[0].soPhieu || defaultSoPhieu || '',
+      pageNum: currentGroup[0]._pageNum || defaultPageNum || 1,
+      items: currentGroup,
+    });
+  }
+
+  return groups;
+}
+
 async function syncToGoogleSheet(sheetUrl, soPhieu, items) {
   if (!sheetUrl || !sheetUrl.startsWith('https://script.google.com/')) {
     return { success: false, message: 'Chưa cấu hình Link Google Sheet Webhook' };
   }
-  const payload = {
-    soPhieu: soPhieu || '',
-    pageNum: 1,
-    items: items.map(item => ({ ...item, soPhieu: item.soPhieu || soPhieu || '' }))
-  };
-
-  const res = await fetch(sheetUrl, {
-    method: 'POST',
-    redirect: 'follow',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(payload)
-  });
-
-  const resText = await res.text();
-  try {
-    const data = JSON.parse(resText);
-    return { success: data.status === 'success' || res.ok, message: data.message || 'Đã ghi thành công' };
-  } catch {
-    return { success: res.ok, message: res.ok ? 'Đã ghi vào Google Sheet' : resText.slice(0, 100) };
+  if (!items || !items.length) {
+    return { success: false, message: 'Chưa có dòng hàng nào để lưu' };
   }
+
+  const groups = partitionItemsIntoSlipGroups(items, soPhieu, 1);
+  let lastRes = { success: true, message: 'Đã lưu thành công' };
+
+  for (let g = 0; g < groups.length; g++) {
+    const grp = groups[g];
+    const payload = {
+      soPhieu: grp.soPhieu || soPhieu || '',
+      pageNum: grp.pageNum || (g + 1),
+      items: grp.items.map(item => ({
+        ...item,
+        soPhieu: item.soPhieu || grp.soPhieu || soPhieu || '',
+        _pageNum: item._pageNum || grp.pageNum || (g + 1)
+      }))
+    };
+
+    const res = await fetch(sheetUrl, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+
+    const resText = await res.text();
+    try {
+      const data = JSON.parse(resText);
+      lastRes = { success: data.status === 'success' || res.ok, message: data.message || 'Đã ghi thành công' };
+    } catch {
+      lastRes = { success: res.ok, message: res.ok ? 'Đã ghi vào Google Sheet' : resText.slice(0, 100) };
+    }
+
+    if (!lastRes.success) break;
+
+    // Delay 350ms giữa các phiếu để Google Sheet kịp cập nhật lastRow và tạo dòng trống phân cách
+    if (g < groups.length - 1) {
+      await new Promise(r => setTimeout(r, 350));
+    }
+  }
+
+  return lastRes;
 }
 
 async function sendTelegram(method, body) {
@@ -1493,7 +1592,9 @@ async function handleMessage(msg) {
           '• `/model free/qwen-3.8-max` (Đỉnh cao chữ viết tay tiếng Việt)\n' +
           '• `/model free/gpt-5.6-luna` (Ổn định, bóc tách cấu trúc cột)\n' +
           '• `/model free/muse-spark-1.3` (Nhẹ nhàng, tiết kiệm)\n\n' +
-          '🌐 *OpenRouter:*\n' +
+          '🌐 *OpenRouter (Miễn phí & Tối ưu OCR):*\n' +
+          '• `/model nex-agi/nex-n2.5-pro:free` (Khuyên dùng - Rất nhanh & chuẩn)\n' +
+          '• `/model nex-agi/nex-n2.5-mini:free` (Siêu nhẹ & tốc độ cao)\n' +
           '• `/model minimax/minimax-m3:free`\n' +
           '• `/model google/gemini-2.5-flash`\n' +
           '• `/model qwen/qwen2.5-vl-72b-instruct`\n\n' +
@@ -1512,13 +1613,8 @@ async function handleMessage(msg) {
       cfg.aiProvider = 'kira';
       cfg.kiraModel = modelName;
     } else {
-      if (cfg.aiProvider === 'kira') {
-        cfg.kiraModel = modelName;
-      } else if (cfg.aiProvider === 'apinex') {
-        cfg.apinexModel = modelName;
-      } else {
-        cfg.openRouterModel = modelName;
-      }
+      cfg.aiProvider = 'openrouter';
+      cfg.openRouterModel = modelName;
     }
     saveBotConfig(cfg);
     const info = getActiveProviderInfo(cfg);

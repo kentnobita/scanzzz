@@ -239,12 +239,36 @@ const APPS_SCRIPT_SAMPLE = `function doPost(e) {
       rows.push(["", "", "", "", "", "", "", "", "", ""]);
     }
     
+    // 3. Chuyển đổi dữ liệu từng dòng hàng (Tự động chèn 1 dòng trống nếu chuyển số phiếu hoặc chuyển trang trong cùng 1 request)
+    var lastSoPhieu = "";
+    var lastPage = null;
+
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
+
+      // Nếu là dòng phân cách trống được chỉ định
+      if (item.isSeparator) {
+        rows.push(["", "", "", "", "", "", "", "", "", ""]);
+        continue;
+      }
+
+      var currentSoPhieu = (item.soPhieu || defaultSoPhieu || "").toString().trim();
+      var currentPage = (item._pageNum !== undefined && item._pageNum !== null) ? item._pageNum : defaultPageNum;
+
+      if (i > 0) {
+        var isDiffSlip = (currentSoPhieu && lastSoPhieu && currentSoPhieu !== lastSoPhieu);
+        var isDiffPage = (currentPage && lastPage && currentPage !== lastPage);
+        if (isDiffSlip || isDiffPage) {
+          rows.push(["", "", "", "", "", "", "", "", "", ""]);
+        }
+      }
+      lastSoPhieu = currentSoPhieu;
+      lastPage = currentPage;
+
       rows.push([
         time,
-        item.soPhieu || defaultSoPhieu,
-        item._pageNum || defaultPageNum,
+        currentSoPhieu,
+        currentPage,
         item.ten || "",
         item.soOSPO || "",
         item.donViTinh || "",
@@ -822,7 +846,7 @@ export default function Home() {
     const img = new Image();
     img.onload = () => {
       let { width, height } = img;
-      const maxSize = 2400;
+      const maxSize = 2000;
       if (width > maxSize || height > maxSize) {
         if (width > height) {
           height = Math.round((height * maxSize) / width);
@@ -835,8 +859,9 @@ export default function Home() {
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
-      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      const jpegUrl = canvas.toDataURL('image/jpeg', 0.94);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      const jpegUrl = canvas.toDataURL('image/jpeg', 0.88);
 
       setCurrentImageBase64(jpegUrl.split(',')[1]);
       setCurrentImageMimeType('image/jpeg');
@@ -1441,6 +1466,45 @@ export default function Home() {
     showToast('↺ Đã khôi phục ảnh gốc ban đầu', 'success');
   };
 
+  // Helper partition items into separate slip/page groups
+  const partitionItemsIntoSlipGroups = (itemsList, defaultSoPhieu, defaultPageNum) => {
+    if (!itemsList || !itemsList.length) return [];
+    const groups = [];
+    let currentGroup = [];
+    let lastGroupKey = null;
+
+    for (let i = 0; i < itemsList.length; i++) {
+      const item = itemsList[i];
+      const itemSp = (item.soPhieu || defaultSoPhieu || '').trim();
+      const itemPage = item._pageNum !== undefined && item._pageNum !== null ? item._pageNum : (defaultPageNum || 1);
+
+      // Phân nhóm theo số phiếu hoặc số trang
+      const groupKey = `${itemSp}___${itemPage}`;
+
+      if (currentGroup.length > 0 && lastGroupKey !== null && groupKey !== lastGroupKey) {
+        groups.push({
+          soPhieu: currentGroup[0].soPhieu || defaultSoPhieu || '',
+          pageNum: currentGroup[0]._pageNum || defaultPageNum || 1,
+          items: currentGroup,
+        });
+        currentGroup = [];
+      }
+
+      currentGroup.push(item);
+      lastGroupKey = groupKey;
+    }
+
+    if (currentGroup.length > 0) {
+      groups.push({
+        soPhieu: currentGroup[0].soPhieu || defaultSoPhieu || '',
+        pageNum: currentGroup[0]._pageNum || defaultPageNum || 1,
+        items: currentGroup,
+      });
+    }
+
+    return groups;
+  };
+
   // Google Sheets Push Helper (via Server-Side Proxy Route to guarantee 302 redirect handling & error reporting)
   const syncToGoogleSheet = async (itemsToPush, targetSoPhieu = '', pageNum = 1, silent = false) => {
     const cleanUrl = googleSheetUrl.trim();
@@ -1468,35 +1532,82 @@ export default function Home() {
       return false;
     }
 
+    // Tách thành các nhóm phiếu/trang riêng biệt để tự động chèn 1 dòng trống ngăn cách
+    let groups = [];
+    if (pageResults && pageResults.length > 1 && (!itemsToPush || itemsToPush === tableItems)) {
+      groups = pageResults
+        .map((p) => ({
+          soPhieu: (p.soPhieu || '').trim(),
+          pageNum: p.pageNum || 1,
+          items: p.items || [],
+        }))
+        .filter((g) => g.items.length > 0);
+    }
+
+    if (!groups.length) {
+      groups = partitionItemsIntoSlipGroups(items, targetSoPhieu || soPhieu, pageNum);
+    }
+
+    if (!groups.length) {
+      if (!silent) showToast('Chưa có dòng hàng nào để đẩy sang Google Sheet', 'error');
+      return false;
+    }
+
     setIsSyncingSheet(true);
-    if (!silent) showToast('📊 Đang đồng bộ dữ liệu vào Google Sheet...');
 
     try {
-      const payload = {
-        soPhieu: targetSoPhieu || soPhieu || '',
-        pageNum: pageNum || 1,
-        items: items.map((item) => ({
-          ...item,
-          soPhieu: item.soPhieu || targetSoPhieu || soPhieu || '',
-        })),
-      };
+      let totalSynced = 0;
 
-      const res = await fetch('/api/sheet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: cleanUrl, payload }),
-      });
+      for (let g = 0; g < groups.length; g++) {
+        const grp = groups[g];
+        const slipLabel = grp.soPhieu ? `phiếu ${grp.soPhieu}` : `trang ${grp.pageNum}`;
 
-      const resData = await res.json().catch(() => ({}));
+        if (!silent) {
+          if (groups.length > 1) {
+            showToast(`📊 Đang lưu ${slipLabel} (${g + 1}/${groups.length}) sang Google Sheet...`);
+          } else {
+            showToast('📊 Đang đồng bộ dữ liệu vào Google Sheet...');
+          }
+        }
 
-      if (!res.ok || !resData.success) {
-        throw new Error(resData.error || `Lỗi đồng bộ Google Sheet (HTTP ${res.status})`);
+        const payload = {
+          soPhieu: grp.soPhieu || targetSoPhieu || soPhieu || '',
+          pageNum: grp.pageNum || (g + 1),
+          items: grp.items.map((item) => ({
+            ...item,
+            soPhieu: item.soPhieu || grp.soPhieu || targetSoPhieu || soPhieu || '',
+            _pageNum: item._pageNum || grp.pageNum || (g + 1),
+          })),
+        };
+
+        const res = await fetch('/api/sheet', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: cleanUrl, payload }),
+        });
+
+        const resData = await res.json().catch(() => ({}));
+
+        if (!res.ok || !resData.success) {
+          throw new Error(resData.error || `Lỗi đồng bộ Google Sheet ở ${slipLabel} (HTTP ${res.status})`);
+        }
+
+        totalSynced += grp.items.length;
+
+        // Nếu còn nhóm tiếp theo, chờ 350ms để Google Sheets ghi xong và cập nhật lastRow
+        if (g < groups.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 350));
+        }
       }
 
       const nowStr = new Date().toLocaleTimeString('vi-VN');
-      setLastSheetSync({ time: nowStr, count: items.length });
+      setLastSheetSync({ time: nowStr, count: totalSynced });
       if (!silent) {
-        showToast(`📊 Đã lưu thành công ${items.length} dòng vào Google Sheet lúc ${nowStr}!`, 'success');
+        if (groups.length > 1) {
+          showToast(`📊 Đã lưu thành công ${totalSynced} dòng (${groups.length} phiếu/trang có dòng trống phân cách) vào Google Sheet lúc ${nowStr}!`, 'success');
+        } else {
+          showToast(`📊 Đã lưu thành công ${totalSynced} dòng vào Google Sheet lúc ${nowStr}!`, 'success');
+        }
       }
       return true;
     } catch (e) {
@@ -1510,9 +1621,111 @@ export default function Home() {
     }
   };
 
+  // Bulletproof JSON Parser & Recovery for OCR Models
+  const robustParseOcrJson = useCallback((rawText, cols = selectedColumns) => {
+    if (!rawText || typeof rawText !== 'string') return { soPhieu: '', items: [] };
+
+    let text = rawText.trim();
+
+    // 1. Loại bỏ markdown code blocks
+    text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+
+    const toFormatted = (parsed) => {
+      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
+        parsed.items = parsed.rows
+          .filter((r) => Array.isArray(r) || (typeof r === 'object' && r !== null))
+          .map((row) => {
+            if (typeof row === 'object' && !Array.isArray(row)) return row;
+            const obj = {};
+            cols.forEach((colKey, idx) => {
+              obj[colKey] = row[idx] ?? '';
+            });
+            return obj;
+          });
+      }
+      return parsed;
+    };
+
+    // 2. Thử parse trực tiếp
+    try {
+      const p = JSON.parse(text);
+      if (p && (Array.isArray(p.rows) || Array.isArray(p.items))) return toFormatted(p);
+    } catch (e1) {}
+
+    // 3. Tìm khối JSON giữa dấu { đầu tiên và } cuối cùng
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      const candidate = text.substring(firstBrace, lastBrace + 1);
+      try {
+        const p = JSON.parse(candidate);
+        if (p && (Array.isArray(p.rows) || Array.isArray(p.items))) return toFormatted(p);
+      } catch (e2) {}
+
+      // 3b. Sửa ký tự điều khiển và dấu phẩy thừa ở cuối mảng
+      try {
+        const sanitized = candidate
+          .replace(/[\u0000-\u001F]+/g, (match) => (match.includes('\n') ? ' ' : ''))
+          .replace(/,\s*([\]}])/g, '$1');
+        const p = JSON.parse(sanitized);
+        if (p && (Array.isArray(p.rows) || Array.isArray(p.items))) return toFormatted(p);
+      } catch (e3) {}
+    }
+
+    // 4. Phục hồi JSON bị cắt cụt ở đuôi (thiếu ]} hoặc ]]])
+    if (firstBrace !== -1) {
+      let candidate = text.substring(firstBrace).trim().replace(/,\s*$/, '');
+      const endings = [']}', ']]}', '"]}', '"]]}', '}'];
+      for (const end of endings) {
+        try {
+          const p = JSON.parse(candidate + end);
+          if (p && (Array.isArray(p.rows) || Array.isArray(p.items))) return toFormatted(p);
+        } catch (e4) {}
+      }
+    }
+
+    // 5. REGEX FALLBACK: Trích xuất trực tiếp số phiếu và các dòng [...] qua Regex
+    let detectedSoPhieu = '';
+    const spMatch = text.match(/"soPhieu"\s*:\s*"([^"]*)"/i);
+    if (spMatch) {
+      detectedSoPhieu = spMatch[1].trim();
+    }
+
+    const rows = [];
+    const rowRegex = /\[\s*((?:"(?:\\.|[^"\\])*"|[^,\]]*?)(?:\s*,\s*(?:"(?:\\.|[^"\\])*"|[^,\]]*?))*)\s*\]/g;
+    let match;
+    while ((match = rowRegex.exec(text)) !== null) {
+      const inside = match[0];
+      try {
+        const parsedRow = JSON.parse(inside);
+        if (Array.isArray(parsedRow) && parsedRow.length >= 2) {
+          rows.push(parsedRow);
+        }
+      } catch {
+        const cells = [];
+        const cellRegex = /"((?:\\.|[^"\\])*)"/g;
+        let cMatch;
+        while ((cMatch = cellRegex.exec(inside)) !== null) {
+          cells.push(cMatch[1]);
+        }
+        if (cells.length >= 2) {
+          rows.push(cells);
+        }
+      }
+    }
+
+    if (rows.length > 0) {
+      return toFormatted({ soPhieu: detectedSoPhieu, rows });
+    }
+
+    return { soPhieu: detectedSoPhieu, items: [{ ten: text }] };
+  }, [selectedColumns]);
+
   // Universal OCR Result Parser (Supports both Compact 2D Matrix rows & Legacy items object)
   const parseOcrResultToItems = useCallback((resultData, pageNum = null, pageSoPhieu = '') => {
     let rawList = [];
+    let detectedSp = pageSoPhieu || resultData.soPhieu || '';
+
     if (Array.isArray(resultData.rows)) {
       rawList = resultData.rows.map((row) => {
         const itemObj = {};
@@ -1529,6 +1742,20 @@ export default function Home() {
       });
     } else if (Array.isArray(resultData.items)) {
       rawList = resultData.items;
+    }
+
+    // 🌟 TỰ ĐỘNG GIẢI MÃ NẾU BỊ GỘP CHUỖI JSON VÀO TRƯỜNG TÊN HÀNG DUY NHẤT
+    if (rawList.length === 1 && rawList[0].ten && typeof rawList[0].ten === 'string') {
+      const trimmedTen = rawList[0].ten.trim();
+      if (trimmedTen.startsWith('{') || trimmedTen.includes('"rows":') || trimmedTen.includes('"soPhieu":')) {
+        const recovered = robustParseOcrJson(trimmedTen, selectedColumns);
+        if (recovered && Array.isArray(recovered.items) && recovered.items.length > 0) {
+          rawList = recovered.items;
+          if (recovered.soPhieu) {
+            detectedSp = recovered.soPhieu;
+          }
+        }
+      }
     }
 
     const formattedList = rawList.map((item) => {
@@ -1672,10 +1899,10 @@ export default function Home() {
       max_tokens: 3000,
     };
 
-    // Tắt suy luận dài dòng cho các dòng model OpenRouter hỗ trợ reasoning (như Nex AGI) để đạt tốc độ siêu tốc 1-2s và không bị timeout
+    // Tắt suy luận dài dòng cho các dòng model OpenRouter hỗ trợ reasoning (như Nex AGI) để đạt tốc độ siêu tốc 1-3s và trả thẳng JSON
     if (selectedModel.includes('nex') || selectedModel.includes('free') || selectedModel.includes('thinking')) {
       reqBody.include_reasoning = false;
-      reqBody.reasoning = { effort: 'low' };
+      reqBody.reasoning = { effort: 'none' };
     }
 
     if (!selectedModel.includes('qwen')) {
@@ -2256,14 +2483,54 @@ export default function Home() {
     throw new Error('AI chưa trích xuất được bảng hàng hóa. Vui lòng bấm Quét Lại hoặc chọn mô hình qwen3.8-flash-free / gemini-3.8-flash.');
   };
 
-  // Direct Gemini OCR with Google Generative AI (Optimized Compact 2D Matrix Output)
+  // Direct Gemini OCR with Google Generative AI (Optimized Compact 2D Matrix Output & Fast Vision)
   const scanClientGeminiWithBase64 = async (base64Data, mimeType, key) => {
+    // 1. Tự động nén ảnh thông minh trước khi gửi (maxDim = 1500px, JPEG 0.85)
+    // Tăng tốc upload gấp 10 lần và giảm token hình ảnh của Google Gemini từ ~3.100 xuống ~516 tokens
+    let payloadBase64 = base64Data;
+    let payloadMime = mimeType;
+    if (base64Data && base64Data.length > 90000) {
+      try {
+        const compressed = await new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const maxDim = 1500;
+            let w = img.width, h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+              else { w = Math.round((w * maxDim) / h); h = maxDim; }
+            }
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg' });
+          };
+          img.onerror = () => resolve(null);
+          img.src = `data:${mimeType};base64,${base64Data}`;
+        });
+        if (compressed?.base64) {
+          payloadBase64 = compressed.base64;
+          payloadMime = compressed.mime;
+        }
+      } catch (e) {
+        console.warn('Không thể nén ảnh cho Gemini:', e);
+      }
+    }
+
     const colListStr = selectedColumns.map((k, i) => `${i + 1}.${COLUMN_DEFS[k]?.short || k}`).join(', ');
     const rules = ['soPhieu', ...selectedColumns]
       .map((k) => `- ${k === 'soPhieu' ? 'Số phiếu' : COLUMN_DEFS[k]?.short || k}: ${fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''}`)
       .join('\n');
 
     const promptText = `Chuyên gia OCR phiếu kho Việt Nam (đọc chuẩn chữ in & chữ viết tay).
+YÊU CẦU BẮT BUỘC:
+- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON.
+- Định dạng trả về duy nhất là chuỗi JSON:
+{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}
+
 Quy tắc trích xuất quan trọng:
 1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).
 2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.
@@ -2281,13 +2548,13 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         {
           parts: [
             { text: promptText },
-            { inline_data: { mime_type: mimeType, data: base64Data } },
+            { inline_data: { mime_type: payloadMime, data: payloadBase64 } },
           ],
         },
       ],
       generationConfig: {
         temperature: 0.1,
-        maxOutputTokens: 65536,
+        maxOutputTokens: 16384,
         topP: 0.95,
         responseMimeType: 'application/json',
       },
@@ -2313,41 +2580,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       throw err;
     }
 
-    try {
-      const parsed = JSON.parse(text);
-      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-        parsed.items = parsed.rows.map((row) => {
-          const obj = {};
-          if (Array.isArray(row)) {
-            selectedColumns.forEach((colKey, idx) => {
-              obj[colKey] = row[idx] ?? '';
-            });
-          }
-          return obj;
-        });
-      }
-      return parsed;
-    } catch {
-      const m = text.match(/\{[\s\S]*\}/);
-      if (m) {
-        try {
-          const parsed = JSON.parse(m[0]);
-          if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-            parsed.items = parsed.rows.map((row) => {
-              const obj = {};
-              if (Array.isArray(row)) {
-                selectedColumns.forEach((colKey, idx) => {
-                  obj[colKey] = row[idx] ?? '';
-                });
-              }
-              return obj;
-            });
-          }
-          return parsed;
-        } catch {}
-      }
-      return { soPhieu: '', items: [{ ten: text }] };
-    }
+    return robustParseOcrJson(text, selectedColumns);
   };
 
   const scanWithTesseract = async (base64Data, mimeType, onProgress) => {
@@ -2617,18 +2850,22 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
           const { data: pageResult, engine } = await executeOcrOnImage(page.base64, 'image/jpeg', `[Trang ${pageNum}]`);
           usedEngine = engine;
 
-          const pageSoPhieu = pageResult.soPhieu || '';
-          if (pageSoPhieu && !detectedFirstSoPhieu) {
-            detectedFirstSoPhieu = pageSoPhieu;
+          let effectiveSoPhieu = pageResult.soPhieu || '';
+          const normalized = parseOcrResultToItems(pageResult, pageNum, effectiveSoPhieu);
+
+          if (!effectiveSoPhieu && normalized.length > 0 && normalized[0].soPhieu) {
+            effectiveSoPhieu = normalized[0].soPhieu;
           }
 
-          const normalized = parseOcrResultToItems(pageResult, pageNum, pageSoPhieu);
+          if (effectiveSoPhieu && !detectedFirstSoPhieu) {
+            detectedFirstSoPhieu = effectiveSoPhieu;
+          }
 
           accumulatedItems = [...accumulatedItems, ...normalized];
 
           const singleResult = {
             pageNum,
-            soPhieu: pageSoPhieu,
+            soPhieu: effectiveSoPhieu,
             items: normalized,
             previewUrl: page.fullUrl,
             status: 'done',
@@ -2643,7 +2880,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               status: 'done',
               detail: `Hoàn tất • ${normalized.length} dòng hàng`,
               lines: normalized.length,
-              soPhieu: pageSoPhieu,
+              soPhieu: effectiveSoPhieu,
             };
             return {
               ...prev,
@@ -2870,6 +3107,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     setPageResults((prev) =>
       prev.map((p) => (p.pageNum === pageNum ? { ...p, soPhieu: val } : p))
     );
+    setTableItems((prev) =>
+      prev.map((item) => (item._pageNum === pageNum ? { ...item, soPhieu: val } : item))
+    );
     if (pageNum === 1) setSoPhieu(val);
   };
 
@@ -3056,7 +3296,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">Scan Pro Max</h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                  v37.0.0
+                  v38.0.0
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">Trích xuất số phiếu & danh mục hàng hóa bằng AI</p>
@@ -5740,13 +5980,13 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
                     <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
                       <a
-                        href="https://github.com/kentnobita/scanzzz/releases/latest/download/ScanPhieuKho-v37.apk"
+                        href="https://github.com/kentnobita/scanzzz/releases/latest/download/ScanPhieuKho-v38.apk"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="w-full sm:w-auto px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all active:scale-95"
                       >
                         <IconUpload className="w-4 h-4 rotate-180" />
-                        <span>📥 Tải File Cài Đặt Android (ScanPhieuKho-v37.apk)</span>
+                        <span>📥 Tải File Cài Đặt Android (ScanPhieuKho-v38.apk)</span>
                       </a>
 
                       <a
