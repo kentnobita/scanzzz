@@ -63,11 +63,14 @@ export async function POST(req) {
       max_tokens: chatPayload.max_tokens || 2500
     };
 
+    console.log(`[Kira Route] Model: ${selectedModel}, max_tokens: ${requestBody.max_tokens}, messages count: ${chatPayload.messages?.length}`);
+    const startTime = Date.now();
+
     if (chatPayload.response_format && !selectedModel.includes('qwen')) {
       requestBody.response_format = chatPayload.response_format;
     }
 
-    const res = await fetch('https://kiraai.vn/api/v1/chat/completions', {
+    let res = await fetch('https://kiraai.vn/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey.trim()}`,
@@ -75,6 +78,33 @@ export async function POST(req) {
       },
       body: JSON.stringify(requestBody)
     });
+
+    let duration = Date.now() - startTime;
+    console.log(`[Kira Route] Response status: ${res.status} in ${duration}ms`);
+
+    // Tự động thử lại 1 lần nếu gặp lỗi mạng tạm thời 502 (Bad Gateway) hoặc 504 (Timeout)
+    if (!res.ok && (res.status === 502 || res.status === 504)) {
+      console.warn(`[Kira Route] Gặp mã ${res.status}, tự động thử lại sau 1.5 giây...`);
+      await new Promise((r) => setTimeout(r, 1500));
+      const retryStart = Date.now();
+      try {
+        const retryRes = await fetch('https://kiraai.vn/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey.trim()}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestBody)
+        });
+        duration = Date.now() - startTime;
+        console.log(`[Kira Route] Kết quả thử lại: ${retryRes.status} trong ${Date.now() - retryStart}ms (Tổng: ${duration}ms)`);
+        if (retryRes.ok) {
+          res = retryRes;
+        }
+      } catch (retryErr) {
+        console.warn('[Kira Route] Lỗi khi thử lại:', retryErr.message);
+      }
+    }
 
     if (!res.ok) {
       const errorText = await res.text().catch(() => '');
@@ -84,9 +114,9 @@ export async function POST(req) {
         if (errorJson.error?.message) errMsg = errorJson.error.message;
       } catch (parseErr) {}
       if (res.status === 502) {
-        errMsg = 'Máy chủ Kira AI báo lỗi 502 (Bad Gateway). Mô hình Free đang tạm thời quá tải hoặc ảnh vượt dung lượng cho phép. Hãy thử lại sau 3-5 giây hoặc chọn mô hình Free khác như qwen3.8-27b-free, qwen3.8-flash-free.';
+        errMsg = 'Máy chủ Kira AI báo lỗi 502 (Bad Gateway). Cụm xử lý của mô hình này đang quá tải hoặc tạm thời gián đoạn. Vui lòng thử lại sau 3 giây hoặc chọn qwen3.8-flash-free / gemini-3.8-flash.';
       } else if (res.status === 504) {
-        errMsg = 'Máy chủ Kira AI phản hồi quá lâu (504 Gateway Timeout). Vui lòng thử lại sau ít giây.';
+        errMsg = 'Máy chủ Kira AI phản hồi quá lâu (504 Gateway Timeout). Bạn hãy bấm Quét Lại hoặc chọn mô hình phản hồi nhanh hơn như qwen3.8-flash-free, gemini-3.8-flash.';
       }
       return NextResponse.json({ error: { message: errMsg } }, { status: res.status });
     }

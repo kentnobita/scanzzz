@@ -28,19 +28,43 @@ export async function POST(req) {
 
     // Proxy Chat Completions
     const chatPayload = payload || body;
-    const res = await fetch('https://api.apinex.bond/v1/chat/completions', {
+    const selectedModel = chatPayload.model || 'free/gemini-3.8-flash';
+
+    const requestBody = {
+      model: selectedModel,
+      messages: chatPayload.messages,
+      temperature: chatPayload.temperature ?? 0.1,
+      max_tokens: chatPayload.max_tokens || 3000,
+    };
+
+    if (chatPayload.response_format && !selectedModel.includes('qwen')) {
+      requestBody.response_format = chatPayload.response_format;
+    }
+
+    let res = await fetch('https://api.apinex.bond/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey.trim()}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        model: chatPayload.model || 'free/gemini-3.8-flash',
-        messages: chatPayload.messages,
-        temperature: chatPayload.temperature ?? 0.1,
-        response_format: chatPayload.response_format || { type: 'json_object' }
-      })
+      body: JSON.stringify(requestBody)
     });
+
+    // Auto-retry once on transient 502 or 504
+    if (!res.ok && (res.status === 502 || res.status === 504)) {
+      await new Promise((r) => setTimeout(r, 1500));
+      try {
+        const retryRes = await fetch('https://api.apinex.bond/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${apiKey.trim()}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestBody)
+        });
+        if (retryRes.ok) res = retryRes;
+      } catch (retryErr) {}
+    }
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {

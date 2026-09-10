@@ -48,6 +48,22 @@ const DEFAULT_COLUMNS = ['ten', 'soOSPO', 'donViTinh', 'soLuongChungTu', 'soLuon
 
 const OPENROUTER_MODELS = [
   {
+    id: 'nex-agi/nex-n2.5-pro:free',
+    name: 'Nex AGI: Nex-N2.5-Pro (Free)',
+    shortName: 'Nex-N2.5-Pro (Free)',
+    badge: 'MỚI • Free Siêu Chuẩn & Nhanh',
+    badgeColor: 'bg-indigo-100 text-indigo-800',
+    desc: 'Mô hình Agentic Vision thế hệ mới của Nex AGI trên OpenRouter. Hoàn toàn miễn phí ($0), tốc độ phản hồi cực nhanh (~1.5s), bóc tách cấu trúc phiếu kho và chữ viết tay xuất sắc.',
+  },
+  {
+    id: 'nex-agi/nex-n2.5-mini:free',
+    name: 'Nex AGI: Nex-N2.5-Mini (Free)',
+    shortName: 'Nex-N2.5-Mini (Free)',
+    badge: 'MỚI • Free Siêu Tốc',
+    badgeColor: 'bg-teal-100 text-teal-800',
+    desc: 'Bản rút gọn siêu nhẹ của Nex AGI. Hoàn toàn miễn phí ($0), phản hồi tức thì dưới 2s cho các phiếu in rõ nét và bảng biểu.',
+  },
+  {
     id: 'google/gemini-2.5-flash',
     name: 'Gemini 2.5 Flash',
     shortName: 'Gemini 2.5 Flash',
@@ -1585,46 +1601,96 @@ export default function Home() {
     }
   };
 
-  // Direct OpenRouter OCR (Supports 4 Cost-Effective Models)
+  // Direct OpenRouter OCR (Supports Cost-Effective & Free Models like Nex AGI)
   const scanClientOpenRouterWithBase64 = async (base64Data, mimeType, key, model) => {
+    // Tự động nén ảnh trên canvas nếu ảnh lớn để tăng tốc độ upload lên OpenRouter gấp 5-10 lần
+    let payloadBase64 = base64Data;
+    let payloadMime = mimeType;
+    if (base64Data && base64Data.length > 90000) {
+      try {
+        const compressed = await new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const maxDim = 1200;
+            let w = img.width, h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+              else { w = Math.round((w * maxDim) / h); h = maxDim; }
+            }
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+            resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg' });
+          };
+          img.onerror = () => resolve(null);
+          img.src = `data:${mimeType};base64,${base64Data}`;
+        });
+        if (compressed?.base64) {
+          payloadBase64 = compressed.base64;
+          payloadMime = compressed.mime;
+        }
+      } catch (e) {
+        console.warn('Không thể nén ảnh cho OpenRouter:', e);
+      }
+    }
+
     const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
     const rules = ['soPhieu', ...selectedColumns]
       .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
       .join('\n');
 
     const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
+      'YÊU CẦU BẮT BUỘC:\n' +
+      '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON.\n' +
+      '- Định dạng trả về duy nhất là chuỗi JSON:\n' +
+      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}\n\n' +
       'Quy tắc trích xuất quan trọng:\n' +
       '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
       '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
       '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
-      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1", hoặc dòng trên là mã và dòng dưới là quy cách) nhưng chỉ có chung 1 bộ số lượng, 1 STT hoặc 1 mã OS/PO thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất (nối tên thành 1 chuỗi hoàn chỉnh). Tuyệt đối không tách thành 2 dòng riêng biệt nếu dòng kia không có số lượng thực tế.\n' +
+      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1") nhưng chỉ có chung 1 bộ số lượng thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất.\n' +
       'Hướng dẫn cột:\n' + rules + '\n\n' +
-      'ĐỊNH DẠNG TRẢ VỀ:\n' +
-      'Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
+      'ĐỊNH DẠNG TRẢ VỀ: Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
       '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
+
+    const selectedModel = model || 'nex-agi/nex-n2.5-pro:free';
+    const reqBody = {
+      model: selectedModel,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: promptText },
+            { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } },
+          ],
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 3000,
+    };
+
+    // Tắt suy luận dài dòng cho các dòng model OpenRouter hỗ trợ reasoning (như Nex AGI) để đạt tốc độ siêu tốc 1-2s và không bị timeout
+    if (selectedModel.includes('nex') || selectedModel.includes('free') || selectedModel.includes('thinking')) {
+      reqBody.include_reasoning = false;
+      reqBody.reasoning = { effort: 'low' };
+    }
+
+    if (!selectedModel.includes('qwen')) {
+      reqBody.response_format = { type: 'json_object' };
+    }
 
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + key.trim(),
         'Content-Type': 'application/json',
-        'HTTP-Referer': typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://scanzzz.vercel.app',
-        'X-Title': 'Scan Pro Max',
+        'HTTP-Referer': typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://scanphieu.vercel.app',
+        'X-Title': 'Scan Phieu',
       },
-      body: JSON.stringify({
-        model: model || 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: promptText },
-              { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64Data } },
-            ],
-          },
-        ],
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-      }),
+      body: JSON.stringify(reqBody),
     });
 
     if (!res.ok) {
@@ -1635,46 +1701,109 @@ export default function Home() {
     }
 
     const data = await res.json();
-    const text = data.choices?.[0]?.message?.content;
+    const msg = data.choices?.[0]?.message;
+    let text = (msg?.content || '').trim();
+    if (!text && msg?.reasoning) {
+      text = msg.reasoning.trim();
+    }
+    console.log('[OpenRouter Raw Response]:', text);
     if (!text) {
       throw new Error('Không nhận được dữ liệu phản hồi từ OpenRouter');
     }
 
+    // 1. Parse JSON trực tiếp (xử lý markdown ```json ... ```)
+    const cleanText = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+    let parsed = null;
+
     try {
-      const parsed = JSON.parse(text);
+      parsed = JSON.parse(cleanText);
+    } catch {
+      const m = cleanText.match(/\{[\s\S]*\}/);
+      if (m) {
+        try {
+          parsed = JSON.parse(m[0]);
+        } catch {}
+      }
+    }
+
+    // 2. Nếu JSON hợp lệ và có chứa mảng rows hoặc items
+    if (parsed && (Array.isArray(parsed.rows) || Array.isArray(parsed.items))) {
       if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-        parsed.items = parsed.rows.map((row) => {
-          const obj = {};
-          if (Array.isArray(row)) {
+        parsed.items = parsed.rows
+          .filter((row) => Array.isArray(row) || (typeof row === 'object' && row !== null))
+          .map((row) => {
+            if (typeof row === 'object' && !Array.isArray(row)) return row;
+            const obj = {};
             selectedColumns.forEach((colKey, idx) => {
               obj[colKey] = row[idx] ?? '';
             });
-          }
-          return obj;
-        });
+            return obj;
+          });
       }
       return parsed;
-    } catch {
-      const m = text.match(/\{[\s\S]*\}/);
-      if (m) {
-        try {
-          const parsed = JSON.parse(m[0]);
-          if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-            parsed.items = parsed.rows.map((row) => {
-              const obj = {};
-              if (Array.isArray(row)) {
-                selectedColumns.forEach((colKey, idx) => {
-                  obj[colKey] = row[idx] ?? '';
-                });
-              }
-              return obj;
-            });
-          }
-          return parsed;
-        } catch {}
-      }
-      return { soPhieu: '', rows: [[text]] };
     }
+
+    // 3. Dự phòng phân tích dòng text / bullet points nếu model trả về dạng danh sách
+    let fallbackSoPhieu = '';
+    const spMatch = text.match(/(?:Số\s*phiếu|Số\s*chứng\s*từ|Số\s*XKP|Số|No\.?)[:\s]+([A-Z0-9_\-\s\/]+)/i);
+    if (spMatch) {
+      fallbackSoPhieu = spMatch[1].split('\n')[0].trim().replace(/^[:\s\-]+/, '');
+    }
+
+    const fallbackItems = [];
+    const sections = text.split(/(?:^|\n)\s*(?:\d+[\.\)]\s*(?:STT\s*\d+[:\s]*)?|STT\s*\d+[:\s]*)/i);
+    if (sections.length > 1) {
+      for (let i = 1; i < sections.length; i++) {
+        const sec = sections[i];
+        const lines = sec.split('\n').map((l) => l.trim()).filter(Boolean);
+        if (!lines.length) continue;
+        const firstLine = lines[0];
+
+        const parts = firstLine.split(',').map((p) => p.trim());
+        if (parts.length >= 3) {
+          const itemObj = {};
+          selectedColumns.forEach((col, idx) => {
+            itemObj[col] = parts[idx] ? parts[idx].replace(/^[:\s\-]+/, '') : '';
+          });
+          fallbackItems.push(itemObj);
+          continue;
+        }
+
+        let ten = firstLine.replace(/^[:\s\-]+/, '');
+        let soOSPO = '', donViTinh = '', slChungTu = '', slThucNhap = '', soPallet = '', ghiChu = '';
+        for (const l of lines) {
+          const ospoM = l.match(/(?:Số\s*O\.?S\/?PO|PO|OS)[:\s]+([^\n]+)/i);
+          if (ospoM) soOSPO = ospoM[1].trim();
+          const dvtM = l.match(/(?:ĐVT|Đơn\s*vị\s*tính)[:\s]+([^\n]+)/i);
+          if (dvtM) donViTinh = dvtM[1].trim();
+          const slctM = l.match(/(?:SL\s*chứng\s*từ|Số\s*lượng\s*chứng\s*từ)[:\s]+([^\n]+)/i);
+          if (slctM) slChungTu = slctM[1].trim();
+          const sltnM = l.match(/(?:SL\s*thực\s*nhập|Số\s*lượng\s*thực\s*nhập)[:\s]+([^\n]+)/i);
+          if (sltnM) slThucNhap = sltnM[1].trim();
+          const palM = l.match(/(?:Số\s*pallet|Pallet)[:\s]+([^\n]+)/i);
+          if (palM) soPallet = palM[1].trim();
+        }
+
+        fallbackItems.push({
+          ten: ten || '',
+          soOSPO: soOSPO || '',
+          donViTinh: donViTinh || '',
+          soLuongChungTu: slChungTu || '',
+          soLuongThucNhap: slThucNhap || '',
+          soPallet: soPallet || '',
+          ghiChu: ghiChu || '',
+        });
+      }
+    }
+
+    if (fallbackItems.length > 0) {
+      return {
+        soPhieu: fallbackSoPhieu,
+        items: fallbackItems,
+      };
+    }
+
+    throw new Error('OpenRouter chưa trích xuất được bảng hàng hóa. Vui lòng bấm Quét Lại hoặc thử chọn mô hình Nex-N2.5-Pro / Gemini 2.5 Flash.');
   };
 
   // Test APInex Connection
@@ -1705,42 +1834,86 @@ export default function Home() {
 
   // Direct APInex OCR (Supports Free Top-Tier Vision Models)
   const scanClientApinexWithBase64 = async (base64Data, mimeType, key, model) => {
+    // Tự động nén ảnh trên canvas nếu ảnh lớn để tăng tốc độ upload lên APInex gấp 5-10 lần
+    let payloadBase64 = base64Data;
+    let payloadMime = mimeType;
+    if (base64Data && base64Data.length > 90000) {
+      try {
+        const compressed = await new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const maxDim = 1200;
+            let w = img.width, h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+              else { w = Math.round((w * maxDim) / h); h = maxDim; }
+            }
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+            resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg' });
+          };
+          img.onerror = () => resolve(null);
+          img.src = `data:${mimeType};base64,${base64Data}`;
+        });
+        if (compressed?.base64) {
+          payloadBase64 = compressed.base64;
+          payloadMime = compressed.mime;
+        }
+      } catch (e) {
+        console.warn('Không thể nén ảnh cho APInex:', e);
+      }
+    }
+
     const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
     const rules = ['soPhieu', ...selectedColumns]
       .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
       .join('\n');
 
     const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
+      'YÊU CẦU BẮT BUỘC:\n' +
+      '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON.\n' +
+      '- Định dạng trả về duy nhất là chuỗi JSON:\n' +
+      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}\n\n' +
       'Quy tắc trích xuất quan trọng:\n' +
       '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
       '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
       '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
-      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1", hoặc dòng trên là mã và dòng dưới là quy cách) nhưng chỉ có chung 1 bộ số lượng, 1 STT hoặc 1 mã OS/PO thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất (nối tên thành 1 chuỗi hoàn chỉnh). Tuyệt đối không tách thành 2 dòng riêng biệt nếu dòng kia không có số lượng thực tế.\n' +
+      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1") nhưng chỉ có chung 1 bộ số lượng thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất.\n' +
       'Hướng dẫn cột:\n' + rules + '\n\n' +
-      'ĐỊNH DẠNG TRẢ VỀ:\n' +
-      'Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
+      'ĐỊNH DẠNG TRẢ VỀ: Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
       '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
+
+    const selectedModel = model || 'free/gemini-3.8-flash';
+    const reqBody = {
+      key: key.trim(),
+      model: selectedModel,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: promptText },
+            { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } },
+          ],
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 3000,
+    };
+
+    if (!selectedModel.includes('qwen')) {
+      reqBody.response_format = { type: 'json_object' };
+    }
 
     const res = await fetch('/api/apinex', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        key: key.trim(),
-        model: model || 'free/gemini-3.8-flash',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: promptText },
-              { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64Data } },
-            ],
-          },
-        ],
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-      }),
+      body: JSON.stringify(reqBody),
     });
 
     if (!res.ok) {
@@ -1751,46 +1924,108 @@ export default function Home() {
     }
 
     const data = await res.json();
-    const text = data.choices?.[0]?.message?.content;
+    const msg = data.choices?.[0]?.message;
+    let text = (msg?.content || '').trim();
+    if (!text && msg?.reasoning) {
+      text = msg.reasoning.trim();
+    }
     if (!text) {
       throw new Error('Không nhận được dữ liệu phản hồi từ APInex');
     }
 
+    // 1. Parse JSON trực tiếp (xử lý markdown ```json ... ```)
+    const cleanText = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+    let parsed = null;
+
     try {
-      const parsed = JSON.parse(text);
+      parsed = JSON.parse(cleanText);
+    } catch {
+      const m = cleanText.match(/\{[\s\S]*\}/);
+      if (m) {
+        try {
+          parsed = JSON.parse(m[0]);
+        } catch {}
+      }
+    }
+
+    // 2. Nếu JSON hợp lệ và có chứa mảng rows hoặc items
+    if (parsed && (Array.isArray(parsed.rows) || Array.isArray(parsed.items))) {
       if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-        parsed.items = parsed.rows.map((row) => {
-          const obj = {};
-          if (Array.isArray(row)) {
+        parsed.items = parsed.rows
+          .filter((row) => Array.isArray(row) || (typeof row === 'object' && row !== null))
+          .map((row) => {
+            if (typeof row === 'object' && !Array.isArray(row)) return row;
+            const obj = {};
             selectedColumns.forEach((colKey, idx) => {
               obj[colKey] = row[idx] ?? '';
             });
-          }
-          return obj;
-        });
+            return obj;
+          });
       }
       return parsed;
-    } catch {
-      const m = text.match(/\{[\s\S]*\}/);
-      if (m) {
-        try {
-          const parsed = JSON.parse(m[0]);
-          if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-            parsed.items = parsed.rows.map((row) => {
-              const obj = {};
-              if (Array.isArray(row)) {
-                selectedColumns.forEach((colKey, idx) => {
-                  obj[colKey] = row[idx] ?? '';
-                });
-              }
-              return obj;
-            });
-          }
-          return parsed;
-        } catch {}
-      }
-      return { soPhieu: '', rows: [[text]] };
     }
+
+    // 3. Dự phòng phân tích dòng text / bullet points nếu model trả về dạng danh sách
+    let fallbackSoPhieu = '';
+    const spMatch = text.match(/(?:Số\s*phiếu|Số\s*chứng\s*từ|Số\s*XKP|Số|No\.?)[:\s]+([A-Z0-9_\-\s\/]+)/i);
+    if (spMatch) {
+      fallbackSoPhieu = spMatch[1].split('\n')[0].trim().replace(/^[:\s\-]+/, '');
+    }
+
+    const fallbackItems = [];
+    const sections = text.split(/(?:^|\n)\s*(?:\d+[\.\)]\s*(?:STT\s*\d+[:\s]*)?|STT\s*\d+[:\s]*)/i);
+    if (sections.length > 1) {
+      for (let i = 1; i < sections.length; i++) {
+        const sec = sections[i];
+        const lines = sec.split('\n').map((l) => l.trim()).filter(Boolean);
+        if (!lines.length) continue;
+        const firstLine = lines[0];
+
+        const parts = firstLine.split(',').map((p) => p.trim());
+        if (parts.length >= 3) {
+          const itemObj = {};
+          selectedColumns.forEach((col, idx) => {
+            itemObj[col] = parts[idx] ? parts[idx].replace(/^[:\s\-]+/, '') : '';
+          });
+          fallbackItems.push(itemObj);
+          continue;
+        }
+
+        let ten = firstLine.replace(/^[:\s\-]+/, '');
+        let soOSPO = '', donViTinh = '', slChungTu = '', slThucNhap = '', soPallet = '', ghiChu = '';
+        for (const l of lines) {
+          const ospoM = l.match(/(?:Số\s*O\.?S\/?PO|PO|OS)[:\s]+([^\n]+)/i);
+          if (ospoM) soOSPO = ospoM[1].trim();
+          const dvtM = l.match(/(?:ĐVT|Đơn\s*vị\s*tính)[:\s]+([^\n]+)/i);
+          if (dvtM) donViTinh = dvtM[1].trim();
+          const slctM = l.match(/(?:SL\s*chứng\s*từ|Số\s*lượng\s*chứng\s*từ)[:\s]+([^\n]+)/i);
+          if (slctM) slChungTu = slctM[1].trim();
+          const sltnM = l.match(/(?:SL\s*thực\s*nhập|Số\s*lượng\s*thực\s*nhập)[:\s]+([^\n]+)/i);
+          if (sltnM) slThucNhap = sltnM[1].trim();
+          const palM = l.match(/(?:Số\s*pallet|Pallet)[:\s]+([^\n]+)/i);
+          if (palM) soPallet = palM[1].trim();
+        }
+
+        fallbackItems.push({
+          ten: ten || '',
+          soOSPO: soOSPO || '',
+          donViTinh: donViTinh || '',
+          soLuongChungTu: slChungTu || '',
+          soLuongThucNhap: slThucNhap || '',
+          soPallet: soPallet || '',
+          ghiChu: ghiChu || '',
+        });
+      }
+    }
+
+    if (fallbackItems.length > 0) {
+      return {
+        soPhieu: fallbackSoPhieu,
+        items: fallbackItems,
+      };
+    }
+
+    throw new Error('APInex chưa trích xuất được bảng hàng hóa. Vui lòng bấm Quét Lại hoặc thử chọn mô hình khác.');
   };
 
   // Test Kira AI Connection
@@ -1863,14 +2098,17 @@ export default function Home() {
       .join('\n');
 
     const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
+      'YÊU CẦU BẮT BUỘC:\n' +
+      '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON.\n' +
+      '- Định dạng trả về duy nhất là chuỗi JSON:\n' +
+      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}\n\n' +
       'Quy tắc trích xuất quan trọng:\n' +
       '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
       '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
       '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
-      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1", hoặc dòng trên là mã và dòng dưới là quy cách) nhưng chỉ có chung 1 bộ số lượng, 1 STT hoặc 1 mã OS/PO thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất (nối tên thành 1 chuỗi hoàn chỉnh). Tuyệt đối không tách thành 2 dòng riêng biệt nếu dòng kia không có số lượng thực tế.\n' +
+      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1") nhưng chỉ có chung 1 bộ số lượng thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất.\n' +
       'Hướng dẫn cột:\n' + rules + '\n\n' +
-      'ĐỊNH DẠNG TRẢ VỀ:\n' +
-      'Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
+      'ĐỊNH DẠNG TRẢ VỀ: Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
       '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
 
     const isFree = effectiveModel.includes('-free') || effectiveModel.startsWith('kira-');
@@ -1887,9 +2125,9 @@ export default function Home() {
         },
       ],
       temperature: 0.1,
+      max_tokens: 3000,
     };
 
-    reqPayload.max_tokens = 2500;
     if (!effectiveModel.includes('qwen')) {
       reqPayload.response_format = { type: 'json_object' };
     }
@@ -1919,47 +2157,103 @@ export default function Home() {
       throw new Error('Không nhận được dữ liệu phản hồi từ Kira AI. Vui lòng thử lại.');
     }
 
+    // 1. Parse JSON trực tiếp (xử lý khối markdown ```json ... ```)
+    const cleanText = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+    let parsed = null;
+
     try {
-      const parsed = JSON.parse(text);
+      parsed = JSON.parse(cleanText);
+    } catch {
+      const m = cleanText.match(/\{[\s\S]*\}/);
+      if (m) {
+        try {
+          parsed = JSON.parse(m[0]);
+        } catch {}
+      }
+    }
+
+    // 2. Nếu JSON hợp lệ và có chứa mảng rows hoặc items
+    if (parsed && (Array.isArray(parsed.rows) || Array.isArray(parsed.items))) {
       if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-        parsed.items = parsed.rows.map((row) => {
-          if (typeof row === 'object' && row !== null && !Array.isArray(row)) {
-            return row;
-          }
-          const obj = {};
-          if (Array.isArray(row)) {
+        parsed.items = parsed.rows
+          .filter((row) => Array.isArray(row) || (typeof row === 'object' && row !== null))
+          .map((row) => {
+            if (typeof row === 'object' && !Array.isArray(row)) return row;
+            const obj = {};
             selectedColumns.forEach((colKey, idx) => {
               obj[colKey] = row[idx] ?? '';
             });
-          }
-          return obj;
-        });
+            return obj;
+          });
       }
       return parsed;
-    } catch {
-      const m = text.match(/\{[\s\S]*\}/);
-      if (m) {
-        try {
-          const parsed = JSON.parse(m[0]);
-          if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-            parsed.items = parsed.rows.map((row) => {
-              if (typeof row === 'object' && row !== null && !Array.isArray(row)) {
-                return row;
-              }
-              const obj = {};
-              if (Array.isArray(row)) {
-                selectedColumns.forEach((colKey, idx) => {
-                  obj[colKey] = row[idx] ?? '';
-                });
-              }
-              return obj;
-            });
-          }
-          return parsed;
-        } catch {}
-      }
-      return { soPhieu: '', rows: [[text]] };
     }
+
+    // 3. Dự phòng thông minh: Nếu AI sinh text/suy luận dạng danh sách (STT 1: ..., 1. ..., bullet points)
+    // Tự động phân tích và tách thành từng dòng riêng biệt thay vì gom toàn bộ văn bản vào 1 dòng
+    let fallbackSoPhieu = '';
+    const spMatch = text.match(/(?:Số\s*phiếu|Số\s*chứng\s*từ|Số\s*XKP|Số|No\.?)[:\s]+([A-Z0-9_\-\s\/]+)/i);
+    if (spMatch) {
+      fallbackSoPhieu = spMatch[1].split('\n')[0].trim().replace(/^[:\s\-]+/, '');
+    }
+
+    const fallbackItems = [];
+    const sections = text.split(/(?:^|\n)\s*(?:\d+[\.\)]\s*(?:STT\s*\d+[:\s]*)?|STT\s*\d+[:\s]*)/i);
+    if (sections.length > 1) {
+      for (let i = 1; i < sections.length; i++) {
+        const sec = sections[i];
+        const lines = sec.split('\n').map((l) => l.trim()).filter(Boolean);
+        if (!lines.length) continue;
+        const firstLine = lines[0];
+
+        // Trường hợp các trường phân cách bằng dấu phẩy: Mã hàng, Số PO, ĐVT, SL chứng từ, SL thực nhập, Pallet
+        const parts = firstLine.split(',').map((p) => p.trim());
+        if (parts.length >= 3) {
+          const itemObj = {};
+          selectedColumns.forEach((col, idx) => {
+            itemObj[col] = parts[idx] ? parts[idx].replace(/^[:\s\-]+/, '') : '';
+          });
+          fallbackItems.push(itemObj);
+          continue;
+        }
+
+        // Trường hợp từng trường nằm ở các dòng gạch đầu dòng con
+        let ten = firstLine.replace(/^[:\s\-]+/, '');
+        let soOSPO = '', donViTinh = '', slChungTu = '', slThucNhap = '', soPallet = '', ghiChu = '';
+        for (const l of lines) {
+          const ospoM = l.match(/(?:Số\s*O\.?S\/?PO|PO|OS)[:\s]+([^\n]+)/i);
+          if (ospoM) soOSPO = ospoM[1].trim();
+          const dvtM = l.match(/(?:ĐVT|Đơn\s*vị\s*tính)[:\s]+([^\n]+)/i);
+          if (dvtM) donViTinh = dvtM[1].trim();
+          const slctM = l.match(/(?:SL\s*chứng\s*từ|Số\s*lượng\s*chứng\s*từ)[:\s]+([^\n]+)/i);
+          if (slctM) slChungTu = slctM[1].trim();
+          const sltnM = l.match(/(?:SL\s*thực\s*nhập|Số\s*lượng\s*thực\s*nhập)[:\s]+([^\n]+)/i);
+          if (sltnM) slThucNhap = sltnM[1].trim();
+          const palM = l.match(/(?:Số\s*pallet|Pallet)[:\s]+([^\n]+)/i);
+          if (palM) soPallet = palM[1].trim();
+        }
+
+        fallbackItems.push({
+          ten: ten || '',
+          soOSPO: soOSPO || '',
+          donViTinh: donViTinh || '',
+          soLuongChungTu: slChungTu || '',
+          soLuongThucNhap: slThucNhap || '',
+          soPallet: soPallet || '',
+          ghiChu: ghiChu || '',
+        });
+      }
+    }
+
+    if (fallbackItems.length > 0) {
+      return {
+        soPhieu: fallbackSoPhieu,
+        items: fallbackItems,
+      };
+    }
+
+    // 4. Nếu không thể bóc tách cấu trúc dòng hàng nào, báo lỗi rõ ràng để người dùng quét lại, tuyệt đối không gộp bừa vào 1 dòng
+    throw new Error('AI chưa trích xuất được bảng hàng hóa. Vui lòng bấm Quét Lại hoặc chọn mô hình qwen3.8-flash-free / gemini-3.8-flash.');
   };
 
   // Direct Gemini OCR with Google Generative AI (Optimized Compact 2D Matrix Output)
@@ -4937,13 +5231,12 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           <div className="text-[11px] font-semibold text-slate-500">Mô hình MIỄN PHÍ của Kira AI (100M tokens/ngày):</div>
                           <div className="flex flex-wrap gap-1.5">
                             {[
-                              { id: 'qwen3.8-27b-free', label: '🌟 qwen3.8-27b-free (Khuyên dùng)' },
-                              { id: 'qwen3.8-flash-free', label: '⚡ qwen3.8-flash-free (Nhanh)' },
+                              { id: 'qwen3.8-flash-free', label: '⚡ qwen3.8-flash-free (Free • Nhanh & Ổn Định)' },
+                              { id: 'gemini-3.8-flash', label: '🚀 gemini-3.8-flash (Cực Chuẩn & Nhanh)' },
+                              { id: 'gemini-3.6-flash', label: '🌟 gemini-3.6-flash (Chuẩn)' },
                               { id: 'glm-5.3-flash-free', label: '✨ glm-5.3-flash-free' },
-                              { id: 'mimo-v2.5-free', label: 'mimo-v2.5-free' },
-                              { id: 'hy3-free', label: 'hy3-free' },
+                              { id: 'qwen3.8-27b-free', label: 'qwen3.8-27b-free' },
                               { id: 'kira-auto', label: 'kira-auto' },
-                              { id: 'gemini-3.6-flash', label: 'gemini-3.6-flash (VIP)' }
                             ].map((sug) => (
                               <button
                                 key={sug.id}
@@ -4964,7 +5257,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                             ))}
                           </div>
                           <p className="text-[10px] text-amber-900 bg-amber-100/70 p-2 rounded-lg mt-1 leading-normal">
-                            💡 <strong>Mẹo dùng Free Model mượt mà:</strong> Các mô hình miễn phí của Kira AI có giới hạn tần suất (Rate Limit). Nếu gặp lỗi 502/500, vui lòng chờ khoảng 3-5 giây rồi bấm quét lại, hoặc chuyển đổi linh hoạt giữa <code>qwen3.8-27b-free</code> và <code>qwen3.8-flash-free</code>.
+                            💡 <strong>Mẹo dùng mượt mà:</strong> Với mô hình Free, hãy chọn <code>qwen3.8-flash-free</code> để có tốc độ phản hồi nhanh nhất (khoảng 5-8 giây) và tránh bị timeout. Hoặc bạn có thể chọn <code>gemini-3.8-flash</code> để đạt độ chuẩn xác cao nhất đối với chữ viết tay.
                           </p>
                         </div>
                       </div>
