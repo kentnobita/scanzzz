@@ -62,10 +62,19 @@ function maskSyncCode(code) {
   if (!code || typeof code !== 'string') return 'Chưa liên kết';
   const clean = code.trim();
   if (!clean) return 'Chưa liên kết';
-  if (clean.length <= 3) return '***';
-  if (clean.length <= 5) return clean.slice(0, 1) + '***' + clean.slice(-1);
-  return clean.slice(0, 2) + '***' + clean.slice(-2);
+  if (clean.length <= 3) return '•••';
+  if (clean.length <= 5) return clean.slice(0, 1) + '•••' + clean.slice(-1);
+  return clean.slice(0, 2) + '•••' + clean.slice(-2);
 }
+
+function sanitizeForMd(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/\*/g, '×')
+    .replace(/_/g, '-')
+    .replace(/[`\[\]]/g, '');
+}
+
 
 function getBotConfig() {
   try {
@@ -806,30 +815,50 @@ async function syncToGoogleSheet(sheetUrl, soPhieu, items) {
 }
 
 async function sendTelegram(method, body) {
-  const res = await fetch(`${TELEGRAM_API}/${method}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  return res.json();
+  try {
+    const res = await fetch(`${TELEGRAM_API}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!data.ok && body && body.parse_mode && data.description && data.description.includes("can't parse entities")) {
+      console.warn(`[sendTelegram] Lỗi Markdown (${data.description}), Akko tự động chuyển sang gửi văn bản thuần...`);
+      const fallbackBody = { ...body };
+      delete fallbackBody.parse_mode;
+      const fallbackRes = await fetch(`${TELEGRAM_API}/${method}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fallbackBody)
+      });
+      return await fallbackRes.json();
+    }
+    if (!data.ok) {
+      console.error(`[sendTelegram error] ${method}:`, data);
+    }
+    return data;
+  } catch (err) {
+    console.error(`[sendTelegram network error] ${method}:`, err.message);
+    return { ok: false, error: err.message };
+  }
 }
 
 function buildSummaryText(soPhieu, items, model, sheetStatusText, historyId) {
   let summaryText = `📋 *BÁO CÁO PHIẾU XUẤT KHO CHO SENPAI NÈ!* 🌸✨\n`;
-  summaryText += `• *Số phiếu:* ` + (soPhieu || 'Không rõ') + `\n`;
+  summaryText += `• *Số phiếu:* \`${soPhieu || 'Không rõ'}\`\n`;
   summaryText += `• *Số mặt hàng:* ` + items.length + ` dòng\n`;
-  summaryText += `• *Phép thuật AI:* ` + model + `\n`;
+  summaryText += `• *Phép thuật AI:* \`${model}\`\n`;
   if (sheetStatusText) summaryText += `• *Google Sheet:* ` + sheetStatusText + `\n`;
   summaryText += '\n📝 *Danh sách chi tiết Akko đọc được đây ạ:*\n';
 
   items.forEach((it, idx) => {
-    let line = `${idx + 1}. *${it.ten || '---'}*`;
-    if (it.soOSPO) line += ` | PO: ${it.soOSPO}`;
+    let line = `${idx + 1}. *${sanitizeForMd(it.ten) || '---'}*`;
+    if (it.soOSPO) line += ` | PO: ${sanitizeForMd(it.soOSPO)}`;
     const qty = it.soLuongChungTu || it.soLuongThucNhap;
     if (qty) line += ` | SL: ${qty}`;
-    if (it.donViTinh) line += ` ${it.donViTinh}`;
-    if (it.soPallet) line += ` | Pallet: ${it.soPallet}`;
-    if (it.ghiChu) line += ` (${it.ghiChu})`;
+    if (it.donViTinh) line += ` ${sanitizeForMd(it.donViTinh)}`;
+    if (it.soPallet) line += ` | Pallet: ${sanitizeForMd(it.soPallet)}`;
+    if (it.ghiChu) line += ` (${sanitizeForMd(it.ghiChu)})`;
     summaryText += line + '\n';
   });
 
@@ -907,7 +936,7 @@ async function processDocument(chatId, doc, existingWaitMsgId = null, originalUs
         await sendTelegram('editMessageText', {
           chat_id: chatId,
           message_id: waitMsgId,
-          text: `📄 Oa! File PDF của Senpai có tận *${totalPages} trang* lận! Akko bắt đầu quét bằng phép thuật *${info.model}* (${info.providerName}) đây ạ~ ٩(◕‿◕｡)۶`,
+          text: `📄 Oa! File PDF của Senpai có tận *${totalPages} trang* lận! Akko bắt đầu quét bằng phép thuật \`${info.model}\` (${info.providerName}) đây ạ~ ٩(◕‿◕｡)۶`,
           parse_mode: 'Markdown'
         });
       }
@@ -919,7 +948,7 @@ async function processDocument(chatId, doc, existingWaitMsgId = null, originalUs
           await sendTelegram('editMessageText', {
             chat_id: chatId,
             message_id: waitMsgId,
-            text: `⏳ Akko đang chăm chỉ đọc trang *${p + 1}/${totalPages}* bằng mô hình *${info.model}* nè Senpai... 🌸`,
+            text: `⏳ Akko đang chăm chỉ đọc trang *${p + 1}/${totalPages}* bằng mô hình \`${info.model}\` nè Senpai... 🌸`,
             parse_mode: 'Markdown'
           });
         }
@@ -1001,20 +1030,20 @@ async function processDocument(chatId, doc, existingWaitMsgId = null, originalUs
 
         const pageRangeStr = grp.pages.length === 1 ? `Trang ${grp.pages[0]}` : `Trang ${grp.pages.join(', ')}`;
         let summaryText = `📄 *PHIẾU ${gIdx + 1}/${groups.length} CHO SENPAI* (${pageRangeStr})\n`;
-        summaryText += `• *Số phiếu:* ` + (grp.soPhieu || 'Không rõ') + `\n`;
+        summaryText += `• *Số phiếu:* \`${grp.soPhieu || 'Không rõ'}\`\n`;
         summaryText += `• *Số mặt hàng:* ` + grp.items.length + ` dòng\n`;
-        summaryText += `• *Phép thuật AI:* ` + info.model + ` (` + info.providerName + `)\n`;
+        summaryText += `• *Phép thuật AI:* \`${info.model}\` (${info.providerName})\n`;
         if (sheetStatusText) summaryText += `• *Google Sheet:* ` + sheetStatusText + `\n`;
         summaryText += '\n📝 *Danh sách chi tiết Akko đọc được đây ạ:*\n';
 
         grp.items.slice(0, 25).forEach((it, idx) => {
-          let line = `${idx + 1}. *${it.ten || '---'}*`;
-          if (it.soOSPO) line += ` | PO: ${it.soOSPO}`;
+          let line = `${idx + 1}. *${sanitizeForMd(it.ten) || '---'}*`;
+          if (it.soOSPO) line += ` | PO: ${sanitizeForMd(it.soOSPO)}`;
           const qty = it.soLuongChungTu || it.soLuongThucNhap;
           if (qty) line += ` | SL: ${qty}`;
-          if (it.donViTinh) line += ` ${it.donViTinh}`;
-          if (it.soPallet) line += ` | Pallet: ${it.soPallet}`;
-          if (it.ghiChu) line += ` (${it.ghiChu})`;
+          if (it.donViTinh) line += ` ${sanitizeForMd(it.donViTinh)}`;
+          if (it.soPallet) line += ` | Pallet: ${sanitizeForMd(it.soPallet)}`;
+          if (it.ghiChu) line += ` (${sanitizeForMd(it.ghiChu)})`;
           summaryText += line + '\n';
         });
 
@@ -1056,7 +1085,7 @@ async function processDocument(chatId, doc, existingWaitMsgId = null, originalUs
         await sendTelegram('editMessageText', {
           chat_id: chatId,
           message_id: waitMsgId,
-          text: `⏳ Akko đang quét bằng mô hình *${info.model}* (${info.providerName}) nè Senpai... 🌸`,
+          text: `⏳ Akko đang quét bằng mô hình \`${info.model}\` (${info.providerName}) nè Senpai... 🌸`,
           parse_mode: 'Markdown'
         });
       }
@@ -1199,7 +1228,7 @@ async function processPhoto(chatId, bestPhoto, existingWaitMsgId = null, origina
       await sendTelegram('editMessageText', {
         chat_id: chatId,
         message_id: waitMsgId,
-        text: `⏳ Akko đang tập trung đọc phiếu bằng mô hình *${info.model}* (${info.providerName}) nè Senpai... 🌸`,
+        text: `⏳ Akko đang tập trung đọc phiếu bằng mô hình \`${info.model}\` (${info.providerName}) nè Senpai... 🌸`,
         parse_mode: 'Markdown'
       });
     }
@@ -1396,11 +1425,11 @@ async function handleMessage(msg) {
     return sendTelegram('sendMessage', {
       chat_id: chatId,
       text: '👋 *Yahhoo~! Chào mừng Senpai đến với bé Akko!* 📦🪄✨\n\n' +
-        'Em là **Akko** - phù thủy trợ lý AI chuyên quét và đọc phiếu xuất kho siêu tốc của Senpai đây ạ! (≧◡≦) ♡\n\n' +
+        'Em là *Akko* - phù thủy trợ lý AI chuyên quét và đọc phiếu xuất kho siêu tốc của Senpai đây ạ! (≧◡≦) ♡\n\n' +
         '📸 *Cách sai bảo Akko:*\n' +
         '• Senpai chỉ cần thả nhẹ ảnh hoặc file PDF phiếu kho vào đây (hoặc vào group), Akko sẽ tự động đọc chuẩn từng chữ viết tay và bay đi lưu vào Google Sheet liền nha!\n' +
         '• Khi làm xong việc, Akko sẽ tự dọn dẹp ảnh/file gốc để căn phòng chat của Senpai luôn sạch sẽ ngăn nắp nha~ 🧹\n' +
-        '• Nếu mạng giật lag rớt gói tin, Akko có sẵn nút *[🔄 Akko Thử Quét Lại]* để Senpai bấm cái là Akko làm lại liền!\n\n' +
+        '• Nếu mạng giật lag rớt gói tin, Akko có sẵn nút 🔄 *Thử Quét Lại* để Senpai bấm cái là Akko làm lại liền!\n\n' +
         '🪄 *Phép thuật quản lý của Akko:*\n' +
         '• `/provider <gemini|apinex|kira|openrouter>`: Đổi phép thuật AI (hoặc gõ số 1-4 nè)\n' +
         '• `/model <Tên>`: Chọn mô hình AI mà Senpai thích\n' +
@@ -1408,7 +1437,7 @@ async function handleMessage(msg) {
         '• `/status`: Xem Akko đang có những gì trong balo\n' +
         '• `/sync <Mã>`: Kéo toàn bộ phép thuật từ Web về (Ví dụ: `/sync KHO-01`)\n' +
         '• `/sheet <Link>`: Cập nhật link Google Sheet của Senpai\n\n' +
-        `🌸 *Hiện tại:* Phép thuật *${info.providerName}* | Mô hình *${info.model}*`,
+        `🌸 *Hiện tại:* Phép thuật *${info.providerName}* | Mô hình \`${info.model}\``,
       parse_mode: 'Markdown'
     });
   }
@@ -1426,17 +1455,17 @@ async function handleMessage(msg) {
       text: '⚙️ *BẢNG TRẠNG THÁI CỦA BÉ AKKO NÈ SENPAI:* 🌸✨\n\n' +
         `🤖 *AI ĐANG HOẠT ĐỘNG:*\n` +
         `• Phép thuật chính: *${info.providerName.toUpperCase()}* 🎯\n` +
-        `• Mô hình đang chạy: *${info.model}* ✨\n\n` +
+        `• Mô hình đang chạy: \`${info.model}\` ✨\n\n` +
         `📋 *DANH SÁCH MÔ HÌNH AKKO ĐANG CÓ:*\n` +
-        `• Google Gemini: \`${cfg.geminiModel || 'gemini-3.6-flash'}\` (${maskedGeminiKey})\n` +
-        `• APInex: \`${cfg.apinexModel || 'free/gemini-3.8-flash'}\` (${maskedApxKey})\n` +
-        `• Kira AI: \`${cfg.kiraModel || 'qwen3.8-27b-free'}\` (${maskedKiraKey})\n` +
-        `• OpenRouter: \`${cfg.openRouterModel || 'nex-agi/nex-n2.5-pro:free'}\` (${maskedOrKey})\n\n` +
+        `• Google Gemini: \`${cfg.geminiModel || 'gemini-3.6-flash'}\` (\`${maskedGeminiKey}\`)\n` +
+        `• APInex: \`${cfg.apinexModel || 'free/gemini-3.8-flash'}\` (\`${maskedApxKey}\`)\n` +
+        `• Kira AI: \`${cfg.kiraModel || 'qwen3.8-27b-free'}\` (\`${maskedKiraKey}\`)\n` +
+        `• OpenRouter: \`${cfg.openRouterModel || 'nex-agi/nex-n2.5-pro:free'}\` (\`${maskedOrKey}\`)\n\n` +
         `📊 *GOOGLE SHEET:*\n` +
         `• Trạng thái: ${cfg.googleSheetUrl ? '✅ Đã kết nối sẵn sàng' : '❌ Chưa có link nè Senpai'}\n` +
         `• Tự động đẩy: *${cfg.autoSyncSheet ? 'BẬT' : 'TẮT'}*\n\n` +
         `☁️ *MÃ CLOUD SYNC:*\n` +
-        `• Trạng thái: *${maskSyncCode(cfg.cloudSyncCode)}* 🔒\n\n` +
+        `• Trạng thái: \`${maskSyncCode(cfg.cloudSyncCode)}\` 🔒\n\n` +
         '👉 Senpai gõ `/sync <Mã>` để Akko cập nhật nhanh từ Web nha!\n' +
         '👉 Gõ `/provider <1-4>` để đổi nhà cung cấp AI cái rụp nè~',
       parse_mode: 'Markdown'
@@ -1500,7 +1529,7 @@ async function handleMessage(msg) {
       if (!cloudData) {
         return sendTelegram('sendMessage', {
           chat_id: chatId,
-          text: `❌ Huhu, Akko không tìm thấy dữ liệu cho mã [${maskSyncCode(code)}] trên Cloud (https://scanzzz.vercel.app) hoặc mã đã hết hạn rùi Senpai ơi! (｡•́︿•̀｡)\n\n` +
+          text: `❌ Huhu, Akko không tìm thấy dữ liệu cho mã 【${maskSyncCode(code)}】 trên Cloud (https://scanzzz.vercel.app) hoặc mã đã hết hạn rùi Senpai ơi! (｡•́︿•̀｡)\n\n` +
             `👉 *Senpai thử thế này xem sao nha:*\n` +
             `1. Mở Web (https://scanzzz.vercel.app hoặc localhost:3000), vào Cài đặt ⚙️ -> bấm *Lưu lên Cloud* với mã này.\n` +
             `2. Hoặc nếu chạy khác mạng, dùng lệnh \`/server <link_web>\` để chỉ đường cho Akko.\n` +
@@ -1563,10 +1592,10 @@ async function handleMessage(msg) {
       const info = getActiveProviderInfo(cfg);
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: `🎉 *Yatta~! Akko đã đồng bộ thành công từ Cloud [${maskSyncCode(code)}] rồi nè Senpai ơi!* ٩(◕‿◕｡)۶\n\n` +
+        text: `🎉 *Yatta~! Akko đã đồng bộ thành công từ Cloud* 【${maskSyncCode(code)}】 *rồi nè Senpai ơi!* ٩(◕‿◕｡)۶\n\n` +
           `• Nguồn máy chủ: \`${matchedSource}\`\n` +
           `• Nhà cung cấp đang chọn: *${info.providerName.toUpperCase()}* 🎯\n` +
-          `• Mô hình AI đang chạy: *${info.model}*\n` +
+          `• Mô hình AI đang chạy: \`${info.model}\`\n` +
           `• Model APInex: \`${cfg.apinexModel || 'free/gemini-3.8-flash'}\`\n` +
           `• Model Kira AI: \`${cfg.kiraModel || 'qwen3.8-27b-free'}\`\n` +
           `• Model OpenRouter: \`${cfg.openRouterModel || 'nex-agi/nex-n2.5-pro:free'}\`\n` +
@@ -1613,7 +1642,7 @@ async function handleMessage(msg) {
       saveBotConfig(cfg);
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: `✅ Dạ Senpai! Akko đã chuyển sang dùng sức mạnh của *Google Gemini* (Mô hình: *${cfg.geminiModel || 'gemini-3.6-flash'}*) rồi nè! ⚡`,
+        text: `✅ Dạ Senpai! Akko đã chuyển sang dùng sức mạnh của *Google Gemini* (Mô hình: \`${cfg.geminiModel || 'gemini-3.6-flash'}\`) rồi nè! ⚡`,
         parse_mode: 'Markdown'
       });
     } else if (prov === 'apinex' || prov === 'apx' || prov === '2') {
@@ -1621,7 +1650,7 @@ async function handleMessage(msg) {
       saveBotConfig(cfg);
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: `✅ Tuân lệnh! Akko đã chuyển sang nhà cung cấp *APInex* (Mô hình: *${cfg.apinexModel || 'free/gemini-3.8-flash'}*) nha Senpai! 🔥`,
+        text: `✅ Tuân lệnh! Akko đã chuyển sang nhà cung cấp *APInex* (Mô hình: \`${cfg.apinexModel || 'free/gemini-3.8-flash'}\`) nha Senpai! 🔥`,
         parse_mode: 'Markdown'
       });
     } else if (prov === 'kira' || prov === 'kiraai' || prov === '3') {
@@ -1629,7 +1658,7 @@ async function handleMessage(msg) {
       saveBotConfig(cfg);
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: `✅ Oki Senpai! Akko đã kết nối sang *Kira AI* (Mô hình: *${cfg.kiraModel || 'qwen3.8-27b-free'}*) rồi nè! 🌟`,
+        text: `✅ Oki Senpai! Akko đã kết nối sang *Kira AI* (Mô hình: \`${cfg.kiraModel || 'qwen3.8-27b-free'}\`) rồi nè! 🌟`,
         parse_mode: 'Markdown'
       });
     } else if (prov === 'openrouter' || prov === 'or' || prov === '4') {
@@ -1637,7 +1666,7 @@ async function handleMessage(msg) {
       saveBotConfig(cfg);
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: `✅ Rõ ạ! Akko đã chuyển sang mạng lưới *OpenRouter* (Mô hình: *${cfg.openRouterModel || 'nex-agi/nex-n2.5-pro:free'}*) nha Senpai! 🌐`,
+        text: `✅ Rõ ạ! Akko đã chuyển sang mạng lưới *OpenRouter* (Mô hình: \`${cfg.openRouterModel || 'nex-agi/nex-n2.5-pro:free'}\`) nha Senpai! 🌐`,
         parse_mode: 'Markdown'
       });
     } else {
@@ -1645,11 +1674,11 @@ async function handleMessage(msg) {
       return sendTelegram('sendMessage', {
         chat_id: chatId,
         text: '💡 Senpai muốn Akko dùng AI nào nè? Gõ `/provider <gemini|apinex|kira|openrouter>` (hoặc gõ số 1-4 nha):\n' +
-          `• 1: Google Gemini (${cfg.geminiModel || 'gemini-3.6-flash'})\n` +
-          `• 2: APInex (${cfg.apinexModel || 'free/gemini-3.8-flash'})\n` +
-          `• 3: Kira AI (${cfg.kiraModel || 'qwen3.8-27b-free'})\n` +
-          `• 4: OpenRouter (${cfg.openRouterModel || 'nex-agi/nex-n2.5-pro:free'})\n\n` +
-          `🎯 Hiện tại Akko đang dùng: *${info.providerName}* (${info.model})`,
+          `• 1: Google Gemini (\`${cfg.geminiModel || 'gemini-3.6-flash'}\`)\n` +
+          `• 2: APInex (\`${cfg.apinexModel || 'free/gemini-3.8-flash'}\`)\n` +
+          `• 3: Kira AI (\`${cfg.kiraModel || 'qwen3.8-27b-free'}\`)\n` +
+          `• 4: OpenRouter (\`${cfg.openRouterModel || 'nex-agi/nex-n2.5-pro:free'}\`)\n\n` +
+          `🎯 Hiện tại Akko đang dùng: *${info.providerName}* (\`${info.model}\`)`,
         parse_mode: 'Markdown'
       });
     }
@@ -1683,7 +1712,7 @@ async function handleMessage(msg) {
           '• `/model minimax/minimax-m3:free`\n' +
           '• `/model google/gemini-2.5-flash`\n' +
           '• `/model qwen/qwen2.5-vl-72b-instruct`\n\n' +
-          '_(Senpai có thể gõ `/model <mã_bất_kỳ>` để dạy Akko dùng mã model tùy ý nha)_',
+          '_(Senpai có thể gõ `/model <mã>` để dạy Akko dùng mã model tùy ý nha)_',
         parse_mode: 'Markdown'
       });
     }
@@ -1727,7 +1756,7 @@ async function handleMessage(msg) {
     const info = getActiveProviderInfo(cfg);
     return sendTelegram('sendMessage', {
       chat_id: chatId,
-      text: `✅ Tuân lệnh Senpai! Akko đã đổi mô hình AI sang: *${modelName}*\n• Nhà cung cấp kích hoạt: *${info.providerName}* (≧◡≦) ♡`,
+      text: `✅ Tuân lệnh Senpai! Akko đã đổi mô hình AI sang: \`${modelName}\`\n• Nhà cung cấp kích hoạt: *${info.providerName}* (≧◡≦) ♡`,
       parse_mode: 'Markdown'
     });
   }
