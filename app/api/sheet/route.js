@@ -44,21 +44,58 @@ export async function POST(request) {
       );
     }
 
-    // 2. Send server-side POST request to Google Apps Script Web App with auto-redirect
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000);
+    // 2. Send server-side POST request to Google Apps Script Web App with auto-redirect and retry
+    let responseText = '';
+    let responseStatus = 200;
+    let lastError = null;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      redirect: 'follow',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8',
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    }).finally(() => clearTimeout(timeoutId));
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
 
-    const responseText = await response.text();
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          redirect: 'follow',
+          headers: {
+            'Content-Type': 'text/plain;charset=utf-8',
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        }).finally(() => clearTimeout(timeoutId));
+
+        responseStatus = response.status;
+        responseText = await response.text();
+
+        // Nếu Google trả về 502/503/429 tạm thời, thử lại
+        if ([429, 502, 503, 504].includes(responseStatus) && attempt < 3) {
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
+          continue;
+        }
+
+        lastError = null;
+        break;
+      } catch (err) {
+        lastError = err;
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
+        }
+      }
+    }
+
+    if (lastError) {
+      console.error('Server Sheet Proxy Error after 3 attempts:', lastError);
+      if (lastError.name === 'AbortError') {
+        return NextResponse.json(
+          { error: 'Quá thời gian kết nối (Timeout) tới Google Apps Script sau 45 giây. Vui lòng kiểm tra lại link Webhook.' },
+          { status: 504 }
+        );
+      }
+      return NextResponse.json(
+        { error: `Lỗi kết nối máy chủ tới Google Sheet: ${lastError.message}` },
+        { status: 500 }
+      );
+    }
 
     // 3. Detect Google Login / Permission issue
     if (responseText.includes('<!DOCTYPE html') || responseText.includes('<html') || responseText.includes('accounts.google.com')) {
@@ -88,7 +125,7 @@ export async function POST(request) {
       });
     } catch {
       // If returned text without JSON but HTTP was 200
-      if (response.ok) {
+      if (responseStatus >= 200 && responseStatus < 300) {
         return NextResponse.json({
           success: true,
           message: `Đã gửi thành công ${payload.items.length} dòng sang Google Sheet`,
@@ -97,20 +134,14 @@ export async function POST(request) {
         });
       }
       return NextResponse.json(
-        { error: `Google Sheet phản hồi lỗi HTTP ${response.status}: ${responseText.slice(0, 150)}` },
-        { status: response.status || 500 }
+        { error: `Google Sheet phản hồi lỗi HTTP ${responseStatus}: ${responseText.slice(0, 150)}` },
+        { status: responseStatus || 500 }
       );
     }
   } catch (error) {
-    console.error('Server Sheet Proxy Error:', error);
-    if (error.name === 'AbortError') {
-      return NextResponse.json(
-        { error: 'Quá thời gian kết nối (Timeout) tới Google Apps Script sau 20 giây. Vui lòng kiểm tra lại link Webhook.' },
-        { status: 504 }
-      );
-    }
+    console.error('Server Sheet Proxy Fatal Error:', error);
     return NextResponse.json(
-      { error: `Lỗi kết nối máy chủ tới Google Sheet: ${error.message}` },
+      { error: `Lỗi xử lý yêu cầu Google Sheet: ${error.message}` },
       { status: 500 }
     );
   }

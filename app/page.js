@@ -135,7 +135,7 @@ const APINEX_MODELS = [
 const DEFAULT_FIELD_PROMPTS = {
   soPhieu: 'Đọc kỹ số phiếu/số chứng từ ở đầu phiếu, bao gồm cả số in sẵn hoặc chữ viết tay bổ sung. Giữ nguyên toàn bộ ký tự và số.',
   ten: 'Lấy chính xác tên hàng, quy cách hoặc mã sản phẩm (đọc cả chữ viết tay tiếng Việt có dấu, chữ viết tắt như Thùng, Cuộn, Cây, Bộ, Hộp). NGUYÊN TẮC GỘP DÒNG: Nếu một mặt hàng/sản phẩm được in/viết dàn trải thành 2 dòng (ví dụ dòng trên là tên/loại bao bì, dòng dưới là kích thước/quy cách mã nhưng chỉ có chung 1 số lượng, 1 STT hoặc 1 số OS/PO) thì PHẢI GỘP thành 1 dòng hàng duy nhất (ví dụ: "PE SHOE BOX (ECO) 290*180*110mm MK-A-1"). Chỉ tách thành các dòng khác nhau khi có các số lượng/STT/mã OS/PO riêng biệt.',
-  soOSPO: 'Chỉ lấy số, không lấy thêm bất kỳ chữ hay ký tự nào. Tự động điều chỉnh theo định dạng 5 chữ số (xxxxx): nếu trên phiếu ghi dạng TiềnTố-HậuTố (ví dụ: 8-999 -> 80999, 8-99 -> 80099, 8-9 -> 80009, 8-1999 -> 81999, 8-x999 -> 8x999) thì phần sau dấu gạch nối luôn được bù số 0 ở đầu thành 4 chữ số ghép với số đầu.',
+  soOSPO: 'Chỉ lấy số thuần sau khi đã ghép. Cột Số O.S/PO thường có dạng [Tháng]-[Số đơn hàng] (ví dụ: 9-697, 9-296). Quy tắc chuẩn hóa: Vế trước dấu "-" là số hiệu Tháng (từ 1 đến 12), vế sau là Số thứ tự đơn hàng trong tháng đó (không quá 5000 đơn) nên luôn có đúng 4 chữ số (nếu ít hơn 4 chữ số thì tự động bù các số 0 vào phía trước). Ghép thành dạng [Tháng][4 chữ số đơn]: ví dụ 9-697 -> 90697, 9-296 -> 90296, 9-506 -> 90506, 9-45 -> 90045, 9-5 -> 90005, 10-123 -> 100123. ĐẶC BIỆT CHÚ Ý CHỮ VIẾT TAY: Chữ viết tay số 9 ở vế tháng có nét đuôi cong xuống dưới rất dễ bị đọc nhầm thành chữ "g" hoặc "q" (ví dụ "g-297", "g-697", "q-508" thực chất đều là số 9 viết tay "9-297" -> "90297", "9-697" -> "90697"). Tuyệt đối chỉ trả về các chữ số thuần sau khi ghép, không giữ lại dấu "-" và không chứa chữ cái.',
   donViTinh: 'Lấy đơn vị tính viết trên phiếu (ví dụ: EA, PCS, KG, BOX, CÁI, THÙNG, BỘ, CUỘN, CÂY). Không tự suy diễn.',
   soLuongChungTu: 'Chỉ lấy số lượng theo chứng từ (chỉ trả về số thuần). Nếu có chữ viết tay sửa đổi/ghi đè lên số in, ưu tiên lấy số viết tay mới nhất.',
   soLuongThucNhap: 'Chỉ lấy số lượng thực nhập/thực xuất (chỉ trả về số thuần). Đọc kỹ các con số viết tay bằng bút bi/bút mực.',
@@ -148,7 +148,11 @@ export function formatOSPO(raw) {
   let str = String(raw).trim();
   if (!str || str === '???') return str;
 
-  // 1. Kiểm tra nếu có dấu gạch nối hoặc dấu phân cách: ví dụ "8-999", "8 - 99", "8.999", "8/9"
+  // 1. Chuẩn hóa chữ cái viết tay dễ bị OCR đọc nhầm: "g-" hoặc "q-" ở đầu (thực chất là tháng 9)
+  str = str.replace(/^[gGqQ]\s*[-/._\s]/, '9-');
+  str = str.replace(/^[gGqQ](\d{2,4})$/, '9-$1');
+
+  // 2. Kiểm tra nếu có dấu gạch nối hoặc dấu phân cách: ví dụ "9-697", "8-999", "8 - 99", "8.999", "8/9"
   const matchWithSep = str.match(/(\d+)\s*[-/._\s]\s*(\d+)/);
   if (matchWithSep) {
     const prefix = matchWithSep[1];
@@ -158,7 +162,7 @@ export function formatOSPO(raw) {
     return `${prefix}${paddedSuffix}`;
   }
 
-  // 2. Nếu là số thuần hoặc chuỗi chứa số: chỉ giữ lại các chữ số
+  // 3. Nếu là số thuần hoặc chuỗi chứa số: chỉ giữ lại các chữ số
   const onlyDigits = str.replace(/\D/g, '');
   if (!onlyDigits) return '';
 
@@ -367,7 +371,11 @@ export default function Home() {
     current: 0,
     percent: 0,
     pageStatuses: [],
+    isCompleted: false,
+    hasError: false,
+    retryingPageNum: null,
   });
+  const batchTargetPagesRef = useRef([]);
 
   const [selectedColumns, setSelectedColumns] = useState(DEFAULT_COLUMNS);
   const [fieldPrompts, setFieldPrompts] = useState(DEFAULT_FIELD_PROMPTS);
@@ -394,6 +402,7 @@ export default function Home() {
   const [autoSyncSheet, setAutoSyncSheet] = useState(false);
   const [isSyncingSheet, setIsSyncingSheet] = useState(false);
   const [lastSheetSync, setLastSheetSync] = useState(null);
+  const [sheetSyncError, setSheetSyncError] = useState(null);
 
   // Cloud Multi-Device Sync State
   const [cloudSyncCode, setCloudSyncCode] = useState('');
@@ -1554,67 +1563,102 @@ export default function Home() {
     }
 
     setIsSyncingSheet(true);
+    setSheetSyncError(null);
+
+    // Chuẩn bị toàn bộ items với thông tin số phiếu và trang đầy đủ
+    const allItems = [];
+    groups.forEach((grp, idx) => {
+      const grpSoPhieu = grp.soPhieu || targetSoPhieu || soPhieu || '';
+      const grpPage = grp.pageNum || (idx + 1);
+      grp.items.forEach((item) => {
+        allItems.push({
+          ...item,
+          soPhieu: item.soPhieu || grpSoPhieu,
+          _pageNum: item._pageNum || grpPage,
+        });
+      });
+    });
+
+    const totalLines = allItems.length;
+    const desc = groups.length > 1 ? `${totalLines} dòng (${groups.length} trang/phiếu)` : `${totalLines} dòng`;
+    showToast(`📊 Đang lưu ${desc} sang Google Sheet...`);
 
     try {
+      // 🌟 TỐI ƯU HÓA: Gửi batch thông minh (tối đa 150 dòng/request) thay vì 20 request rời rạc
+      // Tránh nghẽn hàng đợi Google Script, triệt tiêu lỗi ngắt kết nối khi quét nhiều ảnh
+      const CHUNK_SIZE = 150;
+      const chunks = [];
+      for (let i = 0; i < allItems.length; i += CHUNK_SIZE) {
+        chunks.push(allItems.slice(i, i + CHUNK_SIZE));
+      }
+
       let totalSynced = 0;
 
-      for (let g = 0; g < groups.length; g++) {
-        const grp = groups[g];
-        const slipLabel = grp.soPhieu ? `phiếu ${grp.soPhieu}` : `trang ${grp.pageNum}`;
-
-        if (!silent) {
-          if (groups.length > 1) {
-            showToast(`📊 Đang lưu ${slipLabel} (${g + 1}/${groups.length}) sang Google Sheet...`);
-          } else {
-            showToast('📊 Đang đồng bộ dữ liệu vào Google Sheet...');
-          }
+      for (let c = 0; c < chunks.length; c++) {
+        const chunkItems = chunks[c];
+        if (chunks.length > 1) {
+          showToast(`📊 Đang lưu đợt ${c + 1}/${chunks.length} (${chunkItems.length} dòng) sang Google Sheet...`);
         }
 
         const payload = {
-          soPhieu: grp.soPhieu || targetSoPhieu || soPhieu || '',
-          pageNum: grp.pageNum || (g + 1),
-          items: grp.items.map((item) => ({
-            ...item,
-            soPhieu: item.soPhieu || grp.soPhieu || targetSoPhieu || soPhieu || '',
-            _pageNum: item._pageNum || grp.pageNum || (g + 1),
-          })),
+          soPhieu: chunkItems[0]?.soPhieu || targetSoPhieu || soPhieu || '',
+          pageNum: chunkItems[0]?._pageNum || pageNum || 1,
+          items: chunkItems,
         };
 
-        const res = await fetch('/api/sheet', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: cleanUrl, payload }),
-        });
+        let lastErr = null;
+        let success = false;
 
-        const resData = await res.json().catch(() => ({}));
+        // Thử lại tự động tối đa 3 lần với backoff nếu mạng chập chờn
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const res = await fetch('/api/sheet', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: cleanUrl, payload }),
+            });
 
-        if (!res.ok || !resData.success) {
-          throw new Error(resData.error || `Lỗi đồng bộ Google Sheet ở ${slipLabel} (HTTP ${res.status})`);
+            const resData = await res.json().catch(() => ({}));
+
+            if (res.ok && resData.success) {
+              totalSynced += chunkItems.length;
+              success = true;
+              break;
+            } else {
+              lastErr = new Error(resData.error || `Lỗi đồng bộ (HTTP ${res.status})`);
+            }
+          } catch (fetchErr) {
+            lastErr = fetchErr;
+          }
+
+          if (attempt < 3) {
+            await new Promise((r) => setTimeout(r, 1200 * attempt));
+          }
         }
 
-        totalSynced += grp.items.length;
+        if (!success) {
+          throw new Error(lastErr?.message || `Lỗi kết nối khi gửi đợt ${c + 1}/${chunks.length}`);
+        }
 
-        // Nếu còn nhóm tiếp theo, chờ 350ms để Google Sheets ghi xong và cập nhật lastRow
-        if (g < groups.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 350));
+        if (c < chunks.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 400));
         }
       }
 
       const nowStr = new Date().toLocaleTimeString('vi-VN');
       setLastSheetSync({ time: nowStr, count: totalSynced });
-      if (!silent) {
-        if (groups.length > 1) {
-          showToast(`📊 Đã lưu thành công ${totalSynced} dòng (${groups.length} phiếu/trang có dòng trống phân cách) vào Google Sheet lúc ${nowStr}!`, 'success');
-        } else {
-          showToast(`📊 Đã lưu thành công ${totalSynced} dòng vào Google Sheet lúc ${nowStr}!`, 'success');
-        }
+      setSheetSyncError(null);
+
+      if (groups.length > 1) {
+        showToast(`📊 Đã lưu thành công ${totalSynced} dòng (${groups.length} phiếu/trang có dòng trống phân cách) vào Google Sheet lúc ${nowStr}!`, 'success');
+      } else {
+        showToast(`📊 Đã lưu thành công ${totalSynced} dòng vào Google Sheet lúc ${nowStr}!`, 'success');
       }
       return true;
     } catch (e) {
       console.error('Google Sheet Sync Error:', e);
-      if (!silent) {
-        showToast('❌ ' + e.message, 'error');
-      }
+      setSheetSyncError(e.message);
+      showToast('❌ Lỗi đồng bộ Google Sheet: ' + e.message, 'error');
       return false;
     } finally {
       setIsSyncingSheet(false);
@@ -2798,6 +2842,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       showToast('Vui lòng chọn ít nhất 1 trang để quét', 'error');
       return;
     }
+    batchTargetPagesRef.current = targetPages;
     setPdfModalOpen(false);
     setIsScanning(true);
     setShowTesseractWarning(false);
@@ -2817,6 +2862,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       current: 0,
       percent: 0,
       pageStatuses: initialStatuses,
+      isCompleted: false,
+      hasError: false,
+      retryingPageNum: null,
     });
 
     let accumulatedItems = [];
@@ -2890,6 +2938,17 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
           });
         } catch (pageErr) {
           console.error(`Error on page ${pageNum}:`, pageErr);
+          // Ghi nhận trang lỗi vào perPageResults để giao diện phân trang hiển thị và có nút Quét Lại
+          perPageResults.push({
+            pageNum,
+            soPhieu: '',
+            items: [],
+            previewUrl: page.fullUrl,
+            status: 'error',
+            error: pageErr.message,
+            itemCount: 0,
+          });
+
           setBatchProgressModal((prev) => {
             const nextStatuses = [...prev.pageStatuses];
             nextStatuses[i] = {
@@ -2924,10 +2983,18 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       setResultVisible(true);
 
       saveHistoryRecord(nextId, detectedFirstSoPhieu || '', accumulatedItems, perPageResults, true);
-      showToast(`✨ Đã trích xuất thành công ${accumulatedItems.length} dòng từ ${total} trang PDF`, 'success');
+
+      const failedCount = perPageResults.filter((pr) => pr.status === 'error').length;
+      if (failedCount > 0) {
+        showToast(`⚠️ Hoàn tất ${total - failedCount}/${total} trang (${failedCount} trang bị lỗi). Giao diện quét được giữ nguyên để Senpai bấm Quét Lại nha!`, 'warning');
+      } else {
+        showToast(`✨ Đã trích xuất thành công ${accumulatedItems.length} dòng từ ${total} trang`, 'success');
+      }
 
       if (autoSyncSheet && googleSheetUrl && accumulatedItems.length > 0) {
-        syncToGoogleSheet(accumulatedItems, detectedFirstSoPhieu || '', 1, true);
+        setTimeout(() => {
+          syncToGoogleSheet(accumulatedItems, detectedFirstSoPhieu || '', 1, false);
+        }, 500);
       }
 
       setTimeout(() => {
@@ -2938,10 +3005,128 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       showToast('❌ Lỗi quét PDF: ' + e.message, 'error');
     } finally {
       setIsScanning(false);
-      setTimeout(() => {
-        setBatchProgressModal((prev) => ({ ...prev, active: false }));
-        setScanProgress((prev) => ({ ...prev, active: false }));
-      }, 1500);
+      setScanProgress((prev) => ({ ...prev, active: false }));
+
+      // NẾU CÓ BẤT KỲ TRANG NÀO BỊ LỖI -> GIỮ NGUYÊN GIAO DIỆN QUÉT để người dùng xem và bấm Quét lại!
+      // Chỉ tự động đóng modal nếu 100% các trang đều thành công.
+      setBatchProgressModal((prev) => {
+        const hasError = prev.pageStatuses.some((ps) => ps.status === 'error');
+        if (!hasError) {
+          setTimeout(() => {
+            setBatchProgressModal((p) => ({ ...p, active: false, isCompleted: true }));
+          }, 1200);
+          return { ...prev, isCompleted: true, hasError: false };
+        }
+        return { ...prev, isCompleted: true, hasError: true };
+      });
+    }
+  };
+
+  // Quét lại 1 trang cụ thể bị lỗi trong danh sách nhiều ảnh / PDF
+  const retrySingleBatchPage = async (targetPageNum) => {
+    let page = batchTargetPagesRef.current.find((p) => p.pageNum === targetPageNum);
+    if (!page) {
+      page = pdfPages.find((p) => p.pageNum === targetPageNum);
+    }
+    if (!page || !page.base64) {
+      showToast(`Không tìm thấy dữ liệu ảnh của Trang ${targetPageNum}`, 'error');
+      return;
+    }
+
+    setBatchProgressModal((prev) => {
+      const nextStatuses = prev.pageStatuses.map((ps) =>
+        ps.pageNum === targetPageNum ? { ...ps, status: 'running', detail: 'Đang gửi AI quét lại trang này...' } : ps
+      );
+      return {
+        ...prev,
+        active: true,
+        retryingPageNum: targetPageNum,
+        pageStatuses: nextStatuses,
+      };
+    });
+
+    try {
+      const { data: pageResult, engine } = await executeOcrOnImage(page.base64, 'image/jpeg', `[Quét lại Trang ${targetPageNum}]`);
+      let effectiveSoPhieu = pageResult.soPhieu || '';
+      const normalized = parseOcrResultToItems(pageResult, targetPageNum, effectiveSoPhieu);
+      if (!effectiveSoPhieu && normalized.length > 0 && normalized[0].soPhieu) {
+        effectiveSoPhieu = normalized[0].soPhieu;
+      }
+
+      const updatedPRItem = {
+        pageNum: targetPageNum,
+        soPhieu: effectiveSoPhieu,
+        items: normalized,
+        previewUrl: page.fullUrl,
+        status: 'done',
+        itemCount: normalized.length,
+      };
+
+      let newPageResults = [];
+      setPageResults((prev) => {
+        const filtered = prev.filter((pr) => pr.pageNum !== targetPageNum);
+        newPageResults = [...filtered, updatedPRItem].sort((a, b) => a.pageNum - b.pageNum);
+        return newPageResults;
+      });
+
+      let newTableItems = [];
+      setTableItems((prev) => {
+        const withoutThisPage = prev.filter((it) => it._pageNum !== targetPageNum);
+        newTableItems = [...withoutThisPage, ...normalized].sort((a, b) => (a._pageNum || 1) - (b._pageNum || 1));
+        return newTableItems;
+      });
+
+      setBatchProgressModal((prev) => {
+        const nextStatuses = prev.pageStatuses.map((ps) =>
+          ps.pageNum === targetPageNum
+            ? {
+                ...ps,
+                status: 'done',
+                detail: `Hoàn tất • ${normalized.length} dòng hàng`,
+                lines: normalized.length,
+                soPhieu: effectiveSoPhieu,
+              }
+            : ps
+        );
+        const stillHasError = nextStatuses.some((ps) => ps.status === 'error');
+        return {
+          ...prev,
+          pageStatuses: nextStatuses,
+          hasError: stillHasError,
+          retryingPageNum: null,
+        };
+      });
+
+      saveHistoryRecord(currentHistoryId || ('h_' + Date.now()), soPhieu || effectiveSoPhieu, newTableItems, newPageResults, false);
+
+      if (autoSyncSheet && googleSheetUrl && normalized.length > 0) {
+        syncToGoogleSheet(normalized, effectiveSoPhieu || soPhieu, targetPageNum, true);
+      }
+
+      showToast(`✨ Đã quét lại thành công Trang ${targetPageNum} (+${normalized.length} dòng)!`, 'success');
+    } catch (err) {
+      console.error(`Lỗi quét lại trang ${targetPageNum}:`, err);
+      setBatchProgressModal((prev) => {
+        const nextStatuses = prev.pageStatuses.map((ps) =>
+          ps.pageNum === targetPageNum ? { ...ps, status: 'error', detail: `Lỗi: ${err.message}` } : ps
+        );
+        return {
+          ...prev,
+          pageStatuses: nextStatuses,
+          hasError: true,
+          retryingPageNum: null,
+        };
+      });
+      showToast(`❌ Quét lại Trang ${targetPageNum} thất bại: ${err.message}`, 'error');
+    }
+  };
+
+  // Quét lại toàn bộ các trang đang bị lỗi
+  const retryAllFailedBatchPages = async () => {
+    const failedStatuses = batchProgressModal.pageStatuses.filter((ps) => ps.status === 'error');
+    if (!failedStatuses.length) return;
+    for (const fs of failedStatuses) {
+      await retrySingleBatchPage(fs.pageNum);
     }
   };
 
@@ -3965,19 +4150,32 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
                     {pageResults.map((p) => {
                       const isActive = activeResultTab === p.pageNum;
+                      const isError = p.status === 'error';
                       return (
                         <button
                           key={p.pageNum}
                           onClick={() => setActiveResultTab(p.pageNum)}
                           className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                             isActive
-                              ? 'bg-blue-600 text-white shadow-sm'
+                              ? isError
+                                ? 'bg-red-600 text-white shadow-sm'
+                                : 'bg-blue-600 text-white shadow-sm'
+                              : isError
+                              ? 'bg-red-50 hover:bg-red-100 text-red-700 border border-red-200'
                               : 'bg-white/70 hover:bg-white text-slate-700'
                           }`}
                         >
-                          <span>📄 Chỉ Trang {p.pageNum}</span>
-                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${isActive ? 'bg-blue-800 text-white' : 'bg-slate-200 text-slate-700'}`}>
-                            {p.items.length} dòng
+                          <span>{isError ? '⚠️' : '📄'} Chỉ Trang {p.pageNum}</span>
+                          <span
+                            className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                              isActive
+                                ? 'bg-black/20 text-white'
+                                : isError
+                                ? 'bg-red-200 text-red-800'
+                                : 'bg-slate-200 text-slate-700'
+                            }`}
+                          >
+                            {isError ? 'Lỗi' : `${p.items.length} dòng`}
                           </span>
                         </button>
                       );
@@ -3992,31 +4190,65 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   {(pageResults.length ? pageResults : [{ pageNum: 1, soPhieu, items: tableItems, previewUrl: previewSrc }]).map((page) => (
                     <div
                       key={page.pageNum}
-                      className="bg-white rounded-3xl p-5 sm:p-6 border-2 border-slate-200/90 shadow-card space-y-5 animate-fade-in"
+                      className={`bg-white rounded-3xl p-5 sm:p-6 border-2 shadow-card space-y-5 animate-fade-in ${
+                        page.status === 'error' ? 'border-red-300 ring-2 ring-red-500/20' : 'border-slate-200/90'
+                      }`}
                     >
                       {/* Page Card Header */}
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3.5">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-blue-600 text-white font-bold flex items-center justify-center text-sm shadow-sm">
+                          <div
+                            className={`w-8 h-8 rounded-xl font-bold flex items-center justify-center text-sm shadow-sm ${
+                              page.status === 'error' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'
+                            }`}
+                          >
                             {page.pageNum}
                           </div>
                           <div>
-                            <h4 className="font-extrabold text-base text-slate-900 uppercase tracking-tight">
-                              Kết Quả Trang {page.pageNum}
+                            <h4 className="font-extrabold text-base text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                              <span>Kết Quả Trang {page.pageNum}</span>
+                              {page.status === 'error' && (
+                                <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-800 text-[10px] font-bold">
+                                  Lỗi nhận diện
+                                </span>
+                              )}
                             </h4>
-                            <span className="text-xs text-slate-500 font-semibold">{page.items.length} dòng hàng của trang {page.pageNum}</span>
+                            <span className="text-xs text-slate-500 font-semibold">
+                              {page.status === 'error'
+                                ? 'Trang này chưa trích xuất được bảng hàng hóa'
+                                : `${page.items.length} dòng hàng của trang ${page.pageNum}`}
+                            </span>
                           </div>
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => syncToGoogleSheet(page.items, page.soPhieu, page.pageNum)}
-                            disabled={isSyncingSheet}
-                            className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center gap-1.5 border border-emerald-200 transition-all active:scale-95 disabled:opacity-50"
-                          >
-                            <IconSpreadsheet className="w-4 h-4 text-emerald-600" />
-                            <span>Lưu Trang {page.pageNum} Sang Sheet</span>
-                          </button>
+                          {page.status === 'error' ? (
+                            <button
+                              onClick={() => retrySingleBatchPage(page.pageNum)}
+                              disabled={batchProgressModal.retryingPageNum === page.pageNum}
+                              className="px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50"
+                            >
+                              <IconRefresh
+                                className={`w-4 h-4 ${
+                                  batchProgressModal.retryingPageNum === page.pageNum ? 'animate-spin' : ''
+                                }`}
+                              />
+                              <span>
+                                {batchProgressModal.retryingPageNum === page.pageNum
+                                  ? 'Đang quét lại...'
+                                  : 'Quét Lại Trang Này'}
+                              </span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => syncToGoogleSheet(page.items, page.soPhieu, page.pageNum)}
+                              disabled={isSyncingSheet}
+                              className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center gap-1.5 border border-emerald-200 transition-all active:scale-95 disabled:opacity-50"
+                            >
+                              <IconSpreadsheet className="w-4 h-4 text-emerald-600" />
+                              <span>Lưu Trang {page.pageNum} Sang Sheet</span>
+                            </button>
+                          )}
 
                           {page.previewUrl && (
                             <button
@@ -4029,6 +4261,41 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           )}
                         </div>
                       </div>
+
+                      {/* Error Banner when this page failed */}
+                      {page.status === 'error' && (
+                        <div className="p-4 rounded-2xl bg-red-50/80 border border-red-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-red-800 text-xs">
+                          <div className="flex items-start gap-2.5">
+                            <span className="text-base">⚠️</span>
+                            <div>
+                              <div className="font-bold text-sm text-red-900">
+                                AI chưa trích xuất được bảng hàng hóa ở Trang {page.pageNum}
+                              </div>
+                              <div className="text-[11px] text-red-600 font-medium mt-0.5">
+                                {page.error || 'Vui lòng kiểm tra lại ảnh hoặc bấm nút Quét Lại Trang Này ở trên.'}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              onClick={() => retrySingleBatchPage(page.pageNum)}
+                              disabled={batchProgressModal.retryingPageNum === page.pageNum}
+                              className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50"
+                            >
+                              <IconRefresh
+                                className={`w-3.5 h-3.5 ${
+                                  batchProgressModal.retryingPageNum === page.pageNum ? 'animate-spin' : ''
+                                }`}
+                              />
+                              <span>
+                                {batchProgressModal.retryingPageNum === page.pageNum
+                                  ? 'Đang quét...'
+                                  : 'Thử Quét Lại'}
+                              </span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Slip Number Ticket for this Page */}
                       <div className="bg-gradient-to-r from-blue-50 to-indigo-50/70 p-4 rounded-2xl border border-blue-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -4378,6 +4645,22 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 </button>
               </div>
 
+              {sheetSyncError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-800 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 animate-fade-in">
+                  <div className="flex items-center gap-2">
+                    <span className="text-red-600 font-bold">⚠️ Đồng bộ Sheet gián đoạn:</span>
+                    <span className="text-slate-700">{sheetSyncError}</span>
+                  </div>
+                  <button
+                    onClick={() => syncToGoogleSheet(tableItems, soPhieu, 1)}
+                    disabled={isSyncingSheet}
+                    className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition-all active:scale-95 text-[11px] whitespace-nowrap disabled:opacity-50"
+                  >
+                    {isSyncingSheet ? 'Đang thử lại...' : '🔄 Đồng bộ lại ngay'}
+                  </button>
+                </div>
+              )}
+
               {lastSheetSync && (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center justify-between animate-fade-in">
                   <div className="flex items-center gap-2">
@@ -4571,26 +4854,57 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         <div className="fixed inset-0 z-[600] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white w-full max-w-lg rounded-3xl p-6 border border-slate-200 shadow-modal flex flex-col gap-4 text-slate-900 animate-slide-up">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                    batchProgressModal.hasError ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'
+                  }`}
+                >
                   <IconLayers className="w-5 h-5" />
                 </div>
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900">
-                    Đang Quét Hàng Loạt ({batchProgressModal.current}/{batchProgressModal.total} Ảnh / Trang)
+                <div className="min-w-0">
+                  <h3 className="font-bold text-sm text-slate-900 truncate">
+                    {batchProgressModal.isCompleted
+                      ? batchProgressModal.hasError
+                        ? `Quét Xong (${batchProgressModal.pageStatuses.filter((p) => p.status === 'error').length} Trang Lỗi)`
+                        : 'Quét Hoàn Tất Toàn Bộ Trang'
+                      : `Đang Quét Hàng Loạt (${batchProgressModal.current}/${batchProgressModal.total} Ảnh / Trang)`}
                   </h3>
-                  <p className="text-xs text-slate-500">Tiến trình nhận dạng AI đang diễn ra theo từng ảnh/trang</p>
+                  <p className="text-xs text-slate-500 truncate">
+                    {batchProgressModal.hasError
+                      ? 'Có trang gặp lỗi, Senpai có thể bấm "Quét lại" ngay bên dưới nha'
+                      : 'Tiến trình nhận dạng AI đang diễn ra theo từng ảnh/trang'}
+                  </p>
                 </div>
               </div>
-              <span className="font-mono font-extrabold text-blue-600 text-base">
-                {batchProgressModal.percent}%
-              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <span
+                  className={`font-mono font-extrabold text-base ${
+                    batchProgressModal.hasError ? 'text-amber-600' : 'text-blue-600'
+                  }`}
+                >
+                  {batchProgressModal.percent}%
+                </span>
+                {batchProgressModal.isCompleted && (
+                  <button
+                    onClick={() => setBatchProgressModal((p) => ({ ...p, active: false }))}
+                    className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-all active:scale-95"
+                    title="Đóng bảng tiến trình để xem kết quả"
+                  >
+                    <IconClose className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Main Progress Bar */}
             <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 transition-all duration-300 rounded-full"
+                className={`h-full transition-all duration-300 rounded-full ${
+                  batchProgressModal.hasError
+                    ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-red-500'
+                    : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600'
+                }`}
                 style={{ width: `${batchProgressModal.percent}%` }}
               />
             </div>
@@ -4606,13 +4920,13 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                       : ps.status === 'done'
                       ? 'bg-emerald-50/50 border-emerald-200'
                       : ps.status === 'error'
-                      ? 'bg-red-50/50 border-red-200'
+                      ? 'bg-red-50/70 border-red-200'
                       : 'bg-slate-50 border-slate-200 opacity-60'
                   }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div
-                      className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[11px] ${
+                      className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[11px] shrink-0 ${
                         ps.status === 'done'
                           ? 'bg-emerald-600 text-white'
                           : ps.status === 'running'
@@ -4625,14 +4939,26 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                       {ps.pageNum}
                     </div>
                     <div className="min-w-0">
-                      <div className="font-bold text-slate-800">
-                        Trang {ps.pageNum} {ps.soPhieu ? `— Số phiếu: ${ps.soPhieu}` : ''}
+                      <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                        <span>Trang {ps.pageNum}</span>
+                        {ps.soPhieu && (
+                          <span className="font-mono text-[11px] text-blue-700 font-semibold truncate">
+                            — Số phiếu: {ps.soPhieu}
+                          </span>
+                        )}
                       </div>
-                      <div className="text-[11px] text-slate-500 truncate">{ps.detail}</div>
+                      <div
+                        className={`text-[11px] truncate ${
+                          ps.status === 'error' ? 'text-red-600 font-medium' : 'text-slate-500'
+                        }`}
+                        title={ps.detail}
+                      >
+                        {ps.detail}
+                      </div>
                     </div>
                   </div>
 
-                  <div>
+                  <div className="shrink-0 flex items-center gap-1.5">
                     {ps.status === 'running' && (
                       <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
                     )}
@@ -4642,13 +4968,78 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                       </span>
                     )}
                     {ps.status === 'error' && (
-                      <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 font-bold text-[10px]">Lỗi</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 font-bold text-[10px]">Lỗi</span>
+                        <button
+                          onClick={() => retrySingleBatchPage(ps.pageNum)}
+                          disabled={isScanning || batchProgressModal.retryingPageNum === ps.pageNum}
+                          className="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-[11px] flex items-center gap-1 shadow-sm transition-all disabled:opacity-50"
+                          title={`Quét lại Trang ${ps.pageNum}`}
+                        >
+                          {batchProgressModal.retryingPageNum === ps.pageNum ? (
+                            <>
+                              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              <span>Đang quét...</span>
+                            </>
+                          ) : (
+                            <>
+                              <IconRefresh className="w-3 h-3" />
+                              <span>Quét lại</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     )}
                     {ps.status === 'pending' && <span className="text-[10px] text-slate-400">Chờ...</span>}
                   </div>
                 </div>
               ))}
             </div>
+
+            {/* Footer with Batch Retry & Provider Switch when there are errors */}
+            {batchProgressModal.hasError && (
+              <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 text-xs animate-fade-in">
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 font-medium">Mô hình:</span>
+                  <select
+                    value={aiProvider}
+                    onChange={(e) => setAiProvider(e.target.value)}
+                    disabled={isScanning || batchProgressModal.retryingPageNum !== null}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl px-2.5 py-1.5 text-xs border border-slate-300 outline-none cursor-pointer transition-all"
+                    title="Đổi nhà cung cấp AI để thử quét lại"
+                  >
+                    <option value="gemini">Google Gemini</option>
+                    <option value="apinex">APInex</option>
+                    <option value="kira">Kira AI</option>
+                    <option value="openrouter">OpenRouter</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={retryAllFailedBatchPages}
+                    disabled={isScanning || batchProgressModal.retryingPageNum !== null}
+                    className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all disabled:opacity-50"
+                  >
+                    <IconRefresh className="w-3.5 h-3.5" />
+                    <span>
+                      Quét Lại Các Trang Lỗi (
+                      {batchProgressModal.pageStatuses.filter((p) => p.status === 'error').length})
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setBatchProgressModal((p) => ({ ...p, active: false }));
+                      resultRef.current?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-bold transition-all"
+                  >
+                    Xem kết quả
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

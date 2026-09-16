@@ -50,7 +50,7 @@ const DEFAULT_COLUMNS = ['ten', 'soOSPO', 'donViTinh', 'soLuongChungTu', 'soLuon
 const DEFAULT_FIELD_PROMPTS = {
   soPhieu: 'Đọc kỹ số phiếu/số chứng từ ở đầu phiếu, bao gồm cả số in sẵn hoặc chữ viết tay bổ sung. Giữ nguyên toàn bộ ký tự và số.',
   ten: 'Lấy chính xác tên hàng, quy cách hoặc mã sản phẩm (đọc cả chữ viết tay tiếng Việt có dấu, chữ viết tắt như Thùng, Cuộn, Cây, Bộ, Hộp). NGUYÊN TẮC GỘP DÒNG: Nếu một mặt hàng/sản phẩm được in/viết dàn trải thành 2 dòng (ví dụ dòng trên là tên/loại bao bì, dòng dưới là kích thước/quy cách mã nhưng chỉ có chung 1 số lượng, 1 STT hoặc 1 số OS/PO) thì PHẢI GỘP thành 1 dòng hàng duy nhất (ví dụ: "PE SHOE BOX (ECO) 290*180*110mm MK-A-1"). Chỉ tách thành các dòng khác nhau khi có các số lượng/STT/mã OS/PO riêng biệt.',
-  soOSPO: 'Chỉ lấy số, không lấy thêm bất kỳ chữ hay ký tự nào. Tự động điều chỉnh theo định dạng 5 chữ số (xxxxx): nếu trên phiếu ghi dạng TiềnTố-HậuTố (ví dụ: 8-999 -> 80999, 8-99 -> 80099, 8-9 -> 80009, 8-1999 -> 81999, 8-x999 -> 8x999) thì phần sau dấu gạch nối luôn được bù số 0 ở đầu thành 4 chữ số ghép với số đầu.',
+  soOSPO: 'Chỉ lấy số thuần sau khi đã ghép. Cột Số O.S/PO thường có dạng [Tháng]-[Số đơn hàng] (ví dụ: 9-697, 9-296). Quy tắc chuẩn hóa: Vế trước dấu "-" là số hiệu Tháng (từ 1 đến 12), vế sau là Số thứ tự đơn hàng trong tháng đó (không quá 5000 đơn) nên luôn có đúng 4 chữ số (nếu ít hơn 4 chữ số thì tự động bù các số 0 vào phía trước). Ghép thành dạng [Tháng][4 chữ số đơn]: ví dụ 9-697 -> 90697, 9-296 -> 90296, 9-506 -> 90506, 9-45 -> 90045, 9-5 -> 90005, 10-123 -> 100123. ĐẶC BIỆT CHÚ Ý CHỮ VIẾT TAY: Chữ viết tay số 9 ở vế tháng có nét đuôi cong xuống dưới rất dễ bị đọc nhầm thành chữ "g" hoặc "q" (ví dụ "g-297", "g-697", "q-508" thực chất đều là số 9 viết tay "9-297" -> "90297", "9-697" -> "90697"). Tuyệt đối chỉ trả về các chữ số thuần sau khi ghép, không giữ lại dấu "-" và không chứa chữ cái.',
   donViTinh: 'Lấy đơn vị tính viết trên phiếu (ví dụ: EA, PCS, KG, BOX, CÁI, THÙNG, BỘ, CUỘN, CÂY). Không tự suy diễn.',
   soLuongChungTu: 'Chỉ lấy số lượng theo chứng từ (chỉ trả về số thuần). Nếu có chữ viết tay sửa đổi/ghi đè lên số in, ưu tiên lấy số viết tay mới nhất.',
   soLuongThucNhap: 'Chỉ lấy số lượng thực nhập/thực xuất (chỉ trả về số thuần). Đọc kỹ các con số viết tay bằng bút bi/bút mực.',
@@ -161,10 +161,18 @@ function formatOSPO(raw) {
   if (raw === null || raw === undefined) return '';
   let str = String(raw).trim();
   if (!str || str === '???') return str;
+
+  // 1. Chuẩn hóa chữ cái viết tay dễ bị OCR đọc nhầm: "g-" hoặc "q-" ở đầu (thực chất là tháng 9)
+  str = str.replace(/^[gGqQ]\s*[-/._\s]/, '9-');
+  str = str.replace(/^[gGqQ](\d{2,4})$/, '9-$1');
+
+  // 2. Kiểm tra nếu có dấu gạch nối hoặc dấu phân cách: ví dụ "9-697", "8-999", "8 - 99", "8.999", "8/9"
   const matchWithSep = str.match(/(\d+)\s*[-/._\s]\s*(\d+)/);
   if (matchWithSep) {
     return `${matchWithSep[1]}${matchWithSep[2].padStart(4, '0')}`;
   }
+
+  // 3. Nếu là số thuần hoặc chuỗi chứa số: chỉ giữ lại các chữ số
   const onlyDigits = str.replace(/\D/g, '');
   if (!onlyDigits) return '';
   if (onlyDigits.length >= 5) return onlyDigits;
@@ -774,44 +782,98 @@ async function syncToGoogleSheet(sheetUrl, soPhieu, items) {
   }
 
   const groups = partitionItemsIntoSlipGroups(items, soPhieu, 1);
-  let lastRes = { success: true, message: 'Đã lưu thành công' };
+  if (!groups.length) {
+    return { success: false, message: 'Không tìm thấy dòng hàng hợp lệ để lưu' };
+  }
 
-  for (let g = 0; g < groups.length; g++) {
-    const grp = groups[g];
-    const payload = {
-      soPhieu: grp.soPhieu || soPhieu || '',
-      pageNum: grp.pageNum || (g + 1),
-      items: grp.items.map(item => ({
+  // Chuẩn bị toàn bộ danh sách dòng hàng với số phiếu và số trang cho từng dòng
+  const allItems = [];
+  groups.forEach((grp, idx) => {
+    const grpSp = grp.soPhieu || soPhieu || '';
+    const grpPage = grp.pageNum || (idx + 1);
+    grp.items.forEach(item => {
+      allItems.push({
         ...item,
-        soPhieu: item.soPhieu || grp.soPhieu || soPhieu || '',
-        _pageNum: item._pageNum || grp.pageNum || (g + 1)
-      }))
+        soPhieu: item.soPhieu || grpSp,
+        _pageNum: item._pageNum || grpPage
+      });
+    });
+  });
+
+  const CHUNK_SIZE = 150;
+  const chunks = [];
+  for (let i = 0; i < allItems.length; i += CHUNK_SIZE) {
+    chunks.push(allItems.slice(i, i + CHUNK_SIZE));
+  }
+
+  let totalSaved = 0;
+
+  for (let c = 0; c < chunks.length; c++) {
+    const chunkItems = chunks[c];
+    const payload = {
+      soPhieu: chunkItems[0]?.soPhieu || soPhieu || '',
+      pageNum: chunkItems[0]?._pageNum || 1,
+      items: chunkItems
     };
 
-    const res = await fetch(sheetUrl, {
-      method: 'POST',
-      redirect: 'follow',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    });
+    let chunkSuccess = false;
+    let lastErrMessage = '';
 
-    const resText = await res.text();
-    try {
-      const data = JSON.parse(resText);
-      lastRes = { success: data.status === 'success' || res.ok, message: data.message || 'Đã ghi thành công' };
-    } catch {
-      lastRes = { success: res.ok, message: res.ok ? 'Đã ghi vào Google Sheet' : resText.slice(0, 100) };
+    // Thử lại tối đa 3 lần với backoff
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const res = await fetch(sheetUrl, {
+          method: 'POST',
+          redirect: 'follow',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload)
+        });
+
+        const resText = await res.text();
+        let isOk = res.ok;
+        try {
+          const data = JSON.parse(resText);
+          if (data.status === 'success' || res.ok) {
+            chunkSuccess = true;
+            totalSaved += chunkItems.length;
+            break;
+          } else {
+            lastErrMessage = data.message || `Lỗi Apps Script: ${resText.slice(0, 80)}`;
+          }
+        } catch {
+          if (res.ok) {
+            chunkSuccess = true;
+            totalSaved += chunkItems.length;
+            break;
+          } else {
+            lastErrMessage = `HTTP ${res.status}: ${resText.slice(0, 80)}`;
+          }
+        }
+      } catch (err) {
+        lastErrMessage = err.message;
+      }
+
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, 1000 * attempt));
+      }
     }
 
-    if (!lastRes.success) break;
+    if (!chunkSuccess) {
+      return {
+        success: false,
+        message: `Lỗi khi lưu đợt ${c + 1}/${chunks.length}: ${lastErrMessage}`
+      };
+    }
 
-    // Delay 350ms giữa các phiếu để Google Sheet kịp cập nhật lastRow và tạo dòng trống phân cách
-    if (g < groups.length - 1) {
-      await new Promise(r => setTimeout(r, 350));
+    if (c < chunks.length - 1) {
+      await new Promise(r => setTimeout(r, 400));
     }
   }
 
-  return lastRes;
+  return {
+    success: true,
+    message: `Đã lưu thành công ${totalSaved} dòng (${groups.length} phiếu/trang) vào Google Sheet!`
+  };
 }
 
 async function sendTelegram(method, body) {
@@ -964,16 +1026,36 @@ async function processDocument(chatId, doc, existingWaitMsgId = null, originalUs
         const pngBuf = pixmap.asPNG();
         const pageBase64 = Buffer.from(pngBuf).toString('base64');
 
-        const { ocrRaw: pageOcr } = await performOcr(cfg, pageBase64, 'image/png');
+        try {
+          const { ocrRaw: pageOcr } = await performOcr(cfg, pageBase64, 'image/png');
+          const pageItems = parseOcrResultToItems(pageOcr, cfg.selectedColumns || DEFAULT_COLUMNS);
+          const pageSoPhieu = (pageOcr.soPhieu || '').trim();
 
-        const pageItems = parseOcrResultToItems(pageOcr, cfg.selectedColumns || DEFAULT_COLUMNS);
-        const pageSoPhieu = (pageOcr.soPhieu || '').trim();
-
-        pageResults.push({
-          pageNum: p + 1,
-          soPhieu: pageSoPhieu,
-          items: pageItems
-        });
+          pageResults.push({
+            pageNum: p + 1,
+            soPhieu: pageSoPhieu,
+            items: pageItems
+          });
+        } catch (pageErr) {
+          console.error(`[PDF] Lỗi đọc trang ${p + 1}:`, pageErr.message);
+          const retryPageId = `retry_pdfpage_${Date.now()}_${p + 1}`;
+          RETRY_TASKS.set(retryPageId, {
+            type: 'pdf_page',
+            chatId,
+            pageBase64,
+            pageNum: p + 1
+          });
+          await sendTelegram('sendMessage', {
+            chat_id: chatId,
+            text: `⚠️ Huhu Senpai ơi, Trang *${p + 1}/${totalPages}* bị lỗi: ${pageErr.message}\nSenpai có thể bấm nút dưới để Akko thử quét lại riêng trang này nha!`,
+            parse_mode: 'Markdown',
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: `🔄 Akko Thử Quét Lại Trang ${p + 1}`, callback_data: retryPageId }]
+              ]
+            }
+          });
+        }
       }
 
       // Nhóm các trang theo số phiếu riêng biệt
@@ -1350,6 +1432,57 @@ async function handleCallbackQuery(cbq) {
       await processDocument(task.chatId, task.doc, messageId, null);
     } else if (task.type === 'photo') {
       await processPhoto(task.chatId, task.photo, messageId, null);
+    } else if (task.type === 'pdf_page') {
+      const cfg = getBotConfig();
+      const info = getActiveProviderInfo(cfg);
+      const waitMsg = await sendTelegram('sendMessage', {
+        chat_id: task.chatId,
+        text: `⏳ Akko đang quét lại Trang ${task.pageNum} bằng mô hình \`${info.model}\` cho Senpai nè... 🌸`,
+        parse_mode: 'Markdown'
+      });
+      const waitId = waitMsg.result?.message_id;
+      try {
+        const { ocrRaw: pageOcr } = await performOcr(cfg, task.pageBase64, 'image/png');
+        const pageItems = parseOcrResultToItems(pageOcr, cfg.selectedColumns || DEFAULT_COLUMNS);
+        const pageSoPhieu = (pageOcr.soPhieu || '').trim();
+        const historyId = `scan_page_${Date.now()}`;
+        saveBotHistoryItem(historyId, {
+          soPhieu: pageSoPhieu,
+          items: pageItems,
+          model: `${info.model} (${info.providerName})`
+        });
+
+        let sheetStatusText = '';
+        if (cfg.autoSyncSheet && cfg.googleSheetUrl) {
+          const sheetResult = await syncToGoogleSheet(cfg.googleSheetUrl, pageSoPhieu, pageItems);
+          sheetStatusText = sheetResult.success ? '✅ Đã lưu vào Google Sheet' : ('❌ Lỗi Sheet: ' + sheetResult.message);
+        }
+
+        const summaryText = buildSummaryText(pageSoPhieu, pageItems, `${info.model} (${info.providerName})`, sheetStatusText, historyId);
+        const replyMarkup = {
+          inline_keyboard: [
+            [{ text: `🔄 Akko Gửi Lại Lên Sheet Nha!`, callback_data: `resync_${historyId}` }]
+          ]
+        };
+        await sendTelegram('editMessageText', {
+          chat_id: task.chatId,
+          message_id: waitId,
+          text: `📄 *KẾT QUẢ QUÉT LẠI TRANG ${task.pageNum} CHO SENPAI!* 🌸✨\n\n` + summaryText,
+          parse_mode: 'Markdown',
+          reply_markup: replyMarkup
+        });
+      } catch (retryErr) {
+        await sendTelegram('editMessageText', {
+          chat_id: task.chatId,
+          message_id: waitId,
+          text: `❌ Huhu, quét lại Trang ${task.pageNum} vẫn gặp lỗi rùi Senpai: ${retryErr.message}`,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: `🔄 Thử Lại Trang ${task.pageNum} Lần Nữa`, callback_data: data }]
+            ]
+          }
+        });
+      }
     }
     return;
   }
