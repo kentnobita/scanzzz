@@ -35,6 +35,39 @@ const CONFIG_FILE = path.join(DATA_DIR, 'bot_config.json');
 const SYNC_STORE = path.join(DATA_DIR, 'sync_store.json');
 const BOT_HISTORY_FILE = path.join(DATA_DIR, 'bot_history.json');
 
+const BOT_COMMANDS = [
+  { command: 'astart', description: 'Khởi động bé Akko & xem hướng dẫn quét phiếu' },
+  { command: 'ahelp', description: 'Xem danh sách phép thuật và cách dùng' },
+  { command: 'astatus', description: 'Xem trạng thái AI, Google Sheet & Topic' },
+  { command: 'atopic', description: 'Khóa quét phiếu vào Topic này (/atopic all mở khóa)' },
+  { command: 'amodel', description: 'Đổi mô hình AI (Gemini, Qwen, Nex, Minimax...)' },
+  { command: 'aprovider', description: 'Đổi nhà cung cấp AI (Gemini, APInex, Kira, OpenRouter)' },
+  { command: 'akey', description: 'Nạp API Key (Google, APInex, Kira, OpenRouter)' },
+  { command: 'async', description: 'Đồng bộ cấu hình từ Web qua mã Cloud Sync' },
+  { command: 'asheet', description: 'Cài đặt link Webhook Google Sheet' },
+  { command: 'aserver', description: 'Cài đặt máy chủ Web Cloud Sync' }
+];
+
+async function syncTelegramBotCommands() {
+  try {
+    const scopes = [
+      { type: 'default' },
+      { type: 'all_group_chats' },
+      { type: 'all_private_chats' }
+    ];
+    for (const scope of scopes) {
+      await fetch(`${TELEGRAM_API}/setMyCommands`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commands: BOT_COMMANDS, scope })
+      });
+    }
+    console.log('✅ [Akko Bot] Đã đồng bộ danh sách gợi ý câu lệnh (/a...) lên Telegram thành công!');
+  } catch (err) {
+    console.warn('⚠️ Lỗi đồng bộ commands lên Telegram:', err.message);
+  }
+}
+
 const COLUMN_DEFS = {
   ten: { label: 'Tên, nhãn hiệu, quy cách phẩm chất vật tư, dụng cụ, sản phẩm, hàng hóa', short: 'Tên / mã hàng' },
   soOSPO: { label: 'Số O.S/PO', short: 'Số O.S/PO' },
@@ -85,6 +118,7 @@ function getBotConfig() {
       if (!parsed.kiraModel) parsed.kiraModel = 'qwen3.8-27b-free';
       if (!parsed.geminiModel) parsed.geminiModel = 'gemini-3.6-flash';
       if (!parsed.aiProvider) parsed.aiProvider = 'gemini';
+      if (!parsed.groupTopics) parsed.groupTopics = {};
       return parsed;
     }
   } catch (e) {}
@@ -118,7 +152,8 @@ function getBotConfig() {
     autoSyncSheet: defaultSync.autoSyncSheet !== undefined ? !!defaultSync.autoSyncSheet : true,
     cloudSyncCode: defaultSync.code || '',
     selectedColumns: defaultSync.selectedColumns && defaultSync.selectedColumns.length ? defaultSync.selectedColumns : DEFAULT_COLUMNS,
-    fieldPrompts: defaultSync.fieldPrompts || DEFAULT_FIELD_PROMPTS
+    fieldPrompts: defaultSync.fieldPrompts || DEFAULT_FIELD_PROMPTS,
+    groupTopics: defaultSync.groupTopics || {}
   };
 }
 
@@ -927,7 +962,16 @@ function buildSummaryText(soPhieu, items, model, sheetStatusText, historyId) {
   return summaryText;
 }
 
-async function processDocument(chatId, doc, existingWaitMsgId = null, originalUserMsgId = null) {
+async function processDocument(chatId, doc, existingWaitMsgId = null, originalUserMsgId = null, messageThreadId = null) {
+  const _sendTelegram = sendTelegram;
+  const sendTelegram = (method, body) => {
+    const payload = { ...body };
+    if (messageThreadId && !payload.message_thread_id && (method === 'sendMessage' || method === 'sendPhoto' || method === 'sendDocument')) {
+      payload.message_thread_id = messageThreadId;
+    }
+    return _sendTelegram(method, payload);
+  };
+
   const cfg = getBotConfig();
   const info = getActiveProviderInfo(cfg);
 
@@ -1043,7 +1087,8 @@ async function processDocument(chatId, doc, existingWaitMsgId = null, originalUs
             type: 'pdf_page',
             chatId,
             pageBase64,
-            pageNum: p + 1
+            pageNum: p + 1,
+            messageThreadId
           });
           await sendTelegram('sendMessage', {
             chat_id: chatId,
@@ -1231,7 +1276,7 @@ async function processDocument(chatId, doc, existingWaitMsgId = null, originalUs
   } catch (e) {
     console.error('Lỗi quét tài liệu:', e);
     const retryId = 'retry_doc_' + Date.now();
-    RETRY_TASKS.set(retryId, { type: 'document', doc, chatId });
+    RETRY_TASKS.set(retryId, { type: 'document', doc, chatId, messageThreadId });
 
     const replyMarkup = {
       inline_keyboard: [
@@ -1264,7 +1309,16 @@ async function processDocument(chatId, doc, existingWaitMsgId = null, originalUs
   }
 }
 
-async function processPhoto(chatId, bestPhoto, existingWaitMsgId = null, originalUserMsgId = null) {
+async function processPhoto(chatId, bestPhoto, existingWaitMsgId = null, originalUserMsgId = null, messageThreadId = null) {
+  const _sendTelegram = sendTelegram;
+  const sendTelegram = (method, body) => {
+    const payload = { ...body };
+    if (messageThreadId && !payload.message_thread_id && (method === 'sendMessage' || method === 'sendPhoto' || method === 'sendDocument')) {
+      payload.message_thread_id = messageThreadId;
+    }
+    return _sendTelegram(method, payload);
+  };
+
   const cfg = getBotConfig();
   const info = getActiveProviderInfo(cfg);
 
@@ -1375,7 +1429,7 @@ async function processPhoto(chatId, bestPhoto, existingWaitMsgId = null, origina
   } catch (e) {
     console.error('Lỗi quét ảnh:', e);
     const retryId = 'retry_photo_' + Date.now();
-    RETRY_TASKS.set(retryId, { type: 'photo', photo: bestPhoto, chatId });
+    RETRY_TASKS.set(retryId, { type: 'photo', photo: bestPhoto, chatId, messageThreadId });
 
     const replyMarkup = {
       inline_keyboard: [
@@ -1412,6 +1466,16 @@ async function handleCallbackQuery(cbq) {
   const data = cbq.data || '';
   const chatId = cbq.message?.chat?.id;
   const messageId = cbq.message?.message_id;
+  const threadId = cbq.message?.message_thread_id;
+
+  const _sendTelegram = sendTelegram;
+  const sendTelegram = (method, body) => {
+    const payload = { ...body };
+    if (threadId && !payload.message_thread_id && (method === 'sendMessage' || method === 'sendPhoto' || method === 'sendDocument')) {
+      payload.message_thread_id = threadId;
+    }
+    return _sendTelegram(method, payload);
+  };
 
   if (data.startsWith('retry_')) {
     const task = RETRY_TASKS.get(data);
@@ -1428,17 +1492,20 @@ async function handleCallbackQuery(cbq) {
       text: '🪄 Dạ Senpai! Akko đang quét lại ngay đây ạ~'
     });
 
+    const targetThread = task.messageThreadId || threadId;
+
     if (task.type === 'document') {
-      await processDocument(task.chatId, task.doc, messageId, null);
+      await processDocument(task.chatId, task.doc, messageId, null, targetThread);
     } else if (task.type === 'photo') {
-      await processPhoto(task.chatId, task.photo, messageId, null);
+      await processPhoto(task.chatId, task.photo, messageId, null, targetThread);
     } else if (task.type === 'pdf_page') {
       const cfg = getBotConfig();
       const info = getActiveProviderInfo(cfg);
       const waitMsg = await sendTelegram('sendMessage', {
         chat_id: task.chatId,
         text: `⏳ Akko đang quét lại Trang ${task.pageNum} bằng mô hình \`${info.model}\` cho Senpai nè... 🌸`,
-        parse_mode: 'Markdown'
+        parse_mode: 'Markdown',
+        ...(targetThread ? { message_thread_id: targetThread } : {})
       });
       const waitId = waitMsg.result?.message_id;
       try {
@@ -1546,13 +1613,47 @@ async function handleCallbackQuery(cbq) {
 
 async function handleMessage(msg) {
   const chatId = msg.chat?.id;
+  const chatType = msg.chat?.type; // 'private' | 'group' | 'supergroup' | 'channel'
+  const threadId = msg.message_thread_id; // integer hoặc undefined
   let cleanText = (msg.text || '').trim();
-  // Hỗ trợ lệnh trong nhóm (ví dụ /status@AkkoCii_bot -> /status)
-  if (cleanText.startsWith('/')) {
-    cleanText = cleanText.replace(/@\w+/, '');
+
+  // Tự động định tuyến mọi phản hồi vào đúng Topic của Supergroup (nếu có)
+  const _sendTelegram = sendTelegram;
+  const sendTelegram = (method, body) => {
+    const payload = { ...body };
+    if (threadId && !payload.message_thread_id && (method === 'sendMessage' || method === 'sendPhoto' || method === 'sendDocument')) {
+      payload.message_thread_id = threadId;
+    }
+    return _sendTelegram(method, payload);
+  };
+
+  // Chuẩn hóa câu lệnh và nhận diện bot khi có nhiều bot cùng hoạt động trong group
+  let isBotTagged = false;
+  if (/@(AkkoCii_bot|akkocii_bot)/i.test(cleanText)) {
+    isBotTagged = true;
+    cleanText = cleanText.replace(/@(AkkoCii_bot|akkocii_bot)/gi, '').trim();
+  } else if (cleanText.startsWith('/')) {
+    const otherBotMatch = cleanText.match(/\/([a-zA-Z0-9_]+)@([a-zA-Z0-9_]+)/);
+    if (otherBotMatch && otherBotMatch[2].toLowerCase() !== 'akkocii_bot') {
+      // Lệnh dành riêng cho bot khác trong nhóm (ví dụ /login@VdacZaloBot), Akko không can thiệp
+      return;
+    }
+    cleanText = cleanText.replace(/@\w+/, '').trim();
   }
 
-  if (cleanText.startsWith('/start') || cleanText.startsWith('/help')) {
+  const isGroup = chatType === 'group' || chatType === 'supergroup';
+  const allowNoPrefix = (!isGroup) || isBotTagged;
+
+  const matchCommand = (cmdName) => {
+    const lower = cleanText.toLowerCase();
+    const aCmd = '/a' + cmdName.toLowerCase();
+    const plainCmd = '/' + cmdName.toLowerCase();
+    if (lower.startsWith(aCmd + ' ') || lower === aCmd) return true;
+    if (allowNoPrefix && (lower.startsWith(plainCmd + ' ') || lower === plainCmd)) return true;
+    return false;
+  };
+
+  if (matchCommand('start') || matchCommand('help')) {
     const cfg = getBotConfig();
     const info = getActiveProviderInfo(cfg);
     return sendTelegram('sendMessage', {
@@ -1560,22 +1661,25 @@ async function handleMessage(msg) {
       text: '👋 *Yahhoo~! Chào mừng Senpai đến với bé Akko!* 📦🪄✨\n\n' +
         'Em là *Akko* - phù thủy trợ lý AI chuyên quét và đọc phiếu xuất kho siêu tốc của Senpai đây ạ! (≧◡≦) ♡\n\n' +
         '📸 *Cách sai bảo Akko:*\n' +
-        '• Senpai chỉ cần thả nhẹ ảnh hoặc file PDF phiếu kho vào đây (hoặc vào group), Akko sẽ tự động đọc chuẩn từng chữ viết tay và bay đi lưu vào Google Sheet liền nha!\n' +
+        '• Senpai chỉ cần thả nhẹ ảnh hoặc file PDF phiếu kho vào đây (hoặc vào group/topic), Akko sẽ tự động đọc chuẩn từng chữ viết tay và bay đi lưu vào Google Sheet liền nha!\n' +
         '• Khi làm xong việc, Akko sẽ tự dọn dẹp ảnh/file gốc để căn phòng chat của Senpai luôn sạch sẽ ngăn nắp nha~ 🧹\n' +
         '• Nếu mạng giật lag rớt gói tin, Akko có sẵn nút 🔄 *Thử Quét Lại* để Senpai bấm cái là Akko làm lại liền!\n\n' +
-        '🪄 *Phép thuật quản lý của Akko:*\n' +
-        '• `/provider <gemini|apinex|kira|openrouter>`: Đổi phép thuật AI (hoặc gõ số 1-4 nè)\n' +
-        '• `/model <Tên>`: Chọn mô hình AI mà Senpai thích\n' +
-        '• `/key <Key>`: Nạp API key cho Akko (tự nhận diện Google `AIzaSy...`, APInex `sk-apx...`, Kira `kira_...`, OpenRouter `sk-or-...`)\n' +
-        '• `/status`: Xem Akko đang có những gì trong balo\n' +
-        '• `/sync <Mã>`: Kéo toàn bộ phép thuật từ Web về (Ví dụ: `/sync KHO-01`)\n' +
-        '• `/sheet <Link>`: Cập nhật link Google Sheet của Senpai\n\n' +
+        '🪄 *Phép thuật câu lệnh của Akko (thêm tiền tố `a` để không trùng bot khác):*\n' +
+        '• `/atopic`: Khóa mục tiêu để Akko chỉ quét ảnh trong Topic này (dành cho Supergroup)\n' +
+        '• `/atopic all`: Mở khóa để Akko quét ở tất cả các topic\n' +
+        '• `/atopic status`: Xem topic hiện tại đang được gán quét phiếu\n' +
+        '• `/aprovider <gemini|apinex|kira|openrouter>`: Đổi phép thuật AI (hoặc gõ số 1-4 nè)\n' +
+        '• `/amodel <Tên>`: Chọn mô hình AI mà Senpai thích\n' +
+        '• `/akey <Key>`: Nạp API key cho Akko (tự nhận diện Google `AIzaSy...`, APInex `sk-apx...`, Kira `kira_...`, OpenRouter `sk-or-...`)\n' +
+        '• `/astatus`: Xem Akko đang có những gì trong balo\n' +
+        '• `/async <Mã>`: Kéo toàn bộ phép thuật từ Web về (Ví dụ: `/async KHO-01`)\n' +
+        '• `/asheet <Link>`: Cập nhật link Google Sheet của Senpai\n\n' +
         `🌸 *Hiện tại:* Phép thuật *${info.providerName}* | Mô hình \`${info.model}\``,
       parse_mode: 'Markdown'
     });
   }
 
-  if (cleanText.startsWith('/status')) {
+  if (matchCommand('status')) {
     const cfg = getBotConfig();
     const info = getActiveProviderInfo(cfg);
     const maskedGeminiKey = cfg.geminiKey ? (cfg.geminiKey.slice(0, 8) + '...' + cfg.geminiKey.slice(-4)) : 'Chưa có';
@@ -1583,12 +1687,23 @@ async function handleMessage(msg) {
     const maskedKiraKey = cfg.kiraKey ? (cfg.kiraKey.slice(0, 8) + '...' + cfg.kiraKey.slice(-4)) : 'Chưa có';
     const maskedOrKey = cfg.openRouterKey ? (cfg.openRouterKey.slice(0, 10) + '...' + cfg.openRouterKey.slice(-4)) : 'Chưa có';
 
+    let topicStatusText = '';
+    if (isGroup) {
+      const cur = cfg.groupTopics && cfg.groupTopics[String(chatId)];
+      if (cur && cur.topicId !== undefined) {
+        topicStatusText = `🎯 *TOPIC QUÉT PHIẾU:* Đang khóa riêng Topic ID \`${cur.topicId}\` (Chỉ quét ảnh trong topic này)\n\n`;
+      } else {
+        topicStatusText = `🌐 *TOPIC QUÉT PHIẾU:* Mọi topic (Chưa khóa - Senpai gõ \`/atopic\` trong topic để khóa nha)\n\n`;
+      }
+    }
+
     return sendTelegram('sendMessage', {
       chat_id: chatId,
       text: '⚙️ *BẢNG TRẠNG THÁI CỦA BÉ AKKO NÈ SENPAI:* 🌸✨\n\n' +
         `🤖 *AI ĐANG HOẠT ĐỘNG:*\n` +
         `• Phép thuật chính: *${info.providerName.toUpperCase()}* 🎯\n` +
         `• Mô hình đang chạy: \`${info.model}\` ✨\n\n` +
+        topicStatusText +
         `📋 *DANH SÁCH MÔ HÌNH AKKO ĐANG CÓ:*\n` +
         `• Google Gemini: \`${cfg.geminiModel || 'gemini-3.6-flash'}\` (\`${maskedGeminiKey}\`)\n` +
         `• APInex: \`${cfg.apinexModel || 'free/gemini-3.8-flash'}\` (\`${maskedApxKey}\`)\n` +
@@ -1599,19 +1714,151 @@ async function handleMessage(msg) {
         `• Tự động đẩy: *${cfg.autoSyncSheet ? 'BẬT' : 'TẮT'}*\n\n` +
         `☁️ *MÃ CLOUD SYNC:*\n` +
         `• Trạng thái: \`${maskSyncCode(cfg.cloudSyncCode)}\` 🔒\n\n` +
-        '👉 Senpai gõ `/sync <Mã>` để Akko cập nhật nhanh từ Web nha!\n' +
-        '👉 Gõ `/provider <1-4>` để đổi nhà cung cấp AI cái rụp nè~',
+        '👉 Senpai gõ `/async <Mã>` để Akko cập nhật nhanh từ Web nha!\n' +
+        '👉 Gõ `/aprovider <1-4>` để đổi nhà cung cấp AI cái rụp nè~',
       parse_mode: 'Markdown'
     });
   }
 
-  if (cleanText.startsWith('/sync')) {
+  // Lệnh quản lý và chỉ định Topic trong Supergroup (/atopic hoặc /topic)
+  if (matchCommand('topic') || matchCommand('settopic')) {
+    const args = cleanText.split(/\s+/);
+    const subCmd = (args[1] || '').toLowerCase().trim();
+    const cfg = getBotConfig();
+
+    // Trường hợp 1: Nhắn tin riêng 1-1 với bot -> Hiện hướng dẫn chi tiết
+    if (!isGroup) {
+      return sendTelegram('sendMessage', {
+        chat_id: chatId,
+        text: '💬 *HƯỚNG DẪN CÀI ĐẶT TOPIC TRONG SUPERGROUP:* 🌸✨\n\n' +
+          'Senpai muốn Akko chỉ nhận diện và quét ảnh trong 1 Topic nhất định của Supergroup đúng hông nè? Rất đơn giản ạ:\n\n' +
+          '1️⃣ Thêm Akko (`@AkkoCii_bot`) vào Supergroup của công ty/kho hàng.\n' +
+          '2️⃣ Mở đúng *Topic* mà Senpai muốn dùng để quét phiếu (Ví dụ topic: "Quét Phiếu" hoặc "Kho Nhận").\n' +
+          '3️⃣ Gõ lệnh: `/atopic` ngay trong topic đó!\n\n' +
+          '🪄 *Phép thuật sẽ kích hoạt:* Akko tự động ghi nhớ ID của Topic đó. Từ đó, Akko *chỉ quét ảnh/PDF* được gửi vào Topic này, các topic khác Akko sẽ giữ yên lặng tuyệt đối nha! (≧◡≦) ♡\n\n' +
+          '• Trong nhóm gõ `/atopic all`: Cho phép Akko quét ở tất cả topic.\n' +
+          '• Trong nhóm gõ `/atopic status`: Xem topic hiện tại đang khóa.',
+        parse_mode: 'Markdown'
+      });
+    }
+
+    // Trường hợp 2: Lệnh gõ trong Group / Supergroup
+    if (!cfg.groupTopics) cfg.groupTopics = {};
+    const groupKey = String(chatId);
+
+    // /atopic all | /atopic reset | /atopic off -> Hủy khóa topic
+    if (subCmd === 'all' || subCmd === 'reset' || subCmd === 'off' || subCmd === 'clear') {
+      if (cfg.groupTopics[groupKey]) {
+        delete cfg.groupTopics[groupKey];
+        saveBotConfig(cfg);
+      }
+      return sendTelegram('sendMessage', {
+        chat_id: chatId,
+        text: '🔓 *ĐÃ MỞ KHÓA TOÀN BỘ TOPIC!* 🌸✨\n\n' +
+          `Từ giờ trong nhóm *${msg.chat.title || 'này'}*, Akko sẽ nhận diện và quét ảnh/PDF ở *TẤT CẢ các topic* nha Senpai~ (≧◡≦) ♡`,
+        parse_mode: 'Markdown'
+      });
+    }
+
+    // /atopic status -> Xem trạng thái topic của nhóm
+    if (subCmd === 'status' || subCmd === 'check') {
+      const cur = cfg.groupTopics[groupKey];
+      if (cur && cur.topicId !== undefined) {
+        return sendTelegram('sendMessage', {
+          chat_id: chatId,
+          text: `🎯 *TRẠNG THÁI TOPIC CỦA NHÓM:* 🌸✨\n\n` +
+            `• Nhóm: *${msg.chat.title || 'Supergroup'}*\n` +
+            `• Topic được chỉ định: \`${cur.topicId}\`\n` +
+            `• Thiết lập bởi: *${cur.setBy || 'Senpai'}*\n` +
+            `• Cập nhật lúc: \`${new Date(cur.updatedAt).toLocaleString('vi-VN')}\`\n\n` +
+            `✅ Akko *chỉ quét ảnh/PDF* được gửi trong Topic này thôi nha!\n` +
+            `👉 Gõ \`/atopic all\` để cho phép quét ở mọi topic trở lại.`,
+          parse_mode: 'Markdown'
+        });
+      } else {
+        return sendTelegram('sendMessage', {
+          chat_id: chatId,
+          text: `🌐 *TRẠNG THÁI TOPIC CỦA NHÓM:* 🌸✨\n\n` +
+            `• Nhóm: *${msg.chat.title || 'Supergroup'}*\n` +
+            `• Hiện tại: *Chưa khóa topic nào* (Akko nhận diện ảnh ở tất cả các topic).\n\n` +
+            `👉 Để khóa riêng một Topic, Senpai hãy vào đúng Topic đó rồi gõ lệnh \`/atopic\` nha!`,
+          parse_mode: 'Markdown'
+        });
+      }
+    }
+
+    // /atopic <id> -> Cài đặt bằng ID thủ công
+    if (subCmd && /^\d+$/.test(subCmd)) {
+      const manualId = parseInt(subCmd, 10);
+      cfg.groupTopics[groupKey] = {
+        topicId: manualId,
+        chatTitle: msg.chat.title || 'Supergroup',
+        setBy: msg.from?.first_name || 'Senpai',
+        updatedAt: new Date().toISOString()
+      };
+      saveBotConfig(cfg);
+      return sendTelegram('sendMessage', {
+        chat_id: chatId,
+        text: `🎯 *ĐÃ THIẾT LẬP TOPIC QUÉT PHIẾU!* 🌸✨\n\n` +
+          `• Nhóm: *${msg.chat.title || 'Supergroup'}*\n` +
+          `• Topic ID khóa: \`${manualId}\`\n\n` +
+          `Từ giờ Akko chỉ quét ảnh/PDF được thả vào Topic ID \`${manualId}\` thôi nha! (≧◡≦) ♡`,
+        parse_mode: 'Markdown'
+      });
+    }
+
+    // /atopic (không tham số) -> Tự động bắt lấy message_thread_id của topic hiện tại!
+    if (threadId) {
+      cfg.groupTopics[groupKey] = {
+        topicId: threadId,
+        chatTitle: msg.chat.title || 'Supergroup',
+        setBy: msg.from?.first_name || 'Senpai',
+        updatedAt: new Date().toISOString()
+      };
+      saveBotConfig(cfg);
+      return sendTelegram('sendMessage', {
+        chat_id: chatId,
+        text: `🎯 *TUÂN LỆNH SENPAI! AKKO ĐÃ KHÓA MỤC TIÊU VÀO TOPIC NÀY!* 🌸✨\n\n` +
+          `• Nhóm: *${msg.chat.title || 'Supergroup'}*\n` +
+          `• Topic ID: \`${threadId}\`\n\n` +
+          `Từ giờ, trong nhóm này:\n` +
+          `✅ Akko *chỉ tự động quét ảnh & file PDF* khi được gửi trong *Topic này*!\n` +
+          `🔇 Bỏ qua và giữ yên lặng khi có ảnh/file ở các topic khác để tránh làm phiền nhóm.\n\n` +
+          `💡 _Mẹo: Gõ \`/atopic all\` nếu Senpai muốn Akko quét ở mọi topic trở lại nha!_`,
+        parse_mode: 'Markdown'
+      });
+    } else {
+      // Tin nhắn gửi ở Topic General hoặc nhóm thường chưa bật Topics
+      const isForum = msg.chat?.is_forum;
+      if (!isForum && chatType === 'group') {
+        return sendTelegram('sendMessage', {
+          chat_id: chatId,
+          text: '📌 *Senpai ơi! Nhóm này là Nhóm Thường (chưa bật tính năng Chủ đề / Topics)!* 🌸✨\n\n' +
+            '• Trong nhóm thường, Akko luôn *tự động quét 100% mọi ảnh và file PDF* được gửi lên nhóm theo đúng quy tắc ban đầu nha!\n' +
+            '• Tính năng phân chia Topic chỉ áp dụng cho Supergroup đã bật tính năng "Chủ đề (Topics/Forum)" thôi ạ~ (≧◡≦) ♡',
+          parse_mode: 'Markdown'
+        });
+      }
+
+      const cur = cfg.groupTopics[groupKey];
+      return sendTelegram('sendMessage', {
+        chat_id: chatId,
+        text: `📌 *Senpai ơi!* Tin nhắn này đang ở *Topic Chung (General)* hoặc nhóm chưa bật tính năng Topics (Chủ đề).\n\n` +
+          `• Để Akko chỉ quét ở một Topic riêng (ví dụ: topic "Quét Phiếu"), Senpai hãy mở đúng Topic đó rồi gõ \`/atopic\` nha!\n` +
+          `• Với nhóm thường không chia topic, Akko luôn quét mọi ảnh/PDF theo đúng quy tắc mặc định ban đầu!\n` +
+          `• Trạng thái hiện tại: ${cur && cur.topicId !== undefined ? `Đang khóa ở Topic ID \`${cur.topicId}\`` : 'Đang quét ở tất cả topic'}`,
+        parse_mode: 'Markdown'
+      });
+    }
+  }
+
+  if (matchCommand('sync')) {
     const args = cleanText.split(' ');
     const code = (args[1] || '').trim().toUpperCase();
     if (!code) {
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: '⚠️ Senpai ơi, nhớ nhập mã đồng bộ nha! Ví dụ: `/sync KHO-01` nè~ 🎀',
+        text: '⚠️ Senpai ơi, nhớ nhập mã đồng bộ nha! Ví dụ: `/async KHO-01` nè~ 🎀',
         parse_mode: 'Markdown'
       });
     }
@@ -1665,8 +1912,8 @@ async function handleMessage(msg) {
           text: `❌ Huhu, Akko không tìm thấy dữ liệu cho mã 【${maskSyncCode(code)}】 trên Cloud (https://scanzzz.vercel.app) hoặc mã đã hết hạn rùi Senpai ơi! (｡•́︿•̀｡)\n\n` +
             `👉 *Senpai thử thế này xem sao nha:*\n` +
             `1. Mở Web (https://scanzzz.vercel.app hoặc localhost:3000), vào Cài đặt ⚙️ -> bấm *Lưu lên Cloud* với mã này.\n` +
-            `2. Hoặc nếu chạy khác mạng, dùng lệnh \`/server <link_web>\` để chỉ đường cho Akko.\n` +
-            `3. Hoặc gõ trực tiếp \`/key <Key>\` để đưa key cho Akko giữ luôn nè!`,
+            `2. Hoặc nếu chạy khác mạng, dùng lệnh \`/aserver <link_web>\` để chỉ đường cho Akko.\n` +
+            `3. Hoặc gõ trực tiếp \`/akey <Key>\` để đưa key cho Akko giữ luôn nè!`,
           parse_mode: 'Markdown'
         });
       }
@@ -1742,7 +1989,7 @@ async function handleMessage(msg) {
     }
   }
 
-  if (cleanText.startsWith('/server')) {
+  if (matchCommand('server')) {
     const args = cleanText.split(' ');
     const sUrl = (args[1] || '').trim();
     const cfg = getBotConfig();
@@ -1750,9 +1997,9 @@ async function handleMessage(msg) {
       return sendTelegram('sendMessage', {
         chat_id: chatId,
         text: `🌐 Dạ Senpai! Máy chủ Web hiện tại của Akko là: \`${cfg.serverUrl || 'https://scanzzz.vercel.app'}\` nè~\n\n` +
-          '• Đổi máy chủ: `/server <URL>`\n' +
-          '• Ví dụ Cloud: `/server https://scanzzz.vercel.app`\n' +
-          '• Hoặc mạng LAN (Termux chung Wifi máy tính): `/server http://192.168.1.x:3000`',
+          '• Đổi máy chủ: `/aserver <URL>`\n' +
+          '• Ví dụ Cloud: `/aserver https://scanzzz.vercel.app`\n' +
+          '• Hoặc mạng LAN (Termux chung Wifi máy tính): `/aserver http://192.168.1.x:3000`',
         parse_mode: 'Markdown'
       });
     }
@@ -1760,12 +2007,12 @@ async function handleMessage(msg) {
     saveBotConfig(cfg);
     return sendTelegram('sendMessage', {
       chat_id: chatId,
-      text: `✅ Tuân lệnh Senpai! Akko đã ghi nhớ máy chủ Web mới: \`${sUrl}\` rùi nè!\nGiờ Senpai có thể gõ \`/sync <Mã>\` để kéo dữ liệu từ máy chủ này về nha~ ✨`,
+      text: `✅ Tuân lệnh Senpai! Akko đã ghi nhớ máy chủ Web mới: \`${sUrl}\` rùi nè!\nGiờ Senpai có thể gõ \`/async <Mã>\` để kéo dữ liệu từ máy chủ này về nha~ ✨`,
       parse_mode: 'Markdown'
     });
   }
 
-  if (cleanText.startsWith('/provider')) {
+  if (matchCommand('provider')) {
     const args = cleanText.split(' ');
     const prov = (args[1] || '').trim().toLowerCase();
     const cfg = getBotConfig();
@@ -1806,7 +2053,7 @@ async function handleMessage(msg) {
       const info = getActiveProviderInfo(cfg);
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: '💡 Senpai muốn Akko dùng AI nào nè? Gõ `/provider <gemini|apinex|kira|openrouter>` (hoặc gõ số 1-4 nha):\n' +
+        text: '💡 Senpai muốn Akko dùng AI nào nè? Gõ `/aprovider <gemini|apinex|kira|openrouter>` (hoặc gõ số 1-4 nha):\n' +
           `• 1: Google Gemini (\`${cfg.geminiModel || 'gemini-3.6-flash'}\`)\n` +
           `• 2: APInex (\`${cfg.apinexModel || 'free/gemini-3.8-flash'}\`)\n` +
           `• 3: Kira AI (\`${cfg.kiraModel || 'qwen3.8-27b-free'}\`)\n` +
@@ -1817,35 +2064,43 @@ async function handleMessage(msg) {
     }
   }
 
-  if (cleanText.startsWith('/model')) {
+  if (matchCommand('model')) {
     const args = cleanText.split(' ');
     const modelName = args.slice(1).join(' ').trim();
     if (!modelName) {
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: '💡 *Senpai ơi, đây là danh sách các mô hình AI xịn xò Akko gợi ý nè:* 🌸\n\n' +
+        text: '💡 *Senpai ơi, đây là danh sách các mô hình AI xịn xò mới nhất Akko gợi ý nè:* 🌸\n\n' +
           '⚡ *Google Gemini trực tiếp:*\n' +
-          '• `/model gemini-3.6-flash` (Mô hình chính - Siêu nhanh & chuẩn)\n\n' +
-          '🌟 *Kira AI (kiraai.vn - Free 100M tokens/ngày):*\n' +
-          '• `/model qwen3.8-27b-free` (Khuyên dùng - Vision đọc phiếu rất tốt)\n' +
-          '• `/model qwen3.8-flash-free` (Nhanh & nhẹ)\n' +
-          '• `/model glm-5.3-flash-free` (Đa phương thức)\n' +
-          '• `/model mimo-v2.5-free`\n' +
-          '• `/model hy3-free`\n' +
-          '• `/model kira-auto`\n' +
-          '• `/model qwen3.8-max`\n\n' +
-          '🔥 *APInex (Free 1M Token):*\n' +
-          '• `/model free/gemini-3.8-flash` (Khuyên dùng - Cực nhanh)\n' +
-          '• `/model free/qwen-3.8-max` (Đỉnh cao chữ viết tay tiếng Việt)\n' +
-          '• `/model free/gpt-5.6-luna` (Ổn định, bóc tách cấu trúc cột)\n' +
-          '• `/model free/muse-spark-1.3` (Nhẹ nhàng, tiết kiệm)\n\n' +
-          '🌐 *OpenRouter (Miễn phí & Tối ưu OCR):*\n' +
-          '• `/model nex-agi/nex-n2.5-pro:free` (Khuyên dùng - Rất nhanh & chuẩn)\n' +
-          '• `/model nex-agi/nex-n2.5-mini:free` (Siêu nhẹ & tốc độ cao)\n' +
-          '• `/model minimax/minimax-m3:free`\n' +
-          '• `/model google/gemini-2.5-flash`\n' +
-          '• `/model qwen/qwen2.5-vl-72b-instruct`\n\n' +
-          '_(Senpai có thể gõ `/model <mã>` để dạy Akko dùng mã model tùy ý nha)_',
+          '• `/amodel gemini-3.6-flash` (Mô hình chính - Siêu nhanh & chuẩn)\n\n' +
+          '🌟 *Kira AI (kiraai.vn - Free 100M tokens/ngày & Đa dạng Vision):*\n' +
+          '• `/amodel qwen3.8-flash-free` (Khuyên dùng • Free 100M • Cực nhanh 3-5s)\n' +
+          '• `/amodel qwen3.8-27b-free` (Free 100M • Vision đọc chữ viết tay rất tốt)\n' +
+          '• `/amodel kira-3.5-flash-pdf` (MỚI • Chuyên dụng đọc PDF & phiếu kho)\n' +
+          '• `/amodel kira-3.5-flash` (MỚI • Thế hệ 3.5 siêu tốc)\n' +
+          '• `/amodel deepseek-v4-flash-vision-exp` (MỚI • Vision thử nghiệm)\n' +
+          '• `/amodel glm-5.3-flash-free` (Free 100M • Đa phương thức)\n' +
+          '• `/amodel qwen3.8-max` (Đỉnh cao chữ viết tay)\n' +
+          '• `/amodel kira-auto` (Tự động điều phối mô hình)\n\n' +
+          '🔥 *APInex (Free 1M Token & Cụm Model Mới):*\n' +
+          '• `/amodel free/gemini-3.8-flash` (Khuyên dùng - Cực nhanh & chuẩn)\n' +
+          '• `/amodel free/gemini-3.1-pro` (MỚI • Phân tích sâu phiếu mờ)\n' +
+          '• `/amodel free/qwen-3.8-max` (Đỉnh cao chữ viết tay tiếng Việt)\n' +
+          '• `/amodel free/gpt-5.6-luna` (Ổn định, bóc tách cấu trúc cột)\n' +
+          '• `/amodel free/glm-5.3-flash` (MỚI • Đa phương thức siêu tốc)\n' +
+          '• `/amodel free/claude-sonnet-4.6` (MỚI • Hiểu bảng biểu chuẩn)\n' +
+          '• `/amodel free/deepseek-v4.1-flash` (MỚI • Nhẹ & tiết kiệm)\n' +
+          '• `/amodel free/muse-spark-1.3` (Gọn nhẹ, phản hồi tức thì)\n\n' +
+          '🌐 *OpenRouter (Miễn phí & Tối ưu OCR Vision):*\n' +
+          '• `/amodel nex-agi/nex-n2.5-pro:free` (Khuyên dùng - Rất nhanh & chuẩn)\n' +
+          '• `/amodel nex-agi/nex-n2.5-mini:free` (Siêu nhẹ & tốc độ cao)\n' +
+          '• `/amodel inclusionai/ling-3.0-flash-vl:free` (MỚI • Vision 3.0)\n' +
+          '• `/amodel google/gemma-4-31b-it:free` (MỚI • Google Gemma 4 31B)\n' +
+          '• `/amodel google/gemini-2.5-flash` (Google Gemini Vision siêu ổn định)\n' +
+          '• `/amodel openai/gpt-4o-mini` (Bóc tách bảng chuẩn)\n' +
+          '• `/amodel qwen/qwen2.5-vl-72b-instruct` (Đỉnh cao chữ viết tay châu Á)\n' +
+          '• `/amodel openrouter/free` (MỚI • Auto Free Router)\n\n' +
+          '_(Senpai có thể gõ `/amodel <mã>` để Akko kích hoạt bất kỳ mã model nào nha)_',
         parse_mode: 'Markdown'
       });
     }
@@ -1853,24 +2108,27 @@ async function handleMessage(msg) {
     const cfg = getBotConfig();
     const lowerModel = modelName.toLowerCase();
 
-    if (lowerModel.startsWith('gemini') || lowerModel.includes('gemini-3.6') || lowerModel === 'gemini-1.5-flash') {
-      cfg.aiProvider = 'gemini';
-      cfg.geminiModel = modelName;
-    } else if (modelName.startsWith('free/')) {
+    if (lowerModel.startsWith('free/')) {
       cfg.aiProvider = 'apinex';
       cfg.apinexModel = modelName;
     } else if (
       modelName.startsWith('kira_') ||
       modelName.startsWith('kira-') ||
+      modelName.startsWith('deepseek-v4-flash-vision') ||
       lowerModel.includes('-free') ||
       lowerModel.startsWith('qwen3.8') ||
+      lowerModel.startsWith('qwen3.7') ||
       lowerModel.startsWith('glm-5.3') ||
       lowerModel.startsWith('mimo-') ||
-      lowerModel.startsWith('hy3-')
+      lowerModel.startsWith('hy3') ||
+      lowerModel.startsWith('mercury-')
     ) {
       cfg.aiProvider = 'kira';
       cfg.kiraModel = modelName;
-    } else if (modelName.includes('/') || modelName.includes(':free')) {
+    } else if (lowerModel.startsWith('gemini') || lowerModel.includes('gemini-3.6') || lowerModel === 'gemini-1.5-flash') {
+      cfg.aiProvider = 'gemini';
+      cfg.geminiModel = modelName;
+    } else if (modelName.includes('/') || modelName.includes(':free') || modelName.startsWith('openrouter')) {
       cfg.aiProvider = 'openrouter';
       cfg.openRouterModel = modelName;
     } else {
@@ -1894,13 +2152,13 @@ async function handleMessage(msg) {
     });
   }
 
-  if (cleanText.startsWith('/key')) {
+  if (matchCommand('key')) {
     const args = cleanText.split(' ');
     const newKey = (args[1] || '').trim();
     if (!newKey) {
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: '⚠️ Senpai gửi chìa khóa API key cho Akko theo cú pháp này nha:\n`/key <API_Key>`\n' +
+        text: '⚠️ Senpai gửi chìa khóa API key cho Akko theo cú pháp này nha:\n`/akey <API_Key>`\n' +
           '• Google Key: bắt đầu bằng `AIzaSy...` (Akko sẽ tự chuyển sang Google Gemini)\n' +
           '• APInex Key: bắt đầu bằng `sk-apx...` (Akko sẽ tự chuyển sang APInex)\n' +
           '• Kira Key: bắt đầu bằng `kira_...` (Akko sẽ tự chuyển sang Kira AI)\n' +
@@ -1967,13 +2225,13 @@ async function handleMessage(msg) {
     }
   }
 
-  if (cleanText.startsWith('/sheet')) {
+  if (matchCommand('sheet')) {
     const args = cleanText.split(' ');
     const url = args.slice(1).join(' ').trim();
     if (!url) {
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: '⚠️ Senpai gửi link Webhook Apps Script cho Akko theo mẫu này nha: `/sheet <Link>` 📊',
+        text: '⚠️ Senpai gửi link Webhook Apps Script cho Akko theo mẫu này nha: `/asheet <Link>` 📊',
         parse_mode: 'Markdown'
       });
     }
@@ -1988,7 +2246,22 @@ async function handleMessage(msg) {
 
   // Handle Document (PDF or Uncompressed Image)
   if (msg.document) {
-    processDocument(chatId, msg.document, null, msg.message_id).catch(err => {
+    // Chỉ áp dụng khóa topic nếu đây là Supergroup có bật Topics (Forum); Group bình thường luôn giữ nguyên 100% quy tắc cũ
+    const isForumGroup = chatType === 'supergroup' && (msg.chat?.is_forum || threadId !== undefined);
+    if (isForumGroup) {
+      const cfg = getBotConfig();
+      const groupSetting = cfg.groupTopics && cfg.groupTopics[String(chatId)];
+      if (groupSetting && groupSetting.topicId !== undefined && groupSetting.topicId !== null) {
+        const targetTopicId = Number(groupSetting.topicId);
+        const currentTopicId = Number(threadId || 0);
+        if (currentTopicId !== targetTopicId) {
+          // Bỏ qua và giữ yên lặng khi tài liệu không nằm trong topic được chỉ định
+          return;
+        }
+      }
+    }
+
+    processDocument(chatId, msg.document, null, msg.message_id, threadId).catch(err => {
       console.error('Lỗi processDocument:', err);
     });
     return;
@@ -1996,8 +2269,23 @@ async function handleMessage(msg) {
 
   // Handle Photo
   if (msg.photo && msg.photo.length) {
+    // Chỉ áp dụng khóa topic nếu đây là Supergroup có bật Topics (Forum); Group bình thường luôn giữ nguyên 100% quy tắc cũ
+    const isForumGroup = chatType === 'supergroup' && (msg.chat?.is_forum || threadId !== undefined);
+    if (isForumGroup) {
+      const cfg = getBotConfig();
+      const groupSetting = cfg.groupTopics && cfg.groupTopics[String(chatId)];
+      if (groupSetting && groupSetting.topicId !== undefined && groupSetting.topicId !== null) {
+        const targetTopicId = Number(groupSetting.topicId);
+        const currentTopicId = Number(threadId || 0);
+        if (currentTopicId !== targetTopicId) {
+          // Bỏ qua và giữ yên lặng khi ảnh không nằm trong topic được chỉ định
+          return;
+        }
+      }
+    }
+
     const bestPhoto = msg.photo[msg.photo.length - 1];
-    processPhoto(chatId, bestPhoto, null, msg.message_id).catch(err => {
+    processPhoto(chatId, bestPhoto, null, msg.message_id, threadId).catch(err => {
       console.error('Lỗi processPhoto:', err);
     });
     return;
@@ -2028,4 +2316,6 @@ async function pollUpdates() {
 }
 
 console.log('🌸 [Akko Bot] Yahhoo~! Bé Akko (@AkkoCii_bot) đã thức dậy và sẵn sàng nhận lệnh từ Senpai rồi nè! 🪄✨');
-pollUpdates();
+syncTelegramBotCommands().finally(() => {
+  pollUpdates();
+});

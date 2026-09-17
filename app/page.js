@@ -50,7 +50,7 @@ const OPENROUTER_MODELS = [
   {
     id: 'nex-agi/nex-n2.5-pro:free',
     name: 'Nex AGI: Nex-N2.5-Pro (Free)',
-    shortName: 'Nex-N2.5-Pro (Free)',
+    shortName: 'Nex-N2.5-Pro',
     badge: 'MỚI • Free Siêu Chuẩn & Nhanh',
     badgeColor: 'bg-indigo-100 text-indigo-800',
     desc: 'Mô hình Agentic Vision thế hệ mới của Nex AGI trên OpenRouter. Hoàn toàn miễn phí ($0), tốc độ phản hồi cực nhanh (~1.5s), bóc tách cấu trúc phiếu kho và chữ viết tay xuất sắc.',
@@ -58,18 +58,34 @@ const OPENROUTER_MODELS = [
   {
     id: 'nex-agi/nex-n2.5-mini:free',
     name: 'Nex AGI: Nex-N2.5-Mini (Free)',
-    shortName: 'Nex-N2.5-Mini (Free)',
+    shortName: 'Nex-N2.5-Mini',
     badge: 'MỚI • Free Siêu Tốc',
     badgeColor: 'bg-teal-100 text-teal-800',
     desc: 'Bản rút gọn siêu nhẹ của Nex AGI. Hoàn toàn miễn phí ($0), phản hồi tức thì dưới 2s cho các phiếu in rõ nét và bảng biểu.',
   },
   {
+    id: 'inclusionai/ling-3.0-flash-vl:free',
+    name: 'InclusionAI: Ling 3.0 Flash VL (Free)',
+    shortName: 'Ling 3.0 Flash VL',
+    badge: 'MỚI • Free Vision 3.0',
+    badgeColor: 'bg-cyan-100 text-cyan-800',
+    desc: 'Mô hình Vision đa phương thức thế hệ mới của InclusionAI. Miễn phí ($0), nhận diện chữ viết tay và bảng biểu tiếng Việt tốt.',
+  },
+  {
+    id: 'google/gemma-4-31b-it:free',
+    name: 'Google Gemma 4 31B (Free)',
+    shortName: 'Gemma 4 31B',
+    badge: 'MỚI • Free Vision Thế Hệ 4',
+    badgeColor: 'bg-sky-100 text-sky-800',
+    desc: 'Mô hình Vision mở thế hệ thứ 4 của Google. Cửa sổ ngữ cảnh 262K, hiểu hình ảnh tài liệu phức tạp và dòng kẻ bảng.',
+  },
+  {
     id: 'google/gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash',
+    name: 'Google Gemini 2.5 Flash',
     shortName: 'Gemini 2.5 Flash',
     badge: 'Khuyên Dùng • Chuẩn & Nhanh',
     badgeColor: 'bg-emerald-100 text-emerald-800',
-    desc: 'Bản Gemini Flash mới nhất trên OpenRouter. Đọc chữ viết tay tiếng Việt xuất sắc, tốc độ phản hồi nhanh.',
+    desc: 'Bản Gemini Flash mới nhất trên OpenRouter. Đọc chữ viết tay tiếng Việt xuất sắc, tốc độ phản hồi nhanh và độ ổn định cao.',
   },
   {
     id: 'openai/gpt-4o-mini',
@@ -88,12 +104,12 @@ const OPENROUTER_MODELS = [
     desc: 'Mô hình Vision 72B chuyên biệt cho tài liệu & chữ viết tay châu Á, độ chính xác nhận diện số viết tay rất cao.',
   },
   {
-    id: 'qwen/qwen3-vl-8b-instruct',
-    name: 'Qwen 3 VL 8B',
-    shortName: 'Qwen 3 VL 8B',
-    badge: 'Tối Ưu Tốc Độ',
+    id: 'openrouter/free',
+    name: 'OpenRouter Free Auto-Router',
+    shortName: 'Auto Free Router',
+    badge: 'MỚI • Tự Động Điều Phối',
     badgeColor: 'bg-amber-100 text-amber-800',
-    desc: 'Thế hệ Qwen 3 mới nhất, gọn nhẹ, xử lý các phiếu đơn giản nhanh chóng.',
+    desc: 'Router thông minh tự động lựa chọn mô hình Vision miễn phí sẵn có tốt nhất tại thời điểm gửi yêu cầu.',
   },
 ];
 
@@ -105,6 +121,14 @@ const APINEX_MODELS = [
     badge: 'Khuyên Dùng • Cực Nhanh',
     badgeColor: 'bg-emerald-100 text-emerald-800',
     desc: 'Mô hình Gemini 3.8 Flash của Google trên APInex. Cửa sổ 1M token, tốc độ đọc và xử lý phiếu xuất kho rất tốt.',
+  },
+  {
+    id: 'free/gemini-3.1-pro',
+    name: 'Gemini 3.1 Pro',
+    shortName: 'Gemini 3.1 Pro',
+    badge: 'MỚI • Phân Tích Sâu',
+    badgeColor: 'bg-blue-100 text-blue-800',
+    desc: 'Phiên bản Pro chuyên xử lý các phiếu mờ, chụp nghiêng, bảng biểu nhiều dòng và chữ viết tay phức tạp.',
   },
   {
     id: 'free/qwen-3.8-max',
@@ -123,12 +147,103 @@ const APINEX_MODELS = [
     desc: 'Mô hình GPT 5.6 Luna tối ưu hóa bóc tách cấu trúc cột, số chứng từ và dòng bảng.',
   },
   {
+    id: 'free/glm-5.3-flash',
+    name: 'GLM 5.3 Flash',
+    shortName: 'GLM 5.3 Flash',
+    badge: 'MỚI • Đa Phương Thức Siêu Tốc',
+    badgeColor: 'bg-orange-100 text-orange-800',
+    desc: 'Mô hình đa phương thức thế hệ mới của Zhipu AI trên APInex. Phản hồi rất nhanh và bóc tách bảng chi tiết.',
+  },
+  {
+    id: 'free/claude-sonnet-4.6',
+    name: 'Claude Sonnet 4.6',
+    shortName: 'Claude Sonnet 4.6',
+    badge: 'MỚI • Hiểu Cấu Trúc Bảng',
+    badgeColor: 'bg-rose-100 text-rose-800',
+    desc: 'Phiên bản Claude Sonnet miễn phí trên APInex, đọc bảng biểu và phân biệt các cột số lượng cực chuẩn.',
+  },
+  {
+    id: 'free/deepseek-v4.1-flash',
+    name: 'DeepSeek V4.1 Flash',
+    shortName: 'DeepSeek V4.1 Flash',
+    badge: 'MỚI • Nhẹ Nhàng & Tiết Kiệm',
+    badgeColor: 'bg-cyan-100 text-cyan-800',
+    desc: 'Thế hệ DeepSeek V4.1 mới nhất trên APInex, tốc độ suy luận nhanh và tối ưu hóa xử lý văn bản tài liệu.',
+  },
+  {
     id: 'free/muse-spark-1.3',
     name: 'Muse Spark 1.3',
     shortName: 'Muse Spark 1.3',
-    badge: 'Nhẹ Nhàng • Tiết Kiệm',
+    badge: 'Gọn Nhẹ • Phản Hồi Tức Thì',
     badgeColor: 'bg-amber-100 text-amber-800',
     desc: 'Mô hình gọn nhẹ, phản hồi nhanh cho các phiếu kho dạng in rõ nét.',
+  },
+];
+
+const KIRA_MODELS = [
+  {
+    id: 'qwen3.8-flash-free',
+    name: 'Qwen 3.8 Flash (Free)',
+    shortName: 'Qwen 3.8 Flash',
+    badge: 'Khuyên Dùng • Free 100M • Cực Nhanh',
+    badgeColor: 'bg-emerald-100 text-emerald-800',
+    desc: 'Mô hình miễn phí tốt nhất trên Kira AI. Tốc độ phản hồi cực nhanh (3-5s), ổn định, không bị lỗi 502.',
+  },
+  {
+    id: 'qwen3.8-27b-free',
+    name: 'Qwen 3.8 27B (Free)',
+    shortName: 'Qwen 3.8 27B',
+    badge: 'Free 100M • Vision Rất Tốt',
+    badgeColor: 'bg-purple-100 text-purple-800',
+    desc: 'Phiên bản Vision 27B miễn phí 100M tokens/ngày, đọc tốt chữ viết tay tiếng Việt và nhận diện số lượng.',
+  },
+  {
+    id: 'kira-3.5-flash-pdf',
+    name: 'Kira 3.5 Flash PDF',
+    shortName: 'Kira 3.5 PDF',
+    badge: 'MỚI • Chuyên Dụng Đọc PDF & Phiếu',
+    badgeColor: 'bg-indigo-100 text-indigo-800',
+    desc: 'Dòng mô hình thế hệ 3.5 mới nhất của Kira AI được tinh chỉnh đặc thù để đọc và bóc tách tài liệu PDF, phiếu kho.',
+  },
+  {
+    id: 'kira-3.5-flash',
+    name: 'Kira 3.5 Flash',
+    shortName: 'Kira 3.5 Flash',
+    badge: 'MỚI • Thế Hệ 3.5 Siêu Tốc',
+    badgeColor: 'bg-teal-100 text-teal-800',
+    desc: 'Mô hình chính thế hệ 3.5 của Kira AI tại Việt Nam, độ trễ thấp và tối ưu hóa xử lý ngôn ngữ tiếng Việt.',
+  },
+  {
+    id: 'deepseek-v4-flash-vision-exp',
+    name: 'DeepSeek V4 Flash Vision Exp',
+    shortName: 'DeepSeek V4 Vision',
+    badge: 'MỚI • Vision Thử Nghiệm Mới',
+    badgeColor: 'bg-rose-100 text-rose-800',
+    desc: 'Bản thử nghiệm Vision thế hệ mới của DeepSeek trên cụm máy chủ Kira AI, bóc tách cấu trúc hình ảnh sáng tạo.',
+  },
+  {
+    id: 'glm-5.3-flash-free',
+    name: 'GLM 5.3 Flash (Free)',
+    shortName: 'GLM 5.3 Flash',
+    badge: 'Free 100M • Đa Phương Thức',
+    badgeColor: 'bg-amber-100 text-amber-800',
+    desc: 'Mô hình GLM 5.3 Flash miễn phí, xử lý đa phương thức và hỗ trợ phân tích tài liệu.',
+  },
+  {
+    id: 'qwen3.8-max',
+    name: 'Qwen 3.8 MAX',
+    shortName: 'Qwen 3.8 MAX',
+    badge: 'Đỉnh Cao Chữ Viết Tay',
+    badgeColor: 'bg-purple-100 text-purple-800',
+    desc: 'Mô hình Qwen MAX cao cấp nhất, nhận diện chữ viết tay mờ hoặc nét bút bi phức tạp.',
+  },
+  {
+    id: 'kira-auto',
+    name: 'Kira Auto',
+    shortName: 'Kira Auto',
+    badge: 'Tự Động Chọn Mô Hình',
+    badgeColor: 'bg-blue-100 text-blue-800',
+    desc: 'Hệ thống tự động điều hướng request sang mô hình đang có độ trễ thấp nhất và sẵn sàng nhất.',
   },
 ];
 
@@ -384,7 +499,8 @@ export default function Home() {
 
   const getActiveProviderLabel = (short = false) => {
     if (aiProvider === 'kira') {
-      return short ? 'Kira AI' : `Kira (${kiraModel || 'qwen3.8-27b-free'})`;
+      const kName = KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel;
+      return short ? 'Kira AI' : `Kira (${kName || 'Qwen 3.8 Flash'})`;
     }
     if (aiProvider === 'apinex') {
       const apxName = APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || apinexModel;
@@ -3456,7 +3572,18 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     : null;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col relative">
+      {/* Ambient Wallpaper / Watermark Background for Web & Mobile */}
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden select-none">
+        <div className="absolute -top-32 -right-32 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 -left-32 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl" />
+        {/* Aoko Anime Watermark */}
+        <div
+          className="absolute -bottom-10 right-0 sm:right-6 w-[280px] sm:w-[400px] h-[280px] sm:h-[400px] opacity-[0.06] bg-contain bg-no-repeat bg-bottom-right pointer-events-none transition-opacity"
+          style={{ backgroundImage: "url('/bg-aoko.png')" }}
+        />
+      </div>
+
       {/* Drag & Drop Visual Overlay */}
       {isDragging && (
         <div className="fixed inset-0 z-[500] bg-blue-600/20 backdrop-blur-sm flex flex-col items-center justify-center border-4 border-dashed border-blue-500 m-4 rounded-3xl animate-fade-in pointer-events-none">
@@ -3474,8 +3601,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       <header className="sticky top-0 z-40 glass-header text-white border-b border-slate-800 shadow-card">
         <div className="max-w-[1200px] mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white">
-              <IconScan className="w-6 h-6" />
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-blue-500/20 border border-blue-400/40 shrink-0 bg-blue-600">
+              <img src="/favicon.png" alt="Aoko" className="w-full h-full object-cover" />
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -3648,7 +3775,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 <span className="font-semibold text-slate-700">
                   {kiraKey.trim() ? (
                     <>
-                      <span className="text-amber-700 font-bold">Kira AI</span>: {kiraModel || 'qwen3.8-max'}
+                      <span className="text-amber-700 font-bold">Kira AI</span>: {KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel}
                     </>
                   ) : (
                     <button
@@ -4053,7 +4180,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     <span>
                       Đang trích xuất bằng {
                         aiProvider === 'kira'
-                          ? `Kira AI (${kiraModel || 'qwen3.8-max'})`
+                          ? `Kira AI (${KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel})`
                           : aiProvider === 'apinex'
                           ? `APInex (${APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || 'AI'})`
                           : aiProvider === 'openrouter'
@@ -4067,7 +4194,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     <IconSparkles className="w-5 h-5" />
                     <span>
                       {aiProvider === 'kira'
-                        ? `Bắt Đầu Quét Bằng Kira AI [${kiraModel || 'qwen3.8-max'}]`
+                        ? `Bắt Đầu Quét Bằng Kira AI [${KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel}]`
                         : aiProvider === 'apinex'
                         ? `Bắt Đầu Quét Bằng APInex [${APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || apinexModel}]`
                         : aiProvider === 'openrouter'
@@ -4080,14 +4207,16 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             </section>
           ) : (
             /* Empty State Workspace */
-            <div className="bg-white rounded-2xl p-12 border border-dashed border-slate-300 text-center flex flex-col items-center justify-center gap-3">
-              <div className="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-subtle">
-                <IconScan className="w-8 h-8" />
+            <div className="bg-white/95 backdrop-blur-xs rounded-2xl p-10 sm:p-12 border border-dashed border-slate-300 text-center flex flex-col items-center justify-center gap-4 relative overflow-hidden group shadow-xs">
+              <div className="relative w-20 h-20 rounded-2xl overflow-hidden shadow-lg shadow-blue-500/15 border-2 border-blue-200 group-hover:scale-105 transition-transform duration-300 bg-blue-600 shrink-0">
+                <img src="/bg-aoko.png" alt="Aoko Scan" className="w-full h-full object-cover" />
               </div>
-              <h3 className="text-base font-bold text-slate-800">Chưa có ảnh hoặc file PDF nào được chọn</h3>
-              <p className="text-xs text-slate-500 max-w-sm">
-                Hãy nhấn <strong>Chọn File PDF</strong>, <strong>Chọn Ảnh</strong>, <strong>Quét Camera</strong>, kéo thả file PDF vào đây hoặc nhấn <strong>Ctrl+V</strong>.
-              </p>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-slate-800">Chưa có ảnh hoặc file PDF nào được chọn</h3>
+                <p className="text-xs text-slate-500 max-w-sm">
+                  Hãy nhấn <strong>Chọn File PDF</strong>, <strong>Chọn Ảnh</strong>, <strong>Quét Camera</strong>, kéo thả file PDF vào đây hoặc nhấn <strong>Ctrl+V</strong>.
+                </p>
+              </div>
             </div>
           )}
 
@@ -4115,7 +4244,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                       }`}
                     >
                       {engineBadge === 'kira'
-                        ? `✨ Kira AI (${kiraModel || 'qwen3.8-max'})`
+                        ? `✨ Kira AI (${KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel})`
                         : engineBadge === 'apinex'
                         ? `✨ APInex (${APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || apinexModel})`
                         : engineBadge === 'openrouter'
@@ -5843,54 +5972,61 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                         <p className="text-[11px] text-slate-400">Key của Kira thường có định dạng tiền tố <code className="text-amber-700 font-bold">kira_...</code></p>
                       </div>
 
-                      {/* Kira Model Input (Manual Input as requested) */}
+                      {/* Kira Models Selector */}
                       <div className="space-y-2">
-                        <label className="font-bold text-slate-700 block text-xs">
-                          Mã Mô Hình Kira AI (Nhập thủ công)
-                        </label>
-                        <input
-                          type="text"
-                          value={kiraModel}
-                          onChange={(e) => {
-                            setKiraModel(e.target.value);
-                            localStorage.setItem('kira_model', e.target.value);
-                          }}
-                          placeholder="Nhập mã mô hình, ví dụ: qwen3.8-max"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-100 font-mono text-xs outline-none bg-slate-50 font-semibold text-slate-800"
-                        />
-                        <div className="space-y-1.5 pt-1">
-                          <div className="text-[11px] font-semibold text-slate-500">Mô hình MIỄN PHÍ của Kira AI (100M tokens/ngày):</div>
-                          <div className="flex flex-wrap gap-1.5">
-                            {[
-                              { id: 'qwen3.8-flash-free', label: '⚡ qwen3.8-flash-free (Free • Nhanh & Ổn Định)' },
-                              { id: 'gemini-3.8-flash', label: '🚀 gemini-3.8-flash (Cực Chuẩn & Nhanh)' },
-                              { id: 'gemini-3.6-flash', label: '🌟 gemini-3.6-flash (Chuẩn)' },
-                              { id: 'glm-5.3-flash-free', label: '✨ glm-5.3-flash-free' },
-                              { id: 'qwen3.8-27b-free', label: 'qwen3.8-27b-free' },
-                              { id: 'kira-auto', label: 'kira-auto' },
-                            ].map((sug) => (
+                        <label className="font-bold text-slate-700 block text-xs">Chọn Mô Hình AI Kira AI (kiraai.vn)</label>
+                        <div className="grid grid-cols-1 gap-2">
+                          {KIRA_MODELS.map((m) => {
+                            const isSelected = kiraModel === m.id;
+                            return (
                               <button
-                                key={sug.id}
+                                key={m.id}
                                 type="button"
                                 onClick={() => {
-                                  setKiraModel(sug.id);
-                                  localStorage.setItem('kira_model', sug.id);
-                                  showToast(`Đã chọn mô hình: ${sug.id}`);
+                                  setKiraModel(m.id);
+                                  localStorage.setItem('kira_model', m.id);
                                 }}
-                                className={`px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-all ${
-                                  kiraModel === sug.id
-                                    ? 'bg-amber-100 text-amber-800 border-amber-300 font-bold shadow-xs'
-                                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                                className={`p-3 rounded-xl border text-left transition-all flex items-start justify-between gap-3 ${
+                                  isSelected
+                                    ? 'border-amber-500 bg-amber-50/70 shadow-sm ring-1 ring-amber-500'
+                                    : 'border-slate-200 bg-white hover:bg-slate-50'
                                 }`}
                               >
-                                {sug.label}
+                                <div className="space-y-1 flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-slate-900 text-xs">{m.name}</span>
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${m.badgeColor}`}>{m.badge}</span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 leading-tight">{m.desc}</p>
+                                  <div className="font-mono text-[10px] text-amber-700 font-semibold">{m.id}</div>
+                                </div>
+                                {isSelected && (
+                                  <div className="text-right shrink-0">
+                                    <div className="text-[11px] text-amber-600 font-bold">✓ Đang chọn</div>
+                                  </div>
+                                )}
                               </button>
-                            ))}
-                          </div>
-                          <p className="text-[10px] text-amber-900 bg-amber-100/70 p-2 rounded-lg mt-1 leading-normal">
-                            💡 <strong>Mẹo dùng mượt mà:</strong> Với mô hình Free, hãy chọn <code>qwen3.8-flash-free</code> để có tốc độ phản hồi nhanh nhất (khoảng 5-8 giây) và tránh bị timeout. Hoặc bạn có thể chọn <code>gemini-3.8-flash</code> để đạt độ chuẩn xác cao nhất đối với chữ viết tay.
-                          </p>
+                            );
+                          })}
                         </div>
+
+                        {/* Custom Kira Model Input */}
+                        <div className="pt-1">
+                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">Hoặc nhập mã model Kira AI tùy chỉnh:</label>
+                          <input
+                            type="text"
+                            value={kiraModel}
+                            onChange={(e) => {
+                              setKiraModel(e.target.value);
+                              localStorage.setItem('kira_model', e.target.value);
+                            }}
+                            placeholder="Ví dụ: qwen3.8-flash-free hoặc kira-3.5-flash-pdf"
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-amber-500 font-mono text-xs outline-none bg-slate-50"
+                          />
+                        </div>
+                        <p className="text-[10px] text-amber-900 bg-amber-100/70 p-2 rounded-lg mt-1 leading-normal">
+                          💡 <strong>Mẹo dùng mượt mà:</strong> Với gói Free 100M tokens/ngày, hãy chọn <code>qwen3.8-flash-free</code> hoặc <code>qwen3.8-27b-free</code> để có tốc độ phản hồi nhanh nhất và độ chính xác cao đối với chữ viết tay.
+                        </p>
                       </div>
                     </div>
                   )}

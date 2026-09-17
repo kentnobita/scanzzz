@@ -4,6 +4,10 @@ export const metadata = {
   title: 'Scan Pro Max — Trích Xuất Phiếu Giao Hàng & Kho',
   description: 'Ứng dụng scan và trích xuất dữ liệu phiếu xuất nhập kho chuyên nghiệp bằng AI Vision',
   manifest: '/manifest.json',
+  icons: {
+    icon: '/favicon.png',
+    apple: '/apple-touch-icon.png',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
@@ -24,6 +28,8 @@ export default function RootLayout({ children }) {
   return (
     <html lang="vi" className="scroll-smooth">
       <head>
+        <link rel="icon" type="image/png" href="/favicon.png" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
