@@ -56,11 +56,16 @@ async function syncTelegramBotCommands() {
       { type: 'all_private_chats' }
     ];
     for (const scope of scopes) {
-      await fetch(`${TELEGRAM_API}/setMyCommands`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commands: BOT_COMMANDS, scope })
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      try {
+        await fetch(`${TELEGRAM_API}/setMyCommands`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ commands: BOT_COMMANDS, scope }),
+          signal: controller.signal
+        }).finally(() => clearTimeout(timeoutId));
+      } catch (e) {}
     }
     console.log('✅ [Akko Bot] Đã đồng bộ danh sách gợi ý câu lệnh (/a...) lên Telegram thành công!');
   } catch (err) {
@@ -1617,6 +1622,10 @@ async function handleMessage(msg) {
   const threadId = msg.message_thread_id; // integer hoặc undefined
   let cleanText = (msg.text || '').trim();
 
+  // In log ra màn hình console để Senpai dễ dàng theo dõi trên Termux điện thoại
+  const msgSummary = cleanText || (msg.photo ? '[Ảnh phiếu kho]' : (msg.document ? `[Tài liệu: ${msg.document.file_name || 'file'}]` : 'Khác'));
+  console.log(`📩 [Tin nhắn mới] Chat: ${chatType} (${chatId}${threadId ? ` - Topic ${threadId}` : ''}) | Từ: ${msg.from?.first_name || 'User'} | Nội dung: "${msgSummary}"`);
+
   // Tự động định tuyến mọi phản hồi vào đúng Topic của Supergroup (nếu có)
   const _sendTelegram = sendTelegram;
   const sendTelegram = (method, body) => {
@@ -1635,21 +1644,20 @@ async function handleMessage(msg) {
   } else if (cleanText.startsWith('/')) {
     const otherBotMatch = cleanText.match(/\/([a-zA-Z0-9_]+)@([a-zA-Z0-9_]+)/);
     if (otherBotMatch && otherBotMatch[2].toLowerCase() !== 'akkocii_bot') {
-      // Lệnh dành riêng cho bot khác trong nhóm (ví dụ /login@VdacZaloBot), Akko không can thiệp
+      // Lệnh dành riêng cho bot khác trong nhóm (ví dụ /login@VdacZaloBot), Akko tuyệt đối không can thiệp
       return;
     }
     cleanText = cleanText.replace(/@\w+/, '').trim();
   }
 
-  const isGroup = chatType === 'group' || chatType === 'supergroup';
-  const allowNoPrefix = (!isGroup) || isBotTagged;
-
   const matchCommand = (cmdName) => {
     const lower = cleanText.toLowerCase();
     const aCmd = '/a' + cmdName.toLowerCase();
     const plainCmd = '/' + cmdName.toLowerCase();
+    // Ưu tiên 1: Lệnh có tiền tố /a... (/astart, /astatus, /atopic...)
     if (lower.startsWith(aCmd + ' ') || lower === aCmd) return true;
-    if (allowNoPrefix && (lower.startsWith(plainCmd + ' ') || lower === plainCmd)) return true;
+    // Ưu tiên 2: Lệnh thường /... (/start, /status...) - Luôn hỗ trợ cả trong chat riêng lẫn trong nhóm (nếu không tag bot khác)
+    if (lower.startsWith(plainCmd + ' ') || lower === plainCmd) return true;
     return false;
   };
 
@@ -2294,28 +2302,69 @@ async function handleMessage(msg) {
 
 // Long Polling Loop
 let offset = 0;
+let isFirstPoll = true;
+
 async function pollUpdates() {
+  // 1. Dọn dẹp webhook cũ nếu có để đảm bảo getUpdates luôn mở cổng nhận tin
+  try {
+    const delRes = await fetch(`${TELEGRAM_API}/deleteWebhook?drop_pending_updates=false`);
+    const delData = await delRes.json().catch(() => ({}));
+    if (delData.ok) {
+      console.log('🔗 [Akko Bot] Đã sẵn sàng cổng nhận tin nhắn Telegram!');
+    }
+  } catch (e) {}
+
+  console.log('🌸 [Akko Bot] Yahhoo~! Bé Akko (@AkkoCii_bot) đã thức dậy và đang lắng nghe lệnh từ Senpai rồi nè! 🪄✨');
+
   while (true) {
     try {
-      const res = await fetch(`${TELEGRAM_API}/getUpdates?offset=${offset}&timeout=25`);
-      const data = await res.json();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 35000); // 35s timeout chống nghẽn socket
+      const res = await fetch(`${TELEGRAM_API}/getUpdates?offset=${offset}&timeout=25`, {
+        signal: controller.signal
+      }).finally(() => clearTimeout(timeoutId));
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data.ok) {
+        const code = data?.error_code || res.status;
+        const desc = data?.description || res.statusText || 'Lỗi không xác định';
+        if (code === 409) {
+          console.error('⚠️ [CẢNH BÁO XUNG ĐỘT 409] Đang có một tiến trình Bot khác (trên máy tính hoặc cửa sổ khác) chạy cùng Token!');
+          console.error('👉 Senpai hãy tắt bot ở thiết bị kia trước để bot trên điện thoại nhận được tin nhắn nha!');
+        } else {
+          console.warn(`⚠️ [Telegram API Lỗi ${code}]: ${desc}`);
+        }
+        await new Promise(r => setTimeout(r, 3000));
+        continue;
+      }
+
+      if (isFirstPoll) {
+        console.log('⚡ [Akko Bot] Kết nối Telegram thành công! Đang chờ tin nhắn/ảnh từ Senpai...');
+        isFirstPoll = false;
+      }
+
       if (data.ok && Array.isArray(data.result)) {
         for (const update of data.result) {
           offset = update.update_id + 1;
           if (update.message) {
-            handleMessage(update.message).catch(err => console.error('Handle message error:', err));
+            handleMessage(update.message).catch(err => console.error('Lỗi xử lý tin nhắn:', err));
           } else if (update.callback_query) {
-            handleCallbackQuery(update.callback_query).catch(err => console.error('Handle callback error:', err));
+            handleCallbackQuery(update.callback_query).catch(err => console.error('Lỗi xử lý callback:', err));
           }
         }
       }
     } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.warn('⚠️ [Mạng chập chờn] Đang kết nối lại Telegram sau 3s...', err.message);
+      }
       await new Promise(r => setTimeout(r, 3000));
     }
   }
 }
 
-console.log('🌸 [Akko Bot] Yahhoo~! Bé Akko (@AkkoCii_bot) đã thức dậy và sẵn sàng nhận lệnh từ Senpai rồi nè! 🪄✨');
-syncTelegramBotCommands().finally(() => {
-  pollUpdates();
-});
+// Khởi chạy ngay lập tức vòng lặp nhận tin nhắn (không bị nghẽn bởi bất kỳ tác vụ nào)
+pollUpdates();
+
+// Đồng bộ danh sách câu lệnh ngầm ở background (không chặn bot)
+syncTelegramBotCommands().catch(() => {});
