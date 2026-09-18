@@ -9,11 +9,12 @@ export async function POST(req) {
 
     const apiKey = key || req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
     if (!apiKey) {
-      return NextResponse.json({ error: { message: 'Chưa cung cấp APInex API Key' } }, { status: 400 });
+      return NextResponse.json({ error: { message: 'Chưa cung cấp B.AI API Key' } }, { status: 400 });
     }
 
+    // Action test kết nối API Key
     if (action === 'test') {
-      const res = await fetch('https://api.apinex.bond/v1/models', {
+      const res = await fetch('https://api.b.ai/v1/models', {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${apiKey.trim()}`
@@ -21,14 +22,15 @@ export async function POST(req) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        return NextResponse.json({ error: { message: data.error?.message || `Lỗi APInex ${res.status}` } }, { status: res.status });
+        return NextResponse.json({ error: { message: data.error?.message || `Lỗi B.AI ${res.status}` } }, { status: res.status });
       }
       return NextResponse.json({ success: true, models: data.data || [] });
     }
 
     // Proxy Chat Completions
     const chatPayload = payload || body;
-    const selectedModel = chatPayload.model || 'free/gemini-3.8-flash';
+    const rawModel = chatPayload.model || 'deepseek-v4.1-flash';
+    const selectedModel = String(rawModel).toLowerCase().trim();
 
     const requestBody = {
       model: selectedModel,
@@ -37,11 +39,11 @@ export async function POST(req) {
       max_tokens: chatPayload.max_tokens || 3000,
     };
 
-    if (chatPayload.response_format && !selectedModel.includes('qwen')) {
+    if (chatPayload.response_format && !selectedModel.toLowerCase().includes('qwen')) {
       requestBody.response_format = chatPayload.response_format;
     }
 
-    let res = await fetch('https://api.apinex.bond/v1/chat/completions', {
+    let res = await fetch('https://api.b.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey.trim()}`,
@@ -54,7 +56,7 @@ export async function POST(req) {
     if (!res.ok && (res.status === 502 || res.status === 504)) {
       await new Promise((r) => setTimeout(r, 1500));
       try {
-        const retryRes = await fetch('https://api.apinex.bond/v1/chat/completions', {
+        const retryRes = await fetch('https://api.b.ai/v1/chat/completions', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${apiKey.trim()}`,
@@ -68,13 +70,13 @@ export async function POST(req) {
 
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      return NextResponse.json({ error: { message: data.error?.message || `Lỗi APInex ${res.status}` } }, { status: res.status });
+      return NextResponse.json({ error: { message: data.error?.message || `Lỗi B.AI ${res.status}` } }, { status: res.status });
     }
 
     return NextResponse.json(data);
   } catch (err) {
-    console.error('APInex Proxy Error:', err);
-    return NextResponse.json({ error: { message: err.message || 'Lỗi kết nối máy chủ APInex' } }, { status: 500 });
+    console.error('B.AI Proxy Error:', err);
+    return NextResponse.json({ error: { message: err.message || 'Lỗi kết nối máy chủ B.AI' } }, { status: 500 });
   }
 }
 
@@ -82,11 +84,11 @@ export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const key = searchParams.get('key') || req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
   if (!key) {
-    return NextResponse.json({ error: { message: 'Chưa cung cấp APInex API Key' } }, { status: 400 });
+    return NextResponse.json({ error: { message: 'Chưa cung cấp B.AI API Key' } }, { status: 400 });
   }
 
   try {
-    const res = await fetch('https://api.apinex.bond/v1/models', {
+    const res = await fetch('https://api.b.ai/v1/models', {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${key.trim()}`
@@ -94,10 +96,10 @@ export async function GET(req) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      return NextResponse.json({ error: { message: data.error?.message || `Lỗi APInex ${res.status}` } }, { status: res.status });
+      return NextResponse.json({ error: { message: data.error?.message || `Lỗi B.AI ${res.status}` } }, { status: res.status });
     }
     return NextResponse.json({ success: true, models: data.data || [] });
   } catch (err) {
-    return NextResponse.json({ error: { message: err.message || 'Lỗi kết nối máy chủ APInex' } }, { status: 500 });
+    return NextResponse.json({ error: { message: err.message || 'Lỗi kết nối máy chủ B.AI' } }, { status: 500 });
   }
 }

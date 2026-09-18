@@ -41,8 +41,8 @@ const BOT_COMMANDS = [
   { command: 'astatus', description: 'Xem trạng thái AI, Google Sheet & Topic' },
   { command: 'atopic', description: 'Khóa quét phiếu vào Topic này (/atopic all mở khóa)' },
   { command: 'amodel', description: 'Đổi mô hình AI (Gemini, Qwen, Nex, Minimax...)' },
-  { command: 'aprovider', description: 'Đổi nhà cung cấp AI (Gemini, APInex, Kira, OpenRouter)' },
-  { command: 'akey', description: 'Nạp API Key (Google, APInex, Kira, OpenRouter)' },
+  { command: 'aprovider', description: 'Đổi nhà cung cấp AI (Gemini, B.AI, Kira, OpenRouter)' },
+  { command: 'akey', description: 'Nạp API Key (Google, B.AI, Kira, OpenRouter)' },
   { command: 'async', description: 'Đồng bộ cấu hình từ Web qua mã Cloud Sync' },
   { command: 'asheet', description: 'Cài đặt link Webhook Google Sheet' },
   { command: 'aserver', description: 'Cài đặt máy chủ Web Cloud Sync' }
@@ -119,10 +119,10 @@ function getBotConfig() {
     if (fs.existsSync(CONFIG_FILE)) {
       const parsed = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
       if (!parsed.openRouterModel) parsed.openRouterModel = 'nex-agi/nex-n2.5-pro:free';
-      if (!parsed.apinexModel) parsed.apinexModel = 'free/gemini-3.8-flash';
       if (!parsed.kiraModel) parsed.kiraModel = 'qwen3.8-27b-free';
+      if (!parsed.baiModel) parsed.baiModel = 'DeepSeek-V4.1-Flash';
       if (!parsed.geminiModel) parsed.geminiModel = 'gemini-3.6-flash';
-      if (!parsed.aiProvider) parsed.aiProvider = 'gemini';
+      if (!parsed.aiProvider || parsed.aiProvider === 'apinex') parsed.aiProvider = 'gemini';
       if (!parsed.groupTopics) parsed.groupTopics = {};
       return parsed;
     }
@@ -143,16 +143,19 @@ function getBotConfig() {
     }
   } catch (e) {}
 
+  const rawProv = defaultSync.aiProvider || process.env.AI_PROVIDER || 'gemini';
+  const effectiveProv = rawProv === 'apinex' ? 'gemini' : rawProv;
+
   return {
-    aiProvider: defaultSync.aiProvider || process.env.AI_PROVIDER || 'gemini',
+    aiProvider: effectiveProv,
     geminiKey: defaultSync.apiKey || process.env.GEMINI_API_KEY || '',
     geminiModel: defaultSync.geminiModel || process.env.GEMINI_MODEL || 'gemini-3.6-flash',
     openRouterKey: defaultSync.openRouterKey || process.env.OPENROUTER_API_KEY || '',
     openRouterModel: defaultSync.openRouterModel || process.env.OPENROUTER_MODEL || 'nex-agi/nex-n2.5-pro:free',
-    apinexKey: defaultSync.apinexKey || process.env.APINEX_API_KEY || '',
-    apinexModel: defaultSync.apinexModel || process.env.APINEX_MODEL || 'free/gemini-3.8-flash',
     kiraKey: defaultSync.kiraKey || process.env.KIRA_API_KEY || '',
     kiraModel: defaultSync.kiraModel || process.env.KIRA_MODEL || 'qwen3.8-27b-free',
+    baiKey: defaultSync.baiKey || process.env.BAI_API_KEY || '',
+    baiModel: defaultSync.baiModel || process.env.BAI_MODEL || 'DeepSeek-V4.1-Flash',
     googleSheetUrl: defaultSync.googleSheetUrl || process.env.GOOGLE_SHEET_URL || 'https://script.google.com/macros/s/AKfycbxvSkHl-Ebg-VDX88B-iF0BhiH6ujtJ9ZKk-MroWOlU2ky4K4IBG40zyt2qsMfBa0gE/exec',
     autoSyncSheet: defaultSync.autoSyncSheet !== undefined ? !!defaultSync.autoSyncSheet : true,
     cloudSyncCode: defaultSync.code || '',
@@ -222,6 +225,40 @@ function formatOSPO(raw) {
   return onlyDigits;
 }
 
+function cleanOcrCell(val, colKey) {
+  if (val === null || val === undefined) return '';
+  let s = String(val).trim();
+  if (!s || s === '???') return '';
+
+  // Phát hiện và loại bỏ thinking leak của các reasoning model (DeepSeek, R1...)
+  if (/maybe|actually|let's read|let's see|in column|it might be|handwritten|looks like|wait column/i.test(s)) {
+    const q = s.match(/"([^"]+)"/);
+    if (q) {
+      s = q[1].trim();
+    } else {
+      s = s.replace(/(?:maybe|actually|let's see|let's read|in column|it might be|handwritten|looks like|wait column)[\s\S]*/i, '').trim();
+    }
+  }
+
+  if (colKey === 'soOSPO') {
+    return formatOSPO(s);
+  }
+  if (colKey === 'soLuongChungTu' || colKey === 'soLuongThucNhap') {
+    const m = s.match(/\b\d+(?:[.,]\d+)?\b/);
+    if (m) return m[0].replace(',', '.');
+  }
+  if (colKey === 'donViTinh') {
+    s = s.replace(/["'?]/g, '').trim();
+    const dvt = s.match(/\b(EA|PCS|KG|BOX|CÁI|THÙNG|BỘ|CUỘN|CÂY)\b/i);
+    if (dvt) return dvt[0].toUpperCase();
+  }
+  if (colKey === 'soPallet') {
+    s = s.replace(/["'?]/g, '').trim();
+    s = s.replace(/(?:ghi chú|actually|maybe)[\s\S]*/i, '').trim();
+  }
+  return s.replace(/^[:\s\-]+/, '').replace(/[:\s\-]+$/, '');
+}
+
 function parseOcrResultToItems(resultData, selectedColumns) {
   let rawList = [];
   if (Array.isArray(resultData.rows)) {
@@ -241,9 +278,7 @@ function parseOcrResultToItems(resultData, selectedColumns) {
   const formatted = rawList.map((item) => {
     const out = {};
     selectedColumns.forEach((k) => {
-      let val = item?.[k] ?? '';
-      if (k === 'soOSPO') val = formatOSPO(val);
-      out[k] = typeof val === 'string' ? val.trim() : String(val || '');
+      out[k] = cleanOcrCell(item?.[k], k);
     });
     return out;
   });
@@ -275,18 +310,39 @@ function parseOcrResultToItems(resultData, selectedColumns) {
 function robustParseOcrJson(rawText, selectedColumns = DEFAULT_COLUMNS) {
   if (!rawText || typeof rawText !== 'string') return { soPhieu: '', items: [] };
   let text = rawText.trim();
+
+  // Loại bỏ tag <think>...</think> nếu có từ reasoning models
+  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
   const toFormatted = (parsed) => {
+    if (parsed && parsed.soPhieu) {
+      let sp = String(parsed.soPhieu).trim();
+      if (/maybe|actually|let's/i.test(sp)) {
+        const q = sp.match(/"([^"]+)"/);
+        if (q) sp = q[1].trim();
+      }
+      parsed.soPhieu = sp;
+    }
     if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
       parsed.items = parsed.rows
         .filter((r) => Array.isArray(r) || (typeof r === 'object' && r !== null))
         .map((row) => {
-          if (typeof row === 'object' && !Array.isArray(row)) return row;
+          if (typeof row === 'object' && !Array.isArray(row)) {
+            const cleaned = {};
+            selectedColumns.forEach((colKey) => { cleaned[colKey] = cleanOcrCell(row[colKey], colKey); });
+            return cleaned;
+          }
           const obj = {};
-          selectedColumns.forEach((colKey, idx) => { obj[colKey] = row[idx] ?? ''; });
+          selectedColumns.forEach((colKey, idx) => { obj[colKey] = cleanOcrCell(row[idx], colKey); });
           return obj;
         });
+    } else if (Array.isArray(parsed.items)) {
+      parsed.items = parsed.items.map((item) => {
+        const cleaned = {};
+        selectedColumns.forEach((colKey) => { cleaned[colKey] = cleanOcrCell(item[colKey], colKey); });
+        return cleaned;
+      });
     }
     return parsed;
   };
@@ -327,7 +383,14 @@ function robustParseOcrJson(rawText, selectedColumns = DEFAULT_COLUMNS) {
 
   let detectedSoPhieu = '';
   const spMatch = text.match(/"soPhieu"\s*:\s*"([^"]*)"/i);
-  if (spMatch) detectedSoPhieu = spMatch[1].trim();
+  if (spMatch) {
+    let sp = spMatch[1].trim();
+    if (/maybe|actually|let's/i.test(sp)) {
+      const q = sp.match(/"([^"]+)"/);
+      if (q) sp = q[1].trim();
+    }
+    detectedSoPhieu = sp;
+  }
 
   const rows = [];
   const rowRegex = /\[\s*((?:"(?:\\.|[^"\\])*"|[^,\]]*?)(?:\s*,\s*(?:"(?:\\.|[^"\\])*"|[^,\]]*?))*)\s*\]/g;
@@ -347,7 +410,7 @@ function robustParseOcrJson(rawText, selectedColumns = DEFAULT_COLUMNS) {
   }
 
   if (rows.length > 0) return toFormatted({ soPhieu: detectedSoPhieu, rows });
-  return { soPhieu: detectedSoPhieu, items: [{ ten: text }] };
+  return { soPhieu: detectedSoPhieu, items: [{ ten: cleanOcrCell(text, 'ten') }] };
 }
 
 async function scanWithOpenRouter(base64Data, mimeType, key, model, selectedColumns, fieldPrompts) {
@@ -420,86 +483,6 @@ async function scanWithOpenRouter(base64Data, mimeType, key, model, selectedColu
 
   return robustParseOcrJson(text, selectedColumns);
 }
-
-async function scanWithApinex(base64Data, mimeType, key, model, selectedColumns, fieldPrompts) {
-  const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
-  const rules = ['soPhieu', ...selectedColumns]
-    .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
-    .join('\n');
-
-  const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
-    'Quy tắc trích xuất quan trọng:\n' +
-    '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
-    '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
-    '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
-    '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1", hoặc dòng trên là mã và dòng dưới là quy cách) nhưng chỉ có chung 1 bộ số lượng, 1 STT hoặc 1 mã OS/PO thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất (nối tên thành 1 chuỗi hoàn chỉnh). Tuyệt đối không tách thành 2 dòng riêng biệt nếu dòng kia không có số lượng thực tế.\n' +
-    'Hướng dẫn cột:\n' + rules + '\n\n' +
-    'ĐỊNH DẠNG TRẢ VỀ:\n' +
-    'Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
-    '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
-
-  const res = await fetch('https://api.apinex.bond/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + key.trim(),
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: model || 'free/gemini-3.8-flash',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: promptText },
-            { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64Data } }
-          ]
-        }
-      ],
-      temperature: 0.1,
-      response_format: { type: 'json_object' }
-    })
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || ('APInex Error: ' + res.status));
-  }
-
-  const data = await res.json();
-  const text = data.choices?.[0]?.message?.content;
-  if (!text) throw new Error('Không nhận được dữ liệu từ APInex');
-
-  try {
-    const parsed = JSON.parse(text);
-    if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-      parsed.items = parsed.rows.map((row) => {
-        const obj = {};
-        if (Array.isArray(row)) {
-          selectedColumns.forEach((colKey, idx) => { obj[colKey] = row[idx] ?? ''; });
-        }
-        return obj;
-      });
-    }
-    return parsed;
-  } catch {
-    const m = text.match(/\{[\s\S]*\}/);
-    if (m) {
-      const parsed = JSON.parse(m[0]);
-      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-        parsed.items = parsed.rows.map((row) => {
-          const obj = {};
-          if (Array.isArray(row)) {
-            selectedColumns.forEach((colKey, idx) => { obj[colKey] = row[idx] ?? ''; });
-          }
-          return obj;
-        });
-      }
-      return parsed;
-    }
-    throw new Error('Dữ liệu APInex trả về không đúng định dạng JSON');
-  }
-}
-
 const RETRY_TASKS = new Map();
 
 async function deleteTelegramMessage(chatId, messageId) {
@@ -523,13 +506,13 @@ function getActiveProviderInfo(cfg) {
       key: cfg.geminiKey,
       keyHint: 'Google Gemini API Key (`AIzaSy...`)'
     };
-  } else if (provider === 'apinex') {
+  } else if (provider === 'bai') {
     return {
-      provider: 'apinex',
-      providerName: 'APInex (Free 1M)',
-      model: cfg.apinexModel || 'free/gemini-3.8-flash',
-      key: cfg.apinexKey,
-      keyHint: 'APInex API Key (`sk-apx...`)'
+      provider: 'bai',
+      providerName: 'B.AI',
+      model: cfg.baiModel || 'DeepSeek-V4.1-Flash',
+      key: cfg.baiKey,
+      keyHint: 'B.AI API Key'
     };
   } else if (provider === 'kira') {
     return {
@@ -548,6 +531,96 @@ function getActiveProviderInfo(cfg) {
       keyHint: 'OpenRouter API Key (`sk-or-...`)'
     };
   }
+}
+
+async function scanWithBai(base64Data, mimeType, key, model, selectedColumns, fieldPrompts) {
+  const effectiveModel = String(model || 'qwen3.8-flash').toLowerCase().trim();
+
+  const payloadBase64 = base64Data;
+  const payloadMime = mimeType || 'image/jpeg';
+
+  const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
+  const rules = ['soPhieu', ...selectedColumns]
+    .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
+    .join('\n');
+
+  const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (đọc chuẩn chữ in & chữ viết tay).\n' +
+    'YÊU CẦU BẮT BUỘC:\n' +
+    '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON.\n' +
+    '- Định dạng trả về duy nhất là chuỗi JSON:\n' +
+    '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}\n\n' +
+    'Quy tắc trích xuất quan trọng:\n' +
+    '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
+    '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
+    '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
+    '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp nhưng chỉ có chung 1 bộ số lượng thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất.\n' +
+    'Hướng dẫn cột:\n' + rules + '\n\n' +
+    'ĐỊNH DẠNG TRẢ VỀ: Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
+    '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
+
+  const reqPayload = {
+    model: effectiveModel,
+    messages: [
+      {
+        role: 'system',
+        content: 'You are an expert OCR assistant for Vietnamese warehouse delivery notes and invoices. You MUST output ONLY valid, raw JSON. Do NOT output any internal monologue, thinking process, preamble, or markdown code fences.'
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: promptText },
+          { type: 'image_url', image_url: { url: `data:${payloadMime};base64,${payloadBase64}` } }
+        ]
+      }
+    ],
+    temperature: 0.1,
+    max_tokens: 6000
+  };
+
+  if (!effectiveModel.toLowerCase().includes('qwen')) {
+    reqPayload.response_format = { type: 'json_object' };
+  }
+
+  const sendRequest = async () => {
+    return await fetch('https://api.b.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${key.trim()}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(reqPayload)
+    });
+  };
+
+  let res = await sendRequest();
+
+  if (!res.ok && (res.status === 502 || res.status === 504)) {
+    console.warn(`[Bot B.AI] Model ${effectiveModel} phản hồi ${res.status}, chờ 2s rồi thử lại...`);
+    await new Promise(r => setTimeout(r, 2000));
+    try {
+      res = await sendRequest();
+    } catch (retryErr) {}
+  }
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    let errMsg = `B.AI (${effectiveModel}) Error: ${res.status}`;
+    if (errData.error?.message) errMsg += ` - ${errData.error.message}`;
+    throw new Error(errMsg);
+  }
+
+  const data = await res.json();
+  const msg = data.choices?.[0]?.message;
+  let text = (msg?.content || '').trim();
+  if (!text && msg?.reasoning_content) {
+    text = msg.reasoning_content.trim();
+  }
+  if (!text) throw new Error('Không nhận được dữ liệu từ B.AI');
+
+  // Lọc bỏ tag <think>...</think> nếu có
+  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+  return robustParseOcrJson(text, selectedColumns);
 }
 
 async function scanWithKira(base64Data, mimeType, key, model, selectedColumns, fieldPrompts) {
@@ -753,13 +826,13 @@ async function performOcr(cfg, base64Data, mimeType) {
     const model = cfg.geminiModel || 'gemini-3.6-flash';
     const ocrRaw = await scanWithGemini(base64Data, mimeType, cfg.geminiKey, selectedColumns, fieldPrompts, model);
     return { ocrRaw, modelUsed: `Gemini (${model})` };
-  } else if (provider === 'apinex') {
-    if (!cfg.apinexKey) {
-      throw new Error('Chưa có APInex API Key! Gõ /key sk-apx... hoặc đồng bộ /sync <Mã>');
+  } else if (provider === 'bai') {
+    if (!cfg.baiKey) {
+      throw new Error('Chưa có B.AI API Key! Gõ /key <Key> hoặc đồng bộ /sync <Mã>');
     }
-    const model = cfg.apinexModel || 'free/gemini-3.8-flash';
-    const ocrRaw = await scanWithApinex(base64Data, mimeType, cfg.apinexKey, model, selectedColumns, fieldPrompts);
-    return { ocrRaw, modelUsed: `APInex (${model})` };
+    const model = String(cfg.baiModel || 'deepseek-v4.1-flash').toLowerCase().trim();
+    const ocrRaw = await scanWithBai(base64Data, mimeType, cfg.baiKey, model, selectedColumns, fieldPrompts);
+    return { ocrRaw, modelUsed: `B.AI (${model})` };
   } else if (provider === 'kira') {
     if (!cfg.kiraKey) {
       throw new Error('Chưa có Kira AI API Key! Gõ /key kira_... hoặc đồng bộ /sync <Mã>');
@@ -916,7 +989,7 @@ async function syncToGoogleSheet(sheetUrl, soPhieu, items) {
   };
 }
 
-async function sendTelegram(method, body) {
+async function baseSendTelegram(method, body) {
   try {
     const res = await fetch(`${TELEGRAM_API}/${method}`, {
       method: 'POST',
@@ -945,6 +1018,10 @@ async function sendTelegram(method, body) {
   }
 }
 
+async function sendTelegram(method, body) {
+  return baseSendTelegram(method, body);
+}
+
 function buildSummaryText(soPhieu, items, model, sheetStatusText, historyId) {
   let summaryText = `📋 *BÁO CÁO PHIẾU XUẤT KHO CHO SENPAI NÈ!* 🌸✨\n`;
   summaryText += `• *Số phiếu:* \`${soPhieu || 'Không rõ'}\`\n`;
@@ -968,13 +1045,12 @@ function buildSummaryText(soPhieu, items, model, sheetStatusText, historyId) {
 }
 
 async function processDocument(chatId, doc, existingWaitMsgId = null, originalUserMsgId = null, messageThreadId = null) {
-  const _sendTelegram = sendTelegram;
   const sendTelegram = (method, body) => {
     const payload = { ...body };
     if (messageThreadId && !payload.message_thread_id && (method === 'sendMessage' || method === 'sendPhoto' || method === 'sendDocument')) {
       payload.message_thread_id = messageThreadId;
     }
-    return _sendTelegram(method, payload);
+    return baseSendTelegram(method, payload);
   };
 
   const cfg = getBotConfig();
@@ -1315,13 +1391,12 @@ async function processDocument(chatId, doc, existingWaitMsgId = null, originalUs
 }
 
 async function processPhoto(chatId, bestPhoto, existingWaitMsgId = null, originalUserMsgId = null, messageThreadId = null) {
-  const _sendTelegram = sendTelegram;
   const sendTelegram = (method, body) => {
     const payload = { ...body };
     if (messageThreadId && !payload.message_thread_id && (method === 'sendMessage' || method === 'sendPhoto' || method === 'sendDocument')) {
       payload.message_thread_id = messageThreadId;
     }
-    return _sendTelegram(method, payload);
+    return baseSendTelegram(method, payload);
   };
 
   const cfg = getBotConfig();
@@ -1473,13 +1548,12 @@ async function handleCallbackQuery(cbq) {
   const messageId = cbq.message?.message_id;
   const threadId = cbq.message?.message_thread_id;
 
-  const _sendTelegram = sendTelegram;
   const sendTelegram = (method, body) => {
     const payload = { ...body };
     if (threadId && !payload.message_thread_id && (method === 'sendMessage' || method === 'sendPhoto' || method === 'sendDocument')) {
       payload.message_thread_id = threadId;
     }
-    return _sendTelegram(method, payload);
+    return baseSendTelegram(method, payload);
   };
 
   if (data.startsWith('retry_')) {
@@ -1619,6 +1693,7 @@ async function handleCallbackQuery(cbq) {
 async function handleMessage(msg) {
   const chatId = msg.chat?.id;
   const chatType = msg.chat?.type; // 'private' | 'group' | 'supergroup' | 'channel'
+  const isGroup = chatType === 'group' || chatType === 'supergroup';
   const threadId = msg.message_thread_id; // integer hoặc undefined
   let cleanText = (msg.text || '').trim();
 
@@ -1627,13 +1702,12 @@ async function handleMessage(msg) {
   console.log(`📩 [Tin nhắn mới] Chat: ${chatType} (${chatId}${threadId ? ` - Topic ${threadId}` : ''}) | Từ: ${msg.from?.first_name || 'User'} | Nội dung: "${msgSummary}"`);
 
   // Tự động định tuyến mọi phản hồi vào đúng Topic của Supergroup (nếu có)
-  const _sendTelegram = sendTelegram;
   const sendTelegram = (method, body) => {
     const payload = { ...body };
     if (threadId && !payload.message_thread_id && (method === 'sendMessage' || method === 'sendPhoto' || method === 'sendDocument')) {
       payload.message_thread_id = threadId;
     }
-    return _sendTelegram(method, payload);
+    return baseSendTelegram(method, payload);
   };
 
   // Chuẩn hóa câu lệnh và nhận diện bot khi có nhiều bot cùng hoạt động trong group
@@ -1676,9 +1750,9 @@ async function handleMessage(msg) {
         '• `/atopic`: Khóa mục tiêu để Akko chỉ quét ảnh trong Topic này (dành cho Supergroup)\n' +
         '• `/atopic all`: Mở khóa để Akko quét ở tất cả các topic\n' +
         '• `/atopic status`: Xem topic hiện tại đang được gán quét phiếu\n' +
-        '• `/aprovider <gemini|apinex|kira|openrouter>`: Đổi phép thuật AI (hoặc gõ số 1-4 nè)\n' +
+        '• `/aprovider <gemini|bai|kira|openrouter>`: Đổi phép thuật AI (hoặc gõ số 1-4 nè)\n' +
         '• `/amodel <Tên>`: Chọn mô hình AI mà Senpai thích\n' +
-        '• `/akey <Key>`: Nạp API key cho Akko (tự nhận diện Google `AIzaSy...`, APInex `sk-apx...`, Kira `kira_...`, OpenRouter `sk-or-...`)\n' +
+        '• `/akey <Key>`: Nạp API key cho Akko (tự nhận diện Google `AIzaSy...`, Kira `kira_...`, OpenRouter `sk-or-...`, B.AI)\n' +
         '• `/astatus`: Xem Akko đang có những gì trong balo\n' +
         '• `/async <Mã>`: Kéo toàn bộ phép thuật từ Web về (Ví dụ: `/async KHO-01`)\n' +
         '• `/asheet <Link>`: Cập nhật link Google Sheet của Senpai\n\n' +
@@ -1691,7 +1765,7 @@ async function handleMessage(msg) {
     const cfg = getBotConfig();
     const info = getActiveProviderInfo(cfg);
     const maskedGeminiKey = cfg.geminiKey ? (cfg.geminiKey.slice(0, 8) + '...' + cfg.geminiKey.slice(-4)) : 'Chưa có';
-    const maskedApxKey = cfg.apinexKey ? (cfg.apinexKey.slice(0, 10) + '...' + cfg.apinexKey.slice(-4)) : 'Chưa có';
+    const maskedBaiKey = cfg.baiKey ? (cfg.baiKey.slice(0, 8) + '...' + cfg.baiKey.slice(-4)) : 'Chưa có';
     const maskedKiraKey = cfg.kiraKey ? (cfg.kiraKey.slice(0, 8) + '...' + cfg.kiraKey.slice(-4)) : 'Chưa có';
     const maskedOrKey = cfg.openRouterKey ? (cfg.openRouterKey.slice(0, 10) + '...' + cfg.openRouterKey.slice(-4)) : 'Chưa có';
 
@@ -1714,7 +1788,7 @@ async function handleMessage(msg) {
         topicStatusText +
         `📋 *DANH SÁCH MÔ HÌNH AKKO ĐANG CÓ:*\n` +
         `• Google Gemini: \`${cfg.geminiModel || 'gemini-3.6-flash'}\` (\`${maskedGeminiKey}\`)\n` +
-        `• APInex: \`${cfg.apinexModel || 'free/gemini-3.8-flash'}\` (\`${maskedApxKey}\`)\n` +
+        `• B.AI (90% Off): \`${cfg.baiModel || 'DeepSeek-V4.1-Flash'}\` (\`${maskedBaiKey}\`)\n` +
         `• Kira AI: \`${cfg.kiraModel || 'qwen3.8-27b-free'}\` (\`${maskedKiraKey}\`)\n` +
         `• OpenRouter: \`${cfg.openRouterModel || 'nex-agi/nex-n2.5-pro:free'}\` (\`${maskedOrKey}\`)\n\n` +
         `📊 *GOOGLE SHEET:*\n` +
@@ -1930,16 +2004,17 @@ async function handleMessage(msg) {
       if (cloudData.aiProvider) {
         let p = String(cloudData.aiProvider).toLowerCase().trim();
         if (p === 'google' || p === 'gg') p = 'gemini';
-        if (p === 'apx') p = 'apinex';
+        if (p === 'apx' || p === 'apinex') p = 'gemini';
         if (p === 'kiraai') p = 'kira';
+        if (p === 'b.ai') p = 'bai';
         if (p === 'or') p = 'openrouter';
         cfg.aiProvider = p;
       }
 
       // Cập nhật model từng nhà cung cấp
       if (cloudData.openRouterModel) cfg.openRouterModel = String(cloudData.openRouterModel).trim();
-      if (cloudData.apinexModel) cfg.apinexModel = String(cloudData.apinexModel).trim();
       if (cloudData.kiraModel) cfg.kiraModel = String(cloudData.kiraModel).trim();
+      if (cloudData.baiModel) cfg.baiModel = String(cloudData.baiModel).trim();
       if (cloudData.geminiModel) cfg.geminiModel = String(cloudData.geminiModel).trim();
 
       // Cập nhật API Keys
@@ -1951,13 +2026,13 @@ async function handleMessage(msg) {
         const val = String(cloudData.openRouterKey).trim();
         if (val || !cfg.openRouterKey) cfg.openRouterKey = val;
       }
-      if (cloudData.apinexKey !== undefined && cloudData.apinexKey !== null) {
-        const val = String(cloudData.apinexKey).trim();
-        if (val || !cfg.apinexKey) cfg.apinexKey = val;
-      }
       if (cloudData.kiraKey !== undefined && cloudData.kiraKey !== null) {
         const val = String(cloudData.kiraKey).trim();
         if (val || !cfg.kiraKey) cfg.kiraKey = val;
+      }
+      if (cloudData.baiKey !== undefined && cloudData.baiKey !== null) {
+        const val = String(cloudData.baiKey).trim();
+        if (val || !cfg.baiKey) cfg.baiKey = val;
       }
 
       // Cập nhật cấu hình Google Sheet & Cột
@@ -1984,7 +2059,7 @@ async function handleMessage(msg) {
           `• Nguồn máy chủ: \`${matchedSource}\`\n` +
           `• Nhà cung cấp đang chọn: *${info.providerName.toUpperCase()}* 🎯\n` +
           `• Mô hình AI đang chạy: \`${info.model}\`\n` +
-          `• Model APInex: \`${cfg.apinexModel || 'free/gemini-3.8-flash'}\`\n` +
+          `• Model B.AI: \`${cfg.baiModel || 'DeepSeek-V4.1-Flash'}\`\n` +
           `• Model Kira AI: \`${cfg.kiraModel || 'qwen3.8-27b-free'}\`\n` +
           `• Model OpenRouter: \`${cfg.openRouterModel || 'nex-agi/nex-n2.5-pro:free'}\`\n` +
           `• Google Sheet: ${cfg.googleSheetUrl ? '✅ Đã kết nối' : '❌ Chưa có'}\n` +
@@ -2033,12 +2108,12 @@ async function handleMessage(msg) {
         text: `✅ Dạ Senpai! Akko đã chuyển sang dùng sức mạnh của *Google Gemini* (Mô hình: \`${cfg.geminiModel || 'gemini-3.6-flash'}\`) rồi nè! ⚡`,
         parse_mode: 'Markdown'
       });
-    } else if (prov === 'apinex' || prov === 'apx' || prov === '2') {
-      cfg.aiProvider = 'apinex';
+    } else if (prov === 'bai' || prov === 'b.ai' || prov === '2') {
+      cfg.aiProvider = 'bai';
       saveBotConfig(cfg);
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: `✅ Tuân lệnh! Akko đã chuyển sang nhà cung cấp *APInex* (Mô hình: \`${cfg.apinexModel || 'free/gemini-3.8-flash'}\`) nha Senpai! 🔥`,
+        text: `✅ Oki Senpai! Akko đã kết nối sang *B.AI* (Mô hình: \`${cfg.baiModel || 'DeepSeek-V4.1-Flash'}\` • Giảm giá 90%) rồi nè! 🔥`,
         parse_mode: 'Markdown'
       });
     } else if (prov === 'kira' || prov === 'kiraai' || prov === '3') {
@@ -2061,9 +2136,9 @@ async function handleMessage(msg) {
       const info = getActiveProviderInfo(cfg);
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: '💡 Senpai muốn Akko dùng AI nào nè? Gõ `/aprovider <gemini|apinex|kira|openrouter>` (hoặc gõ số 1-4 nha):\n' +
+        text: '💡 Senpai muốn Akko dùng AI nào nè? Gõ `/aprovider <gemini|bai|kira|openrouter>` (hoặc gõ số 1-4 nha):\n' +
           `• 1: Google Gemini (\`${cfg.geminiModel || 'gemini-3.6-flash'}\`)\n` +
-          `• 2: APInex (\`${cfg.apinexModel || 'free/gemini-3.8-flash'}\`)\n` +
+          `• 2: B.AI (\`${cfg.baiModel || 'DeepSeek-V4.1-Flash'}\` • Giảm 90%)\n` +
           `• 3: Kira AI (\`${cfg.kiraModel || 'qwen3.8-27b-free'}\`)\n` +
           `• 4: OpenRouter (\`${cfg.openRouterModel || 'nex-agi/nex-n2.5-pro:free'}\`)\n\n` +
           `🎯 Hiện tại Akko đang dùng: *${info.providerName}* (\`${info.model}\`)`,
@@ -2079,6 +2154,11 @@ async function handleMessage(msg) {
       return sendTelegram('sendMessage', {
         chat_id: chatId,
         text: '💡 *Senpai ơi, đây là danh sách các mô hình AI xịn xò mới nhất Akko gợi ý nè:* 🌸\n\n' +
+          '🔥 *B.AI (b.ai - Giảm 90% & 300k Credits):*\n' +
+          '• `/amodel Qwen3.8-Flash` (Khuyên dùng #1 • Alibaba Vision cực chuẩn)\n' +
+          '• `/amodel Qwen3.8-27B` (MỚI • Vision 27B siêu tốc 2.5s & chuẩn xác)\n' +
+          '• `/amodel GLM-5.3-Flash` (Zhipu AI Siêu nhanh 2.9s)\n' +
+          '• `/amodel DeepSeek-V4.1-Flash` (MoE 552B Siêu tốc)\n\n' +
           '⚡ *Google Gemini trực tiếp:*\n' +
           '• `/amodel gemini-3.6-flash` (Mô hình chính - Siêu nhanh & chuẩn)\n\n' +
           '🌟 *Kira AI (kiraai.vn - Free 100M tokens/ngày & Đa dạng Vision):*\n' +
@@ -2090,15 +2170,6 @@ async function handleMessage(msg) {
           '• `/amodel glm-5.3-flash-free` (Free 100M • Đa phương thức)\n' +
           '• `/amodel qwen3.8-max` (Đỉnh cao chữ viết tay)\n' +
           '• `/amodel kira-auto` (Tự động điều phối mô hình)\n\n' +
-          '🔥 *APInex (Free 1M Token & Cụm Model Mới):*\n' +
-          '• `/amodel free/gemini-3.8-flash` (Khuyên dùng - Cực nhanh & chuẩn)\n' +
-          '• `/amodel free/gemini-3.1-pro` (MỚI • Phân tích sâu phiếu mờ)\n' +
-          '• `/amodel free/qwen-3.8-max` (Đỉnh cao chữ viết tay tiếng Việt)\n' +
-          '• `/amodel free/gpt-5.6-luna` (Ổn định, bóc tách cấu trúc cột)\n' +
-          '• `/amodel free/glm-5.3-flash` (MỚI • Đa phương thức siêu tốc)\n' +
-          '• `/amodel free/claude-sonnet-4.6` (MỚI • Hiểu bảng biểu chuẩn)\n' +
-          '• `/amodel free/deepseek-v4.1-flash` (MỚI • Nhẹ & tiết kiệm)\n' +
-          '• `/amodel free/muse-spark-1.3` (Gọn nhẹ, phản hồi tức thì)\n\n' +
           '🌐 *OpenRouter (Miễn phí & Tối ưu OCR Vision):*\n' +
           '• `/amodel nex-agi/nex-n2.5-pro:free` (Khuyên dùng - Rất nhanh & chuẩn)\n' +
           '• `/amodel nex-agi/nex-n2.5-mini:free` (Siêu nhẹ & tốc độ cao)\n' +
@@ -2116,9 +2187,15 @@ async function handleMessage(msg) {
     const cfg = getBotConfig();
     const lowerModel = modelName.toLowerCase();
 
-    if (lowerModel.startsWith('free/')) {
-      cfg.aiProvider = 'apinex';
-      cfg.apinexModel = modelName;
+    if (
+      lowerModel === 'deepseek-v4.1-flash' ||
+      lowerModel === 'glm-5.3-flash' ||
+      lowerModel === 'qwen3.8-flash' ||
+      lowerModel === 'qwen3.8-27b' ||
+      lowerModel.startsWith('deepseek-v4.1')
+    ) {
+      cfg.aiProvider = 'bai';
+      cfg.baiModel = lowerModel;
     } else if (
       modelName.startsWith('kira_') ||
       modelName.startsWith('kira-') ||
@@ -2142,8 +2219,8 @@ async function handleMessage(msg) {
     } else {
       if (cfg.aiProvider === 'gemini') {
         cfg.geminiModel = modelName;
-      } else if (cfg.aiProvider === 'apinex') {
-        cfg.apinexModel = modelName;
+      } else if (cfg.aiProvider === 'bai') {
+        cfg.baiModel = modelName;
       } else if (cfg.aiProvider === 'kira') {
         cfg.kiraModel = modelName;
       } else {
@@ -2168,9 +2245,9 @@ async function handleMessage(msg) {
         chat_id: chatId,
         text: '⚠️ Senpai gửi chìa khóa API key cho Akko theo cú pháp này nha:\n`/akey <API_Key>`\n' +
           '• Google Key: bắt đầu bằng `AIzaSy...` (Akko sẽ tự chuyển sang Google Gemini)\n' +
-          '• APInex Key: bắt đầu bằng `sk-apx...` (Akko sẽ tự chuyển sang APInex)\n' +
           '• Kira Key: bắt đầu bằng `kira_...` (Akko sẽ tự chuyển sang Kira AI)\n' +
-          '• OpenRouter Key: bắt đầu bằng `sk-or-` (Akko sẽ tự chuyển sang OpenRouter)',
+          '• OpenRouter Key: bắt đầu bằng `sk-or-` (Akko sẽ tự chuyển sang OpenRouter)\n' +
+          '• B.AI Key: khi đang chọn B.AI (`/aprovider bai`), dán key để Akko cất vào ví B.AI nha',
         parse_mode: 'Markdown'
       });
     }
@@ -2185,15 +2262,6 @@ async function handleMessage(msg) {
       return sendTelegram('sendMessage', {
         chat_id: chatId,
         text: `✅ Yatta~! Akko đã cất Google Gemini API Key vào ví rùi nè: \`${masked}\`\n(Akko cũng tự động chuyển Provider sang *GOOGLE GEMINI* luôn rùi đó Senpai!) ✨`,
-        parse_mode: 'Markdown'
-      });
-    } else if (newKey.startsWith('sk-apx')) {
-      cfg.apinexKey = newKey;
-      cfg.aiProvider = 'apinex';
-      saveBotConfig(cfg);
-      return sendTelegram('sendMessage', {
-        chat_id: chatId,
-        text: `✅ Yay~! Akko đã lưu APInex API Key: \`${masked}\`\n(Đã tự động chuyển Provider sang *APINEX* cho Senpai nè!) 🔥`,
         parse_mode: 'Markdown'
       });
     } else if (newKey.startsWith('kira_') || newKey.startsWith('kira')) {
@@ -2217,8 +2285,8 @@ async function handleMessage(msg) {
     } else {
       if (cfg.aiProvider === 'gemini') {
         cfg.geminiKey = newKey;
-      } else if (cfg.aiProvider === 'apinex') {
-        cfg.apinexKey = newKey;
+      } else if (cfg.aiProvider === 'bai') {
+        cfg.baiKey = newKey;
       } else if (cfg.aiProvider === 'kira') {
         cfg.kiraKey = newKey;
       } else {

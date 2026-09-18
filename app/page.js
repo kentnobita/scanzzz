@@ -113,72 +113,6 @@ const OPENROUTER_MODELS = [
   },
 ];
 
-const APINEX_MODELS = [
-  {
-    id: 'free/gemini-3.8-flash',
-    name: 'Gemini 3.8 Flash',
-    shortName: 'Gemini 3.8 Flash',
-    badge: 'Khuyên Dùng • Cực Nhanh',
-    badgeColor: 'bg-emerald-100 text-emerald-800',
-    desc: 'Mô hình Gemini 3.8 Flash của Google trên APInex. Cửa sổ 1M token, tốc độ đọc và xử lý phiếu xuất kho rất tốt.',
-  },
-  {
-    id: 'free/gemini-3.1-pro',
-    name: 'Gemini 3.1 Pro',
-    shortName: 'Gemini 3.1 Pro',
-    badge: 'MỚI • Phân Tích Sâu',
-    badgeColor: 'bg-blue-100 text-blue-800',
-    desc: 'Phiên bản Pro chuyên xử lý các phiếu mờ, chụp nghiêng, bảng biểu nhiều dòng và chữ viết tay phức tạp.',
-  },
-  {
-    id: 'free/qwen-3.8-max',
-    name: 'Qwen 3.8 MAX',
-    shortName: 'Qwen 3.8 MAX',
-    badge: 'Đỉnh Cao Chữ Viết Tay',
-    badgeColor: 'bg-purple-100 text-purple-800',
-    desc: 'Mô hình Qwen MAX mạnh nhất, đọc tốt tài liệu tiếng Việt và các dòng chữ viết tay phức tạp.',
-  },
-  {
-    id: 'free/gpt-5.6-luna',
-    name: 'GPT 5.6 Luna',
-    shortName: 'GPT 5.6 Luna',
-    badge: 'Ổn Định • Bóc Tách Chuẩn',
-    badgeColor: 'bg-teal-100 text-teal-800',
-    desc: 'Mô hình GPT 5.6 Luna tối ưu hóa bóc tách cấu trúc cột, số chứng từ và dòng bảng.',
-  },
-  {
-    id: 'free/glm-5.3-flash',
-    name: 'GLM 5.3 Flash',
-    shortName: 'GLM 5.3 Flash',
-    badge: 'MỚI • Đa Phương Thức Siêu Tốc',
-    badgeColor: 'bg-orange-100 text-orange-800',
-    desc: 'Mô hình đa phương thức thế hệ mới của Zhipu AI trên APInex. Phản hồi rất nhanh và bóc tách bảng chi tiết.',
-  },
-  {
-    id: 'free/claude-sonnet-4.6',
-    name: 'Claude Sonnet 4.6',
-    shortName: 'Claude Sonnet 4.6',
-    badge: 'MỚI • Hiểu Cấu Trúc Bảng',
-    badgeColor: 'bg-rose-100 text-rose-800',
-    desc: 'Phiên bản Claude Sonnet miễn phí trên APInex, đọc bảng biểu và phân biệt các cột số lượng cực chuẩn.',
-  },
-  {
-    id: 'free/deepseek-v4.1-flash',
-    name: 'DeepSeek V4.1 Flash',
-    shortName: 'DeepSeek V4.1 Flash',
-    badge: 'MỚI • Nhẹ Nhàng & Tiết Kiệm',
-    badgeColor: 'bg-cyan-100 text-cyan-800',
-    desc: 'Thế hệ DeepSeek V4.1 mới nhất trên APInex, tốc độ suy luận nhanh và tối ưu hóa xử lý văn bản tài liệu.',
-  },
-  {
-    id: 'free/muse-spark-1.3',
-    name: 'Muse Spark 1.3',
-    shortName: 'Muse Spark 1.3',
-    badge: 'Gọn Nhẹ • Phản Hồi Tức Thì',
-    badgeColor: 'bg-amber-100 text-amber-800',
-    desc: 'Mô hình gọn nhẹ, phản hồi nhanh cho các phiếu kho dạng in rõ nét.',
-  },
-];
 
 const KIRA_MODELS = [
   {
@@ -244,6 +178,41 @@ const KIRA_MODELS = [
     badge: 'Tự Động Chọn Mô Hình',
     badgeColor: 'bg-blue-100 text-blue-800',
     desc: 'Hệ thống tự động điều hướng request sang mô hình đang có độ trễ thấp nhất và sẵn sàng nhất.',
+  },
+];
+
+const BAI_MODELS = [
+  {
+    id: 'qwen3.8-flash',
+    name: 'Qwen3.8-Flash',
+    shortName: 'Qwen 3.8 Flash',
+    badge: 'Khuyên Dùng #1 • 90% Off • Đọc Tay Cực Chuẩn',
+    badgeColor: 'bg-emerald-100 text-emerald-800',
+    desc: 'Mô hình Alibaba Vision thế hệ 3.8 tối ưu nhất cho phiếu kho tiếng Việt, chữ viết tay nghiêng hoặc số chứng từ mờ. Không bị suy luận nháp.',
+  },
+  {
+    id: 'qwen3.8-27b',
+    name: 'Qwen3.8-27B (Vision)',
+    shortName: 'Qwen 3.8 27B',
+    badge: 'MỚI • 90% Off • Vision 27B Siêu Chuẩn',
+    badgeColor: 'bg-purple-100 text-purple-800',
+    desc: 'Bản Qwen 27B Vision mạnh mẽ nhất trong gói 90% Off, nhận diện cấu trúc bảng phức tạp và chữ số viết tay khó nhằn chỉ trong ~2.5s.',
+  },
+  {
+    id: 'glm-5.3-flash',
+    name: 'GLM-5.3-Flash',
+    shortName: 'GLM 5.3 Flash',
+    badge: '90% Off • Zhipu AI Siêu Nhanh 2.9s',
+    badgeColor: 'bg-blue-100 text-blue-800',
+    desc: 'Mô hình đa phương thức thế hệ mới của Zhipu AI trên B.AI. Tốc độ rất nhanh, bóc tách cấu trúc dòng hàng và cột số lượng chuẩn.',
+  },
+  {
+    id: 'deepseek-v4.1-flash',
+    name: 'DeepSeek-V4.1-Flash',
+    shortName: 'DeepSeek V4.1',
+    badge: '90% Off • MoE 552B Siêu Tốc',
+    badgeColor: 'bg-amber-100 text-amber-800',
+    desc: 'Mô hình MoE 552B đa phương thức bản địa của DeepSeek. Đã có bộ lọc khử suy luận nháp tiếng Anh và nâng trần token.',
   },
 ];
 
@@ -460,18 +429,18 @@ export default function Home() {
   const [selectedPdfIndex, setSelectedPdfIndex] = useState(0);
 
   // Settings & Storage state
-  const [aiProvider, setAiProvider] = useState('gemini'); // 'gemini' | 'openrouter' | 'apinex' | 'kira'
+  const [aiProvider, setAiProvider] = useState('gemini'); // 'gemini' | 'openrouter' | 'kira' | 'bai'
   const [apiKey, setApiKey] = useState("");
   const [backupKeys, setBackupKeys] = useState([]);
   const [openRouterKey, setOpenRouterKey] = useState("");
   const [openRouterModel, setOpenRouterModel] = useState("google/gemini-2.5-flash");
   const [openRouterTesting, setOpenRouterTesting] = useState(false);
-  const [apinexKey, setApinexKey] = useState("");
-  const [apinexModel, setApinexModel] = useState("free/gemini-3.8-flash");
-  const [apinexTesting, setApinexTesting] = useState(false);
   const [kiraKey, setKiraKey] = useState("");
   const [kiraModel, setKiraModel] = useState("qwen3.8-27b-free");
   const [kiraTesting, setKiraTesting] = useState(false);
+  const [baiKey, setBaiKey] = useState("");
+  const [baiModel, setBaiModel] = useState("deepseek-v4.1-flash");
+  const [baiTesting, setBaiTesting] = useState(false);
   const [rateLimitedKeys, setRateLimitedKeys] = useState(new Set()); 
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
 
@@ -498,13 +467,13 @@ export default function Home() {
   const [scanHistory, setScanHistory] = useState([]);
 
   const getActiveProviderLabel = (short = false) => {
+    if (aiProvider === 'bai') {
+      const bName = BAI_MODELS.find((m) => m.id === baiModel)?.shortName || baiModel;
+      return short ? 'B.AI' : `B.AI (${bName || 'DeepSeek V4.1'})`;
+    }
     if (aiProvider === 'kira') {
       const kName = KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel;
       return short ? 'Kira AI' : `Kira (${kName || 'Qwen 3.8 Flash'})`;
-    }
-    if (aiProvider === 'apinex') {
-      const apxName = APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || apinexModel;
-      return short ? 'APInex' : `APInex (${apxName})`;
     }
     if (aiProvider === 'openrouter') {
       const orName = OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || openRouterModel;
@@ -586,7 +555,14 @@ export default function Home() {
     }
 
     const savedProvider = localStorage.getItem('ai_provider') || 'gemini';
-    setAiProvider(savedProvider);
+    const effectiveProvider = savedProvider === 'apinex' ? 'gemini' : savedProvider;
+    setAiProvider(effectiveProvider);
+    if (savedProvider === 'apinex') {
+      localStorage.setItem('ai_provider', 'gemini');
+    }
+    localStorage.removeItem('apinex_api_key');
+    localStorage.removeItem('apinex_model');
+
     const savedOrKey = localStorage.getItem('openrouter_api_key') || '';
     setOpenRouterKey(savedOrKey);
     let savedOrModel = localStorage.getItem('openrouter_model') || 'google/gemini-2.5-flash';
@@ -596,15 +572,15 @@ export default function Home() {
     }
     setOpenRouterModel(savedOrModel);
 
-    const savedApxKey = localStorage.getItem('apinex_api_key') || '';
-    setApinexKey(savedApxKey);
-    const savedApxModel = localStorage.getItem('apinex_model') || 'free/gemini-3.8-flash';
-    setApinexModel(savedApxModel);
-
     const savedKiraKey = localStorage.getItem('kira_api_key') || '';
     setKiraKey(savedKiraKey);
     const savedKiraModel = localStorage.getItem('kira_model') || 'qwen3.8-27b-free';
     setKiraModel(savedKiraModel);
+
+    const savedBaiKey = localStorage.getItem('bai_api_key') || '';
+    setBaiKey(savedBaiKey);
+    const savedBaiModel = (localStorage.getItem('bai_model') || 'deepseek-v4.1-flash').toLowerCase();
+    setBaiModel(savedBaiModel);
 
     const sheetUrl = localStorage.getItem('google_sheet_webhook_url') || '';
     setGoogleSheetUrl(sheetUrl);
@@ -768,10 +744,10 @@ export default function Home() {
         aiProvider,
         openRouterKey: openRouterKey.trim(),
         openRouterModel: openRouterModel.trim(),
-        apinexKey: apinexKey.trim(),
-        apinexModel: apinexModel.trim(),
         kiraKey: kiraKey.trim(),
         kiraModel: kiraModel.trim(),
+        baiKey: baiKey.trim(),
+        baiModel: baiModel.trim(),
         googleSheetUrl: googleSheetUrl.trim(),
         autoSyncSheet,
         selectedColumns,
@@ -853,8 +829,9 @@ export default function Home() {
         localStorage.setItem('gemini_backup_api_keys', JSON.stringify(data.backupKeys));
       }
       if (data.aiProvider) {
-        setAiProvider(data.aiProvider);
-        localStorage.setItem('ai_provider', data.aiProvider);
+        const prov = data.aiProvider === 'apinex' ? 'gemini' : data.aiProvider;
+        setAiProvider(prov);
+        localStorage.setItem('ai_provider', prov);
       }
       if (data.openRouterKey !== undefined) {
         setOpenRouterKey(data.openRouterKey);
@@ -865,14 +842,6 @@ export default function Home() {
         setOpenRouterModel(modelToSet);
         localStorage.setItem('openrouter_model', modelToSet);
       }
-      if (data.apinexKey !== undefined) {
-        setApinexKey(data.apinexKey);
-        localStorage.setItem('apinex_api_key', data.apinexKey);
-      }
-      if (data.apinexModel) {
-        setApinexModel(data.apinexModel);
-        localStorage.setItem('apinex_model', data.apinexModel);
-      }
       if (data.kiraKey !== undefined) {
         setKiraKey(data.kiraKey);
         localStorage.setItem('kira_api_key', data.kiraKey);
@@ -880,6 +849,14 @@ export default function Home() {
       if (data.kiraModel) {
         setKiraModel(data.kiraModel);
         localStorage.setItem('kira_model', data.kiraModel);
+      }
+      if (data.baiKey !== undefined) {
+        setBaiKey(data.baiKey);
+        localStorage.setItem('bai_api_key', data.baiKey);
+      }
+      if (data.baiModel) {
+        setBaiModel(data.baiModel);
+        localStorage.setItem('bai_model', data.baiModel);
       }
       if (data.googleSheetUrl !== undefined) {
         setGoogleSheetUrl(data.googleSheetUrl);
@@ -2193,227 +2170,6 @@ export default function Home() {
     throw new Error('OpenRouter chưa trích xuất được bảng hàng hóa. Vui lòng bấm Quét Lại hoặc thử chọn mô hình Nex-N2.5-Pro / Gemini 2.5 Flash.');
   };
 
-  // Test APInex Connection
-  const testApinexConnection = async () => {
-    const key = apinexKey.trim();
-    if (!key) {
-      showToast('Vui lòng nhập API Key APInex trước khi test', 'error');
-      return;
-    }
-    setApinexTesting(true);
-    try {
-      const res = await fetch('/api/apinex', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'test', key })
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error?.message || ('Lỗi xác thực ' + res.status));
-      }
-      showToast('✅ Kết nối APInex thành công! Key hoạt động tốt.', 'success');
-    } catch (e) {
-      showToast('❌ Lỗi APInex: ' + e.message, 'error');
-    } finally {
-      setApinexTesting(false);
-    }
-  };
-
-  // Direct APInex OCR (Supports Free Top-Tier Vision Models)
-  const scanClientApinexWithBase64 = async (base64Data, mimeType, key, model) => {
-    // Tự động nén ảnh trên canvas nếu ảnh lớn để tăng tốc độ upload lên APInex gấp 5-10 lần
-    let payloadBase64 = base64Data;
-    let payloadMime = mimeType;
-    if (base64Data && base64Data.length > 90000) {
-      try {
-        const compressed = await new Promise((resolve) => {
-          const img = new Image();
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const maxDim = 1200;
-            let w = img.width, h = img.height;
-            if (w > maxDim || h > maxDim) {
-              if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
-              else { w = Math.round((w * maxDim) / h); h = maxDim; }
-            }
-            canvas.width = w;
-            canvas.height = h;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, w, h);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
-            resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg' });
-          };
-          img.onerror = () => resolve(null);
-          img.src = `data:${mimeType};base64,${base64Data}`;
-        });
-        if (compressed?.base64) {
-          payloadBase64 = compressed.base64;
-          payloadMime = compressed.mime;
-        }
-      } catch (e) {
-        console.warn('Không thể nén ảnh cho APInex:', e);
-      }
-    }
-
-    const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
-    const rules = ['soPhieu', ...selectedColumns]
-      .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
-      .join('\n');
-
-    const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
-      'YÊU CẦU BẮT BUỘC:\n' +
-      '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON.\n' +
-      '- Định dạng trả về duy nhất là chuỗi JSON:\n' +
-      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}\n\n' +
-      'Quy tắc trích xuất quan trọng:\n' +
-      '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
-      '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
-      '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
-      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1") nhưng chỉ có chung 1 bộ số lượng thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất.\n' +
-      'Hướng dẫn cột:\n' + rules + '\n\n' +
-      'ĐỊNH DẠNG TRẢ VỀ: Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
-      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
-
-    const selectedModel = model || 'free/gemini-3.8-flash';
-    const reqBody = {
-      key: key.trim(),
-      model: selectedModel,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: promptText },
-            { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } },
-          ],
-        },
-      ],
-      temperature: 0.1,
-      max_tokens: 3000,
-    };
-
-    if (!selectedModel.includes('qwen')) {
-      reqBody.response_format = { type: 'json_object' };
-    }
-
-    const res = await fetch('/api/apinex', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(reqBody),
-    });
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      const err = new Error(errData.error?.message || ('APInex Error: ' + res.status));
-      err.status = res.status;
-      throw err;
-    }
-
-    const data = await res.json();
-    const msg = data.choices?.[0]?.message;
-    let text = (msg?.content || '').trim();
-    if (!text && msg?.reasoning) {
-      text = msg.reasoning.trim();
-    }
-    if (!text) {
-      throw new Error('Không nhận được dữ liệu phản hồi từ APInex');
-    }
-
-    // 1. Parse JSON trực tiếp (xử lý markdown ```json ... ```)
-    const cleanText = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
-    let parsed = null;
-
-    try {
-      parsed = JSON.parse(cleanText);
-    } catch {
-      const m = cleanText.match(/\{[\s\S]*\}/);
-      if (m) {
-        try {
-          parsed = JSON.parse(m[0]);
-        } catch {}
-      }
-    }
-
-    // 2. Nếu JSON hợp lệ và có chứa mảng rows hoặc items
-    if (parsed && (Array.isArray(parsed.rows) || Array.isArray(parsed.items))) {
-      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-        parsed.items = parsed.rows
-          .filter((row) => Array.isArray(row) || (typeof row === 'object' && row !== null))
-          .map((row) => {
-            if (typeof row === 'object' && !Array.isArray(row)) return row;
-            const obj = {};
-            selectedColumns.forEach((colKey, idx) => {
-              obj[colKey] = row[idx] ?? '';
-            });
-            return obj;
-          });
-      }
-      return parsed;
-    }
-
-    // 3. Dự phòng phân tích dòng text / bullet points nếu model trả về dạng danh sách
-    let fallbackSoPhieu = '';
-    const spMatch = text.match(/(?:Số\s*phiếu|Số\s*chứng\s*từ|Số\s*XKP|Số|No\.?)[:\s]+([A-Z0-9_\-\s\/]+)/i);
-    if (spMatch) {
-      fallbackSoPhieu = spMatch[1].split('\n')[0].trim().replace(/^[:\s\-]+/, '');
-    }
-
-    const fallbackItems = [];
-    const sections = text.split(/(?:^|\n)\s*(?:\d+[\.\)]\s*(?:STT\s*\d+[:\s]*)?|STT\s*\d+[:\s]*)/i);
-    if (sections.length > 1) {
-      for (let i = 1; i < sections.length; i++) {
-        const sec = sections[i];
-        const lines = sec.split('\n').map((l) => l.trim()).filter(Boolean);
-        if (!lines.length) continue;
-        const firstLine = lines[0];
-
-        const parts = firstLine.split(',').map((p) => p.trim());
-        if (parts.length >= 3) {
-          const itemObj = {};
-          selectedColumns.forEach((col, idx) => {
-            itemObj[col] = parts[idx] ? parts[idx].replace(/^[:\s\-]+/, '') : '';
-          });
-          fallbackItems.push(itemObj);
-          continue;
-        }
-
-        let ten = firstLine.replace(/^[:\s\-]+/, '');
-        let soOSPO = '', donViTinh = '', slChungTu = '', slThucNhap = '', soPallet = '', ghiChu = '';
-        for (const l of lines) {
-          const ospoM = l.match(/(?:Số\s*O\.?S\/?PO|PO|OS)[:\s]+([^\n]+)/i);
-          if (ospoM) soOSPO = ospoM[1].trim();
-          const dvtM = l.match(/(?:ĐVT|Đơn\s*vị\s*tính)[:\s]+([^\n]+)/i);
-          if (dvtM) donViTinh = dvtM[1].trim();
-          const slctM = l.match(/(?:SL\s*chứng\s*từ|Số\s*lượng\s*chứng\s*từ)[:\s]+([^\n]+)/i);
-          if (slctM) slChungTu = slctM[1].trim();
-          const sltnM = l.match(/(?:SL\s*thực\s*nhập|Số\s*lượng\s*thực\s*nhập)[:\s]+([^\n]+)/i);
-          if (sltnM) slThucNhap = sltnM[1].trim();
-          const palM = l.match(/(?:Số\s*pallet|Pallet)[:\s]+([^\n]+)/i);
-          if (palM) soPallet = palM[1].trim();
-        }
-
-        fallbackItems.push({
-          ten: ten || '',
-          soOSPO: soOSPO || '',
-          donViTinh: donViTinh || '',
-          soLuongChungTu: slChungTu || '',
-          soLuongThucNhap: slThucNhap || '',
-          soPallet: soPallet || '',
-          ghiChu: ghiChu || '',
-        });
-      }
-    }
-
-    if (fallbackItems.length > 0) {
-      return {
-        soPhieu: fallbackSoPhieu,
-        items: fallbackItems,
-      };
-    }
-
-    throw new Error('APInex chưa trích xuất được bảng hàng hóa. Vui lòng bấm Quét Lại hoặc thử chọn mô hình khác.');
-  };
 
   // Test Kira AI Connection
   const testKiraConnection = async () => {
@@ -2643,6 +2399,303 @@ export default function Home() {
     throw new Error('AI chưa trích xuất được bảng hàng hóa. Vui lòng bấm Quét Lại hoặc chọn mô hình qwen3.8-flash-free / gemini-3.8-flash.');
   };
 
+  // Test B.AI Connection
+  const testBaiConnection = async () => {
+    const key = baiKey.trim();
+    if (!key) {
+      showToast('Vui lòng nhập API Key B.AI trước khi test', 'error');
+      return;
+    }
+    setBaiTesting(true);
+    try {
+      const res = await fetch('/api/bai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'test', key })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || ('Lỗi xác thực ' + res.status));
+      }
+      showToast('✅ Kết nối B.AI thành công! Key hoạt động tốt (300k credits).', 'success');
+    } catch (e) {
+      showToast('❌ Lỗi B.AI: ' + e.message, 'error');
+    } finally {
+      setBaiTesting(false);
+    }
+  };
+
+  // Direct B.AI OCR (supports deepseek-v4.1-flash, glm-5.3-flash, qwen3.8-flash, hy3, mimo-v2.5)
+  const scanClientBaiWithBase64 = async (base64Data, mimeType, key, model) => {
+    const effectiveModel = (model?.trim() || 'deepseek-v4.1-flash').toLowerCase();
+
+    // Auto-compress image to ensure fast processing and prevent payload limit
+    let payloadBase64 = base64Data;
+    let payloadMime = mimeType;
+    if (base64Data && base64Data.length > 90000) {
+      try {
+        const compressed = await new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const maxDim = 1200;
+            let w = img.width, h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+              else { w = Math.round((w * maxDim) / h); h = maxDim; }
+            }
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.80);
+            resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg' });
+          };
+          img.onerror = () => resolve(null);
+          img.src = `data:${mimeType};base64,${base64Data}`;
+        });
+        if (compressed?.base64) {
+          payloadBase64 = compressed.base64;
+          payloadMime = compressed.mime;
+        }
+      } catch (e) {
+        console.warn('Không thể nén ảnh cho B.AI:', e);
+      }
+    }
+
+    const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
+    const rules = ['soPhieu', ...selectedColumns]
+      .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
+      .join('\n');
+
+    const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
+      'YÊU CẦU BẮT BUỘC:\n' +
+      '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON, không viết tiếng Anh.\n' +
+      '- Định dạng trả về duy nhất là chuỗi JSON:\n' +
+      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}\n\n' +
+      'Quy tắc trích xuất quan trọng:\n' +
+      '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
+      '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
+      '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
+      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1") nhưng chỉ có chung 1 bộ số lượng thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất.\n' +
+      'Hướng dẫn cột:\n' + rules + '\n\n' +
+      'ĐỊNH DẠNG TRẢ VỀ: Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
+      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
+
+    const reqPayload = {
+      key: key.trim(),
+      model: effectiveModel,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an automated OCR parser for Vietnamese warehouse receipts. Output ONLY the raw JSON object matching the requested schema. DO NOT output internal reasoning, conversational thinking, or explanations.'
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: promptText },
+            { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } },
+          ],
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 6000,
+    };
+
+    if (!effectiveModel.toLowerCase().includes('qwen')) {
+      reqPayload.response_format = { type: 'json_object' };
+    }
+
+    const res = await fetch('/api/bai', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(reqPayload),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const err = new Error(errData.error?.message || ('B.AI Error: ' + res.status));
+      err.status = res.status;
+      throw err;
+    }
+
+    const data = await res.json();
+    const msg = data.choices?.[0]?.message;
+    let text = (msg?.content || '').trim();
+
+    // Loại bỏ tag <think>...</think> nếu có
+    if (text) {
+      text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    }
+
+    // Nếu content rỗng, kiểm tra xem trong reasoning_content có khối JSON hoàn chỉnh không
+    if (!text && msg?.reasoning_content) {
+      const rText = msg.reasoning_content;
+      const jsonBlock = rText.match(/\{[\s\S]*"rows"[\s\S]*\}/) || rText.match(/\{[\s\S]*"items"[\s\S]*\}/);
+      if (jsonBlock) {
+        text = jsonBlock[0].trim();
+      }
+    }
+
+    if (!text) {
+      throw new Error('Không nhận được dữ liệu phản hồi từ B.AI. Vui lòng thử lại hoặc chọn mô hình Qwen3.8-Flash.');
+    }
+
+    // Hàm làm sạch giá trị từng ô, loại bỏ suy luận nháp tiếng Anh (thinking leak)
+    const cleanOcrCell = (val, colKey) => {
+      if (val === null || val === undefined) return '';
+      let s = String(val).trim();
+      if (!s || s === '???') return '';
+
+      // Phát hiện thinking leak
+      if (/maybe|actually|let's read|let's see|in column|it might be|handwritten|looks like|wait column/i.test(s)) {
+        const q = s.match(/"([^"]+)"/);
+        if (q) {
+          s = q[1].trim();
+        } else {
+          s = s.replace(/(?:maybe|actually|let's see|let's read|in column|it might be|handwritten|looks like|wait column)[\s\S]*/i, '').trim();
+        }
+      }
+
+      if (colKey === 'soOSPO') {
+        return formatOSPO(s);
+      }
+      if (colKey === 'soLuongChungTu' || colKey === 'soLuongThucNhap') {
+        const m = s.match(/\b\d+(?:[.,]\d+)?\b/);
+        if (m) return m[0].replace(',', '.');
+      }
+      if (colKey === 'donViTinh') {
+        s = s.replace(/["'?]/g, '').trim();
+        const dvt = s.match(/\b(EA|PCS|KG|BOX|CÁI|THÙNG|BỘ|CUỘN|CÂY)\b/i);
+        if (dvt) return dvt[0].toUpperCase();
+      }
+      if (colKey === 'soPallet') {
+        s = s.replace(/["'?]/g, '').trim();
+        s = s.replace(/(?:ghi chú|actually|maybe)[\s\S]*/i, '').trim();
+      }
+      return s.replace(/^[:\s\-]+/, '').replace(/[:\s\-]+$/, '');
+    };
+
+    // Parse JSON trực tiếp
+    const cleanText = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+    let parsed = null;
+
+    try {
+      parsed = JSON.parse(cleanText);
+    } catch {
+      const m = cleanText.match(/\{[\s\S]*\}/);
+      if (m) {
+        try {
+          parsed = JSON.parse(m[0]);
+        } catch {}
+      }
+    }
+
+    if (parsed && (Array.isArray(parsed.rows) || Array.isArray(parsed.items))) {
+      let soPhieuVal = String(parsed.soPhieu || '').trim();
+      if (/maybe|actually|let's/i.test(soPhieuVal)) {
+        const q = soPhieuVal.match(/"([^"]+)"/);
+        if (q) soPhieuVal = q[1].trim();
+      }
+      parsed.soPhieu = soPhieuVal;
+
+      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
+        parsed.items = parsed.rows
+          .filter((row) => Array.isArray(row) || (typeof row === 'object' && row !== null))
+          .map((row) => {
+            if (typeof row === 'object' && !Array.isArray(row)) {
+              const cleaned = {};
+              Object.keys(row).forEach((k) => {
+                cleaned[k] = cleanOcrCell(row[k], k);
+              });
+              return cleaned;
+            }
+            const obj = {};
+            selectedColumns.forEach((colKey, idx) => {
+              obj[colKey] = cleanOcrCell(row[idx], colKey);
+            });
+            return obj;
+          });
+      } else if (Array.isArray(parsed.items)) {
+        parsed.items = parsed.items.map((item) => {
+          const cleaned = {};
+          selectedColumns.forEach((colKey) => {
+            cleaned[colKey] = cleanOcrCell(item[colKey], colKey);
+          });
+          return cleaned;
+        });
+      }
+      return parsed;
+    }
+
+    // Dự phòng thông minh
+    let fallbackSoPhieu = '';
+    const spMatch = text.match(/(?:Số\s*phiếu|Số\s*chứng\s*từ|Số\s*XKP|Số|No\.?)[:\s]+([A-Z0-9_\-\s\/]+)/i);
+    if (spMatch) {
+      fallbackSoPhieu = spMatch[1].split('\n')[0].trim().replace(/^[:\s\-]+/, '');
+      if (/maybe|actually|let's/i.test(fallbackSoPhieu)) {
+        const q = fallbackSoPhieu.match(/"([^"]+)"/);
+        if (q) fallbackSoPhieu = q[1].trim();
+      }
+    }
+
+    const fallbackItems = [];
+    const sections = text.split(/(?:^|\n)\s*(?:\d+[\.\)]\s*(?:STT\s*\d+[:\s]*)?|STT\s*\d+[:\s]*)/i);
+    if (sections.length > 1) {
+      for (let i = 1; i < sections.length; i++) {
+        const sec = sections[i];
+        const lines = sec.split('\n').map((l) => l.trim()).filter(Boolean);
+        if (!lines.length) continue;
+        const firstLine = lines[0];
+        const parts = firstLine.split(',').map((p) => p.trim());
+        if (parts.length >= 3) {
+          const itemObj = {};
+          selectedColumns.forEach((col, idx) => {
+            itemObj[col] = cleanOcrCell(parts[idx], col);
+          });
+          fallbackItems.push(itemObj);
+          continue;
+        }
+
+        let ten = cleanOcrCell(firstLine, 'ten');
+        let soOSPO = '', donViTinh = '', slChungTu = '', slThucNhap = '', soPallet = '', ghiChu = '';
+        for (const l of lines) {
+          const ospoM = l.match(/(?:Số\s*O\.?S\/?PO|PO|OS)[:\s]+([^\n]+)/i);
+          if (ospoM) soOSPO = cleanOcrCell(ospoM[1], 'soOSPO');
+          const dvtM = l.match(/(?:ĐVT|Đơn\s*vị\s*tính)[:\s]+([^\n]+)/i);
+          if (dvtM) donViTinh = cleanOcrCell(dvtM[1], 'donViTinh');
+          const slctM = l.match(/(?:SL\s*chứng\s*từ|Số\s*lượng\s*chứng\s*từ)[:\s]+([^\n]+)/i);
+          if (slctM) slChungTu = cleanOcrCell(slctM[1], 'soLuongChungTu');
+          const sltnM = l.match(/(?:SL\s*thực\s*nhập|Số\s*lượng\s*thực\s*nhập)[:\s]+([^\n]+)/i);
+          if (sltnM) slThucNhap = cleanOcrCell(sltnM[1], 'soLuongThucNhap');
+          const palM = l.match(/(?:Số\s*pallet|Pallet)[:\s]+([^\n]+)/i);
+          if (palM) soPallet = cleanOcrCell(palM[1], 'soPallet');
+        }
+
+        fallbackItems.push({
+          ten: ten || '',
+          soOSPO: soOSPO || '',
+          donViTinh: donViTinh || '',
+          soLuongChungTu: slChungTu || '',
+          soLuongThucNhap: slThucNhap || '',
+          soPallet: soPallet || '',
+          ghiChu: ghiChu || '',
+        });
+      }
+    }
+
+    if (fallbackItems.length > 0) {
+      return {
+        soPhieu: fallbackSoPhieu,
+        items: fallbackItems,
+      };
+    }
+
+    throw new Error('B.AI chưa trích xuất được bảng hàng hóa. Vui lòng bấm Quét Lại hoặc chọn mô hình DeepSeek-V4.1-Flash / Qwen3.8-Flash.');
+  };
+
   // Direct Gemini OCR with Google Generative AI (Optimized Compact 2D Matrix Output & Fast Vision)
   const scanClientGeminiWithBase64 = async (base64Data, mimeType, key) => {
     // 1. Tự động nén ảnh thông minh trước khi gửi (maxDim = 1500px, JPEG 0.85)
@@ -2811,20 +2864,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       return { data: res, engine: 'openrouter' };
     }
 
-    // 2. APINEX PROVIDER
-    if (aiProvider === 'apinex') {
-      const apxKey = apinexKey.trim();
-      if (!apxKey) {
-        throw new Error('Chưa cấu hình API Key APInex! Vui lòng vào Cài đặt ⚙️ -> Tab API -> Chọn APInex và dán Key (sk-apx...).');
-      }
-      setScanProgress({
-        active: true,
-        percent: 45,
-        text: `${progressPrefix} Đang gọi APInex (${apinexModel})...`,
-      });
-      const res = await scanClientApinexWithBase64(base64Data, mimeType, apxKey, apinexModel);
-      return { data: res, engine: 'apinex' };
-    }
 
     // 3. KIRA AI PROVIDER
     if (aiProvider === 'kira') {
@@ -2840,6 +2879,22 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       });
       const res = await scanClientKiraWithBase64(base64Data, mimeType, kKey, modelToUse);
       return { data: res, engine: 'kira' };
+    }
+
+    // 4. B.AI PROVIDER
+    if (aiProvider === 'bai') {
+      const bKey = baiKey.trim();
+      if (!bKey) {
+        throw new Error('Chưa cấu hình API Key B.AI! Vui lòng vào Cài đặt ⚙️ -> Tab API -> Chọn B.AI và dán Key.');
+      }
+      const modelToUse = (baiModel.trim() || 'deepseek-v4.1-flash').toLowerCase();
+      setScanProgress({
+        active: true,
+        percent: 45,
+        text: `${progressPrefix} Đang gọi B.AI (${modelToUse})...`,
+      });
+      const res = await scanClientBaiWithBase64(base64Data, mimeType, bKey, modelToUse);
+      return { data: res, engine: 'bai' };
     }
 
     // 4. GOOGLE GEMINI PROVIDER (with Failover)
@@ -3532,10 +3587,12 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     localStorage.setItem('ai_provider', aiProvider);
     localStorage.setItem('openrouter_api_key', openRouterKey.trim());
     localStorage.setItem('openrouter_model', openRouterModel.trim());
-    localStorage.setItem('apinex_api_key', apinexKey.trim());
-    localStorage.setItem('apinex_model', apinexModel.trim());
+    localStorage.removeItem('apinex_api_key');
+    localStorage.removeItem('apinex_model');
     localStorage.setItem('kira_api_key', kiraKey.trim());
     localStorage.setItem('kira_model', kiraModel.trim());
+    localStorage.setItem('bai_api_key', baiKey.trim());
+    localStorage.setItem('bai_model', baiModel.trim());
     localStorage.setItem('google_sheet_webhook_url', googleSheetUrl.trim());
     localStorage.setItem('google_sheet_auto_sync', String(autoSyncSheet));
     localStorage.setItem('auto_cloud_sync_on_launch', String(autoCloudSyncOnLaunch));
@@ -3735,21 +3792,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               <button
                 type="button"
                 onClick={() => {
-                  setAiProvider('apinex');
-                  localStorage.setItem('ai_provider', 'apinex');
-                  showToast('Đang dùng chế độ APInex (Free 1M)');
-                }}
-                className={`px-2 py-0.5 rounded-md transition-all ${
-                  aiProvider === 'apinex'
-                    ? 'bg-emerald-600 text-white shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                APInex (Free)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
                   setAiProvider('kira');
                   localStorage.setItem('ai_provider', 'kira');
                   showToast('Đang dùng chế độ Kira AI (VN)');
@@ -3762,10 +3804,51 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               >
                 Kira AI
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAiProvider('bai');
+                  localStorage.setItem('ai_provider', 'bai');
+                  showToast('Đang dùng chế độ B.AI (90% Off)');
+                }}
+                className={`px-2 py-0.5 rounded-md transition-all ${
+                  aiProvider === 'bai'
+                    ? 'bg-rose-600 text-white shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                B.AI
+              </button>
             </div>
 
             {/* Provider Status Details */}
-            {aiProvider === 'kira' ? (
+            {aiProvider === 'bai' ? (
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`inline-block w-2.5 h-2.5 rounded-full ${
+                    baiKey.trim() ? 'bg-rose-500 animate-pulse' : 'bg-amber-500'
+                  }`}
+                />
+                <span className="font-semibold text-slate-700">
+                  {baiKey.trim() ? (
+                    <>
+                      <span className="text-rose-700 font-bold">B.AI</span>: {BAI_MODELS.find((m) => m.id === baiModel)?.shortName || baiModel}
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSettingsTab('api');
+                        setSettingsOpen(true);
+                      }}
+                      className="text-rose-700 font-bold hover:underline"
+                    >
+                      ⚠️ Chưa dán B.AI Key (Bấm vào đây để dán)
+                    </button>
+                  )}
+                </span>
+              </div>
+            ) : aiProvider === 'kira' ? (
               <div className="flex items-center gap-1.5">
                 <span
                   className={`inline-block w-2.5 h-2.5 rounded-full ${
@@ -3787,34 +3870,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                       className="text-amber-700 font-bold hover:underline"
                     >
                       ⚠️ Chưa dán Kira AI Key (Bấm vào đây để dán)
-                    </button>
-                  )}
-                </span>
-              </div>
-            ) : aiProvider === 'apinex' ? (
-              <div className="flex items-center gap-1.5">
-                <span
-                  className={`inline-block w-2.5 h-2.5 rounded-full ${
-                    apinexKey.trim() ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-                  }`}
-                />
-                <span className="font-semibold text-slate-700">
-                  {apinexKey.trim() ? (
-                    <>
-                      <span className="text-emerald-700 font-bold">APInex</span>: {
-                        APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || apinexModel
-                      }
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSettingsTab('api');
-                        setSettingsOpen(true);
-                      }}
-                      className="text-amber-700 font-bold hover:underline"
-                    >
-                      ⚠️ Chưa dán APInex Key (Bấm vào đây để dán)
                     </button>
                   )}
                 </span>
@@ -4165,10 +4220,10 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 onClick={startScan}
                 disabled={isScanning}
                 className={`mt-4 w-full py-4 rounded-xl text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-50 transition-all ${
-                  aiProvider === 'kira'
+                  aiProvider === 'bai'
+                    ? 'bg-gradient-to-r from-rose-600 via-red-600 to-pink-600 hover:opacity-95 shadow-rose-600/25'
+                    : aiProvider === 'kira'
                     ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:opacity-95 shadow-amber-600/25'
-                    : aiProvider === 'apinex'
-                    ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:opacity-95 shadow-emerald-600/25'
                     : aiProvider === 'openrouter'
                     ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:opacity-95 shadow-purple-600/25'
                     : 'bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-600 hover:opacity-95 shadow-blue-600/25'
@@ -4179,10 +4234,10 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     <span>
                       Đang trích xuất bằng {
-                        aiProvider === 'kira'
+                        aiProvider === 'bai'
+                          ? `B.AI (${BAI_MODELS.find((m) => m.id === baiModel)?.shortName || baiModel})`
+                          : aiProvider === 'kira'
                           ? `Kira AI (${KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel})`
-                          : aiProvider === 'apinex'
-                          ? `APInex (${APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || 'AI'})`
                           : aiProvider === 'openrouter'
                           ? `OpenRouter (${OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || 'AI'})`
                           : 'Gemini 3.6 Flash'
@@ -4193,10 +4248,10 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   <>
                     <IconSparkles className="w-5 h-5" />
                     <span>
-                      {aiProvider === 'kira'
+                      {aiProvider === 'bai'
+                        ? `Bắt Đầu Quét Bằng B.AI [${BAI_MODELS.find((m) => m.id === baiModel)?.shortName || baiModel}]`
+                        : aiProvider === 'kira'
                         ? `Bắt Đầu Quét Bằng Kira AI [${KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel}]`
-                        : aiProvider === 'apinex'
-                        ? `Bắt Đầu Quét Bằng APInex [${APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || apinexModel}]`
                         : aiProvider === 'openrouter'
                         ? `Bắt Đầu Quét Bằng OpenRouter [${OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || openRouterModel}]`
                         : 'Bắt Đầu Quét Trích Xuất (Gemini 3.6 Flash)'}
@@ -4230,10 +4285,10 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">Kết quả trích xuất</h3>
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                        engineBadge === 'kira'
+                        engineBadge === 'bai'
+                          ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                          : engineBadge === 'kira'
                           ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                          : engineBadge === 'apinex'
-                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                           : engineBadge === 'openrouter'
                           ? 'bg-purple-100 text-purple-800 border border-purple-200'
                           : engineBadge === 'groq'
@@ -4243,10 +4298,10 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           : 'bg-amber-100 text-amber-800 border border-amber-200'
                       }`}
                     >
-                      {engineBadge === 'kira'
+                      {engineBadge === 'bai'
+                        ? `✨ B.AI (${BAI_MODELS.find((m) => m.id === baiModel)?.shortName || baiModel})`
+                        : engineBadge === 'kira'
                         ? `✨ Kira AI (${KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel})`
-                        : engineBadge === 'apinex'
-                        ? `✨ APInex (${APINEX_MODELS.find((m) => m.id === apinexModel)?.shortName || apinexModel})`
                         : engineBadge === 'openrouter'
                         ? `✨ OpenRouter (${openRouterModel.split('/')[1]?.split(':')[0] || 'Qwen 2.5 VL'})`
                         : engineBadge === 'groq'
@@ -4958,10 +5013,10 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   onClick={() => startBatchPdfScan()}
                   disabled={selectedPdfPagesCount === 0}
                   className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-40 ${
-                    aiProvider === 'kira'
+                    aiProvider === 'bai'
+                      ? 'bg-gradient-to-r from-rose-600 to-red-600 hover:opacity-95'
+                      : aiProvider === 'kira'
                       ? 'bg-gradient-to-r from-amber-600 to-orange-600 hover:opacity-95'
-                      : aiProvider === 'apinex'
-                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-95'
                       : aiProvider === 'openrouter'
                       ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:opacity-95'
                       : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95'
@@ -5138,7 +5193,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     title="Đổi nhà cung cấp AI để thử quét lại"
                   >
                     <option value="gemini">Google Gemini</option>
-                    <option value="apinex">APInex</option>
+                    <option value="bai">B.AI (90% Off)</option>
                     <option value="kira">Kira AI</option>
                     <option value="openrouter">OpenRouter</option>
                   </select>
@@ -5792,21 +5847,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     <button
                       type="button"
                       onClick={() => {
-                        setAiProvider('apinex');
-                        localStorage.setItem('ai_provider', 'apinex');
-                        showToast('Đã chuyển sang APInex AI (Free 1M)');
-                      }}
-                      className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-                        aiProvider === 'apinex'
-                          ? 'bg-emerald-600 text-white shadow-sm'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                      }`}
-                    >
-                      <span>⚡ APInex (Free)</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
                         setAiProvider('kira');
                         localStorage.setItem('ai_provider', 'kira');
                         showToast('Đã chuyển sang Kira AI (VN)');
@@ -5819,74 +5859,89 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     >
                       <span>🌟 Kira AI</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAiProvider('bai');
+                        localStorage.setItem('ai_provider', 'bai');
+                        showToast('Đã chuyển sang B.AI (90% Off)');
+                      }}
+                      className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                        aiProvider === 'bai'
+                          ? 'bg-rose-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                    >
+                      <span>🔥 B.AI (90% Off)</span>
+                    </button>
                   </div>
 
-                  {/* APINEX SECTION */}
-                  {aiProvider === 'apinex' && (
+                  {/* B.AI SECTION */}
+                  {aiProvider === 'bai' && (
                     <div className="space-y-4 animate-fade-in">
-                      <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200 space-y-2">
-                        <div className="font-bold text-emerald-950 flex items-center justify-between">
+                      <div className="p-3.5 bg-rose-50 rounded-2xl border border-rose-200 space-y-2">
+                        <div className="font-bold text-rose-950 flex items-center justify-between">
                           <span className="flex items-center gap-1.5">
-                            <IconSparkles className="w-4 h-4 text-emerald-600" />
-                            <span>Cấu Hình APInex AI (1M Token Free)</span>
+                            <IconSparkles className="w-4 h-4 text-rose-600" />
+                            <span>Cấu Hình B.AI (b.ai • 300k Credits)</span>
                           </span>
                           <a
-                            href="https://apinex.bond"
+                            href="https://b.ai"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-emerald-700 hover:underline flex items-center gap-1 font-semibold text-[11px]"
+                            className="text-rose-700 hover:underline flex items-center gap-1 font-semibold text-[11px]"
                           >
-                            <span>Trang chủ apinex.bond</span>
+                            <span>Trang chủ b.ai</span>
                             <IconExternalLink className="w-3 h-3" />
                           </a>
                         </div>
-                        <p className="text-[11px] text-emerald-900 leading-relaxed">
-                          APInex cung cấp <strong>1.000.000 token miễn phí</strong> với các mô hình Vision hàng đầu thế giới (Gemini 3.8 Flash, Qwen 3.8 MAX, DeepSeek V4 Pro, GPT 5.6 Luna...).
+                        <p className="text-[11px] text-rose-900 leading-relaxed">
+                          B.AI cung cấp các mô hình Vision hàng đầu với ưu đãi <strong>Giảm giá 90% (90% Off)</strong>. Phù hợp quét phiếu xuất kho, trích xuất bảng biểu & nhận diện chữ viết tay.
                         </p>
                       </div>
 
-                      {/* APInex API Key Input */}
+                      {/* B.AI API Key Input */}
                       <div className="space-y-1.5">
                         <label className="font-bold text-slate-700 flex items-center justify-between text-xs">
-                          <span>API Key APInex</span>
+                          <span>API Key B.AI</span>
                           <button
                             type="button"
-                            onClick={testApinexConnection}
-                            disabled={apinexTesting || !apinexKey.trim()}
-                            className="text-emerald-600 hover:underline font-semibold text-[11px] disabled:opacity-50"
+                            onClick={testBaiConnection}
+                            disabled={baiTesting || !baiKey.trim()}
+                            className="text-rose-600 hover:underline font-semibold text-[11px] disabled:opacity-50"
                           >
-                            {apinexTesting ? 'Đang test...' : '⚡ Test Kết Nối'}
+                            {baiTesting ? 'Đang test...' : '⚡ Test Kết Nối'}
                           </button>
                         </label>
                         <div className="flex items-center gap-2">
                           <input
                             type="password"
-                            value={apinexKey}
-                            onChange={(e) => setApinexKey(e.target.value)}
-                            placeholder="Dán key sk-apx... tại đây"
-                            className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 font-mono text-xs outline-none"
+                            value={baiKey}
+                            onChange={(e) => setBaiKey(e.target.value)}
+                            placeholder="Dán API Key B.AI tại đây"
+                            className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 focus:border-rose-500 focus:ring-2 focus:ring-rose-100 font-mono text-xs outline-none"
                           />
                         </div>
-                        <p className="text-[11px] text-slate-400">Key được lưu an toàn trên máy và tự động đồng bộ qua mã Cloud Sync.</p>
+                        <p className="text-[11px] text-slate-400">Key được lưu an toàn trên trình duyệt và tự động đồng bộ qua mã Cloud Sync.</p>
                       </div>
 
-                      {/* APInex Models Selector */}
+                      {/* B.AI Models Selector */}
                       <div className="space-y-2">
-                        <label className="font-bold text-slate-700 block text-xs">Chọn Mô Hình AI Miễn Phí (APInex Free)</label>
+                        <label className="font-bold text-slate-700 block text-xs">Chọn Mô Hình B.AI Ưu Tiên (Đang giảm 90%)</label>
                         <div className="grid grid-cols-1 gap-2">
-                          {APINEX_MODELS.map((m) => {
-                            const isSelected = apinexModel === m.id;
+                          {BAI_MODELS.map((m) => {
+                            const isSelected = baiModel === m.id;
                             return (
                               <button
                                 key={m.id}
                                 type="button"
                                 onClick={() => {
-                                  setApinexModel(m.id);
-                                  localStorage.setItem('apinex_model', m.id);
+                                  setBaiModel(m.id);
+                                  localStorage.setItem('bai_model', m.id);
                                 }}
                                 className={`p-3 rounded-xl border text-left transition-all flex items-start justify-between gap-3 ${
                                   isSelected
-                                    ? 'border-emerald-500 bg-emerald-50/70 shadow-sm ring-1 ring-emerald-500'
+                                    ? 'border-rose-500 bg-rose-50/70 shadow-sm ring-1 ring-rose-500'
                                     : 'border-slate-200 bg-white hover:bg-slate-50'
                                 }`}
                               >
@@ -5896,11 +5951,11 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${m.badgeColor}`}>{m.badge}</span>
                                   </div>
                                   <p className="text-[11px] text-slate-500 leading-tight">{m.desc}</p>
-                                  <div className="font-mono text-[10px] text-emerald-700 font-semibold">{m.id}</div>
+                                  <div className="font-mono text-[10px] text-rose-700 font-semibold">{m.id}</div>
                                 </div>
                                 {isSelected && (
                                   <div className="text-right shrink-0">
-                                    <div className="text-[11px] text-emerald-600 font-bold">✓ Đang chọn</div>
+                                    <div className="text-[11px] text-rose-600 font-bold">✓ Đang chọn</div>
                                   </div>
                                 )}
                               </button>
@@ -5908,17 +5963,23 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           })}
                         </div>
 
-                        {/* Custom APInex Model Input */}
+                        {/* Custom B.AI Model Input */}
                         <div className="pt-1">
-                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">Hoặc nhập mã model APInex tùy chỉnh:</label>
+                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">Hoặc nhập mã model B.AI tùy chỉnh:</label>
                           <input
                             type="text"
-                            value={apinexModel}
-                            onChange={(e) => setApinexModel(e.target.value)}
-                            placeholder="Ví dụ: free/gemini-3.8-flash hoặc free/qwen-3.8-max"
-                            className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-emerald-500 font-mono text-xs outline-none bg-slate-50"
+                            value={baiModel}
+                            onChange={(e) => {
+                              setBaiModel(e.target.value);
+                              localStorage.setItem('bai_model', e.target.value);
+                            }}
+                            placeholder="Ví dụ: DeepSeek-V4.1-Flash hoặc GLM-5.3-Flash"
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-rose-500 font-mono text-xs outline-none bg-slate-50"
                           />
                         </div>
+                        <p className="text-[10px] text-rose-900 bg-rose-100/70 p-2 rounded-lg mt-1 leading-normal">
+                          💡 <strong>Khuyên dùng:</strong> <code>DeepSeek-V4.1-Flash</code> là mô hình MoE 552B siêu tốc mặc định, hoặc <code>Qwen3.8-Flash</code> để đọc chữ viết tay tốt nhất.
+                        </p>
                       </div>
                     </div>
                   )}
