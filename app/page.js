@@ -53,7 +53,7 @@ const OPENROUTER_MODELS = [
     shortName: 'Nex-N2.5-Pro',
     badge: 'MỚI • Free Siêu Chuẩn & Nhanh',
     badgeColor: 'bg-indigo-100 text-indigo-800',
-    desc: 'Mô hình Agentic Vision thế hệ mới của Nex AGI trên OpenRouter. Hoàn toàn miễn phí ($0), tốc độ phản hồi cực nhanh (~1.5s), bóc tách cấu trúc phiếu kho và chữ viết tay xuất sắc.',
+    desc: 'Mô hình Agentic Vision thế hệ mới của Nex AGI trên OpenRouter. Miễn phí, tốc độ phản hồi cực nhanh (~1.5s), bóc tách cấu trúc phiếu kho và chữ viết tay xuất sắc.',
   },
   {
     id: 'nex-agi/nex-n2.5-mini:free',
@@ -61,7 +61,7 @@ const OPENROUTER_MODELS = [
     shortName: 'Nex-N2.5-Mini',
     badge: 'MỚI • Free Siêu Tốc',
     badgeColor: 'bg-teal-100 text-teal-800',
-    desc: 'Bản rút gọn siêu nhẹ của Nex AGI. Hoàn toàn miễn phí ($0), phản hồi tức thì dưới 2s cho các phiếu in rõ nét và bảng biểu.',
+    desc: 'Bản rút gọn siêu nhẹ của Nex AGI. Miễn phí, phản hồi tức thì dưới 2s cho các phiếu in rõ nét và bảng biểu.',
   },
   {
     id: 'inclusionai/ling-3.0-flash-vl:free',
@@ -69,7 +69,7 @@ const OPENROUTER_MODELS = [
     shortName: 'Ling 3.0 Flash VL',
     badge: 'MỚI • Free Vision 3.0',
     badgeColor: 'bg-cyan-100 text-cyan-800',
-    desc: 'Mô hình Vision đa phương thức thế hệ mới của InclusionAI. Miễn phí ($0), nhận diện chữ viết tay và bảng biểu tiếng Việt tốt.',
+    desc: 'Mô hình Vision đa phương thức thế hệ mới của InclusionAI. Miễn phí, nhận diện chữ viết tay và bảng biểu tiếng Việt tốt.',
   },
   {
     id: 'google/gemma-4-31b-it:free',
@@ -119,7 +119,7 @@ const KIRA_MODELS = [
     id: 'qwen3.8-flash-free',
     name: 'Qwen 3.8 Flash (Free)',
     shortName: 'Qwen 3.8 Flash',
-    badge: 'Khuyên Dùng • Free 100M • Cực Nhanh',
+    badge: 'Khuyên Dùng • Free Siêu Tốc',
     badgeColor: 'bg-emerald-100 text-emerald-800',
     desc: 'Mô hình miễn phí tốt nhất trên Kira AI. Tốc độ phản hồi cực nhanh (3-5s), ổn định, không bị lỗi 502.',
   },
@@ -127,9 +127,9 @@ const KIRA_MODELS = [
     id: 'qwen3.8-27b-free',
     name: 'Qwen 3.8 27B (Free)',
     shortName: 'Qwen 3.8 27B',
-    badge: 'Free 100M • Vision Rất Tốt',
+    badge: 'Free • Vision Rất Tốt',
     badgeColor: 'bg-purple-100 text-purple-800',
-    desc: 'Phiên bản Vision 27B miễn phí 100M tokens/ngày, đọc tốt chữ viết tay tiếng Việt và nhận diện số lượng.',
+    desc: 'Phiên bản Vision 27B miễn phí, đọc tốt chữ viết tay tiếng Việt và nhận diện số lượng.',
   },
   {
     id: 'kira-3.5-flash-pdf',
@@ -159,7 +159,7 @@ const KIRA_MODELS = [
     id: 'glm-5.3-flash-free',
     name: 'GLM 5.3 Flash (Free)',
     shortName: 'GLM 5.3 Flash',
-    badge: 'Free 100M • Đa Phương Thức',
+    badge: 'Free • Đa Phương Thức',
     badgeColor: 'bg-amber-100 text-amber-800',
     desc: 'Mô hình GLM 5.3 Flash miễn phí, xử lý đa phương thức và hỗ trợ phân tích tài liệu.',
   },
@@ -186,7 +186,7 @@ const BAI_MODELS = [
     id: 'qwen3.8-flash',
     name: 'Qwen3.8-Flash',
     shortName: 'Qwen 3.8 Flash',
-    badge: 'Khuyên Dùng #1 • 90% Off • Đọc Tay Cực Chuẩn',
+    badge: 'Khuyên Dùng #1 • Đọc Tay Cực Chuẩn',
     badgeColor: 'bg-emerald-100 text-emerald-800',
     desc: 'Mô hình Alibaba Vision thế hệ 3.8 tối ưu nhất cho phiếu kho tiếng Việt, chữ viết tay nghiêng hoặc số chứng từ mờ. Không bị suy luận nháp.',
   },
@@ -194,15 +194,15 @@ const BAI_MODELS = [
     id: 'qwen3.8-27b',
     name: 'Qwen3.8-27B (Vision)',
     shortName: 'Qwen 3.8 27B',
-    badge: 'MỚI • 90% Off • Vision 27B Siêu Chuẩn',
+    badge: 'MỚI • Vision 27B Siêu Chuẩn',
     badgeColor: 'bg-purple-100 text-purple-800',
-    desc: 'Bản Qwen 27B Vision mạnh mẽ nhất trong gói 90% Off, nhận diện cấu trúc bảng phức tạp và chữ số viết tay khó nhằn chỉ trong ~2.5s.',
+    desc: 'Bản Qwen 27B Vision mạnh mẽ, nhận diện cấu trúc bảng phức tạp và chữ số viết tay khó nhằn chỉ trong ~2.5s.',
   },
   {
     id: 'glm-5.3-flash',
     name: 'GLM-5.3-Flash',
     shortName: 'GLM 5.3 Flash',
-    badge: '90% Off • Zhipu AI Siêu Nhanh 2.9s',
+    badge: 'Zhipu AI Siêu Nhanh 2.9s',
     badgeColor: 'bg-blue-100 text-blue-800',
     desc: 'Mô hình đa phương thức thế hệ mới của Zhipu AI trên B.AI. Tốc độ rất nhanh, bóc tách cấu trúc dòng hàng và cột số lượng chuẩn.',
   },
@@ -210,9 +210,36 @@ const BAI_MODELS = [
     id: 'deepseek-v4.1-flash',
     name: 'DeepSeek-V4.1-Flash',
     shortName: 'DeepSeek V4.1',
-    badge: '90% Off • MoE 552B Siêu Tốc',
+    badge: 'MoE 552B Siêu Tốc',
     badgeColor: 'bg-amber-100 text-amber-800',
     desc: 'Mô hình MoE 552B đa phương thức bản địa của DeepSeek. Đã có bộ lọc khử suy luận nháp tiếng Anh và nâng trần token.',
+  },
+];
+
+const GEMINI_MODELS = [
+  {
+    id: 'gemini-3.6-flash',
+    name: 'Gemini 3.6 Flash (Chính • Tiêu Chuẩn & Ổn Định)',
+    shortName: 'Gemini 3.6 Flash',
+    badge: 'Mô hình chính mặc định',
+    badgeColor: 'bg-emerald-100 text-emerald-800',
+    desc: 'Mô hình chuẩn mặc định của Google Gemini, tối ưu nhất cho mọi API Key (Free & Pay-As-You-Go), đọc chuẩn chữ viết tay tiếng Việt và bóc tách bảng biểu.',
+  },
+  {
+    id: 'gemini-3.7-flash',
+    name: 'Gemini 3.7 Flash (Pay-As-You-Go • Tư duy cao)',
+    shortName: 'Gemini 3.7 Flash',
+    badge: 'Tùy chọn Pay-As-You-Go',
+    badgeColor: 'bg-blue-100 text-blue-800',
+    desc: 'Mô hình thế hệ 3.7 hybrid reasoning & vision của Google. Chỉ dùng khi chủ động lựa chọn cho tài khoản trả phí Pay-As-You-Go.',
+  },
+  {
+    id: 'gemini-3.8-flash',
+    name: 'Gemini 3.8 Flash (Pay-As-You-Go • Siêu tốc)',
+    shortName: 'Gemini 3.8 Flash',
+    badge: 'Tùy chọn Pay-As-You-Go',
+    badgeColor: 'bg-teal-100 text-teal-800',
+    desc: 'Bản Flash 3.8 thế hệ mới cho tài khoản trả phí Pay-As-You-Go, tốc độ phản hồi cực nhanh khi được chủ động kích hoạt.',
   },
 ];
 
@@ -220,7 +247,7 @@ const DEFAULT_FIELD_PROMPTS = {
   soPhieu: 'Đọc kỹ số phiếu/số chứng từ ở đầu phiếu, bao gồm cả số in sẵn hoặc chữ viết tay bổ sung. Giữ nguyên toàn bộ ký tự và số.',
   ten: 'Lấy chính xác tên hàng, quy cách hoặc mã sản phẩm (đọc cả chữ viết tay tiếng Việt có dấu, chữ viết tắt như Thùng, Cuộn, Cây, Bộ, Hộp). NGUYÊN TẮC GỘP DÒNG: Nếu một mặt hàng/sản phẩm được in/viết dàn trải thành 2 dòng (ví dụ dòng trên là tên/loại bao bì, dòng dưới là kích thước/quy cách mã nhưng chỉ có chung 1 số lượng, 1 STT hoặc 1 số OS/PO) thì PHẢI GỘP thành 1 dòng hàng duy nhất (ví dụ: "PE SHOE BOX (ECO) 290*180*110mm MK-A-1"). Chỉ tách thành các dòng khác nhau khi có các số lượng/STT/mã OS/PO riêng biệt.',
   soOSPO: 'Chỉ lấy số thuần sau khi đã ghép. Cột Số O.S/PO thường có dạng [Tháng]-[Số đơn hàng] (ví dụ: 9-697, 9-296). Quy tắc chuẩn hóa: Vế trước dấu "-" là số hiệu Tháng (từ 1 đến 12), vế sau là Số thứ tự đơn hàng trong tháng đó (không quá 5000 đơn) nên luôn có đúng 4 chữ số (nếu ít hơn 4 chữ số thì tự động bù các số 0 vào phía trước). Ghép thành dạng [Tháng][4 chữ số đơn]: ví dụ 9-697 -> 90697, 9-296 -> 90296, 9-506 -> 90506, 9-45 -> 90045, 9-5 -> 90005, 10-123 -> 100123. ĐẶC BIỆT CHÚ Ý CHỮ VIẾT TAY: Chữ viết tay số 9 ở vế tháng có nét đuôi cong xuống dưới rất dễ bị đọc nhầm thành chữ "g" hoặc "q" (ví dụ "g-297", "g-697", "q-508" thực chất đều là số 9 viết tay "9-297" -> "90297", "9-697" -> "90697"). Tuyệt đối chỉ trả về các chữ số thuần sau khi ghép, không giữ lại dấu "-" và không chứa chữ cái.',
-  donViTinh: 'Lấy đơn vị tính viết trên phiếu (ví dụ: EA, PCS, KG, BOX, CÁI, THÙNG, BỘ, CUỘN, CÂY). Không tự suy diễn.',
+  donViTinh: 'Lấy đơn vị tính viết trên phiếu (ví dụ: PCS, EA, KG, BOX, CÁI, THÙNG, BỘ, CUỘN, CÂY). Nếu trên phiếu không ghi đơn vị tính hoặc bị mờ/trống, mặc định luôn luôn là "pcs". Không để trống.',
   soLuongChungTu: 'Chỉ lấy số lượng theo chứng từ (chỉ trả về số thuần). Nếu có chữ viết tay sửa đổi/ghi đè lên số in, ưu tiên lấy số viết tay mới nhất.',
   soLuongThucNhap: 'Chỉ lấy số lượng thực nhập/thực xuất (chỉ trả về số thuần). Đọc kỹ các con số viết tay bằng bút bi/bút mực.',
   soPallet: 'Lấy số pallet hoặc mã pallet viết tay/in sẵn. Giữ nguyên số 0 ở đầu nếu có.',
@@ -432,6 +459,9 @@ export default function Home() {
   const [aiProvider, setAiProvider] = useState('gemini'); // 'gemini' | 'openrouter' | 'kira' | 'bai'
   const [apiKey, setApiKey] = useState("");
   const [backupKeys, setBackupKeys] = useState([]);
+  const [geminiModel, setGeminiModel] = useState("gemini-3.6-flash");
+  const [activeGeminiKeyIndex, setActiveGeminiKeyIndex] = useState(0);
+  const geminiKeyIndexRef = useRef(0);
   const [openRouterKey, setOpenRouterKey] = useState("");
   const [openRouterModel, setOpenRouterModel] = useState("google/gemini-2.5-flash");
   const [openRouterTesting, setOpenRouterTesting] = useState(false);
@@ -479,7 +509,8 @@ export default function Home() {
       const orName = OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || openRouterModel;
       return short ? 'OpenRouter' : `OpenRouter (${orName})`;
     }
-    return short ? 'Gemini' : 'Gemini 3.6 Flash';
+    const gName = GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || geminiModel;
+    return short ? 'Gemini' : (geminiModel === 'gemini-3.6-flash' ? 'Gemini 3.6 Flash' : `Gemini (${gName})`);
   };
 
   // Google Sheets Integration State
@@ -553,6 +584,13 @@ export default function Home() {
     } catch {
       setBackupKeys([]);
     }
+
+    let savedGeminiModel = localStorage.getItem('gemini_model') || 'gemini-3.6-flash';
+    if (savedGeminiModel === 'gemini-2.5-flash') {
+      savedGeminiModel = 'gemini-3.6-flash';
+      localStorage.setItem('gemini_model', savedGeminiModel);
+    }
+    setGeminiModel(savedGeminiModel);
 
     const savedProvider = localStorage.getItem('ai_provider') || 'gemini';
     const effectiveProvider = savedProvider === 'apinex' ? 'gemini' : savedProvider;
@@ -741,6 +779,7 @@ export default function Home() {
         durationMinutes: cloudSyncDuration,
         apiKey: apiKey.trim(),
         backupKeys,
+        geminiModel: geminiModel.trim(),
         aiProvider,
         openRouterKey: openRouterKey.trim(),
         openRouterModel: openRouterModel.trim(),
@@ -827,6 +866,11 @@ export default function Home() {
       if (Array.isArray(data.backupKeys)) {
         setBackupKeys(data.backupKeys);
         localStorage.setItem('gemini_backup_api_keys', JSON.stringify(data.backupKeys));
+      }
+      if (data.geminiModel) {
+        const m = data.geminiModel === 'gemini-2.5-flash' ? 'gemini-3.6-flash' : data.geminiModel;
+        setGeminiModel(m);
+        localStorage.setItem('gemini_model', m);
       }
       if (data.aiProvider) {
         const prov = data.aiProvider === 'apinex' ? 'gemini' : data.aiProvider;
@@ -2151,7 +2195,7 @@ export default function Home() {
         fallbackItems.push({
           ten: ten || '',
           soOSPO: soOSPO || '',
-          donViTinh: donViTinh || '',
+          donViTinh: donViTinh || 'pcs',
           soLuongChungTu: slChungTu || '',
           soLuongThucNhap: slThucNhap || '',
           soPallet: soPallet || '',
@@ -2379,7 +2423,7 @@ export default function Home() {
         fallbackItems.push({
           ten: ten || '',
           soOSPO: soOSPO || '',
-          donViTinh: donViTinh || '',
+          donViTinh: donViTinh || 'pcs',
           soLuongChungTu: slChungTu || '',
           soLuongThucNhap: slThucNhap || '',
           soPallet: soPallet || '',
@@ -2417,7 +2461,7 @@ export default function Home() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error?.message || ('Lỗi xác thực ' + res.status));
       }
-      showToast('✅ Kết nối B.AI thành công! Key hoạt động tốt (300k credits).', 'success');
+      showToast('✅ Kết nối B.AI thành công! Key hoạt động tốt.', 'success');
     } catch (e) {
       showToast('❌ Lỗi B.AI: ' + e.message, 'error');
     } finally {
@@ -2438,7 +2482,7 @@ export default function Home() {
           const img = new Image();
           img.onload = () => {
             const canvas = document.createElement('canvas');
-            const maxDim = 1200;
+            const maxDim = 1600;
             let w = img.width, h = img.height;
             if (w > maxDim || h > maxDim) {
               if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
@@ -2448,7 +2492,7 @@ export default function Home() {
             canvas.height = h;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, w, h);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.80);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
             resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg' });
           };
           img.onerror = () => resolve(null);
@@ -2468,9 +2512,9 @@ export default function Home() {
       .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
       .join('\n');
 
-    const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
+    const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (đọc chuẩn chữ in & chữ viết tay).\n' +
       'YÊU CẦU BẮT BUỘC:\n' +
-      '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON, không viết tiếng Anh.\n' +
+      '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON, không viết tiếng Anh hay tiếng Trung.\n' +
       '- Định dạng trả về duy nhất là chuỗi JSON:\n' +
       '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}\n\n' +
       'Quy tắc trích xuất quan trọng:\n' +
@@ -2478,6 +2522,7 @@ export default function Home() {
       '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
       '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
       '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1") nhưng chỉ có chung 1 bộ số lượng thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất.\n' +
+      '5. CHỮ VIẾT TAY SỐ 9: Cột O.S/PO thường có chữ số 9 viết tay đuôi cong rất dễ nhầm với chữ "g" hoặc "q" (ví dụ g-297, q-697 thực chất là 9-297, 9-697 -> ghép thành số 90297, 90697).\n' +
       'Hướng dẫn cột:\n' + rules + '\n\n' +
       'ĐỊNH DẠNG TRẢ VỀ: Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
       '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
@@ -2502,9 +2547,7 @@ export default function Home() {
       max_tokens: 6000,
     };
 
-    if (!effectiveModel.toLowerCase().includes('qwen')) {
-      reqPayload.response_format = { type: 'json_object' };
-    }
+    reqPayload.response_format = { type: 'json_object' };
 
     const res = await fetch('/api/bai', {
       method: 'POST',
@@ -2545,19 +2588,28 @@ export default function Home() {
 
     // Hàm làm sạch giá trị từng ô, loại bỏ suy luận nháp tiếng Anh (thinking leak)
     const cleanOcrCell = (val, colKey) => {
-      if (val === null || val === undefined) return '';
+      if (val === null || val === undefined) return colKey === 'donViTinh' ? 'pcs' : '';
       let s = String(val).trim();
-      if (!s || s === '???') return '';
+      if (!s || s === '???') return colKey === 'donViTinh' ? 'pcs' : '';
 
-      // Phát hiện thinking leak
-      if (/maybe|actually|let's read|let's see|in column|it might be|handwritten|looks like|wait column/i.test(s)) {
-        const q = s.match(/"([^"]+)"/);
-        if (q) {
-          s = q[1].trim();
+      // 1. Loại bỏ các tiền tố nhãn thông thường do AI sinh ra (Tên:, Mã hàng:, Cột B:...)
+      s = s.replace(/^(?:Tên\s*(?:hàng|mã|sản\s*phẩm)?|Mã\s*(?:hàng)?|Cột\s*[A-Z]|Item)\s*[:：\-]\s*/i, '');
+
+      // 2. Loại bỏ các hậu tố ghi chú như (same), (như trên), (trùng)
+      s = s.replace(/\s*\((?:same|như trên|trùng|giống trên|tương tự)\)\s*$/i, '');
+
+      // 3. Phát hiện suy luận nháp / so sánh lựa chọn của AI (ví dụ: "A" or "B"? It looks "B".)
+      if (/(?:maybe|actually|let's read|let's see|in column|it might be|handwritten|looks like|wait column|we have|the table shows|could be|probably|seems to be|not sure|i think|first row|second row|\bor\b|\?|it looks|分析|猜测|可能是|我认为)/i.test(s)) {
+        const quotes = [...s.matchAll(/"([^"]+)"/g)].map(m => m[1].trim());
+        if (quotes.length > 0) {
+          s = quotes[quotes.length - 1]; // Lấy chuỗi chốt cuối cùng
         } else {
-          s = s.replace(/(?:maybe|actually|let's see|let's read|in column|it might be|handwritten|looks like|wait column)[\s\S]*/i, '').trim();
+          s = s.replace(/(?:maybe|actually|let's see|let's read|in column|it might be|handwritten|looks like|wait column|we have|the table shows|could be|probably|seems to be|not sure|i think|first row|second row|\bor\b|\?|it looks|分析|猜测|可能是|我认为)[\s\S]*/i, '').trim();
         }
       }
+
+      // 4. Bỏ ngoặc kép bao quanh nếu còn sót lại
+      s = s.replace(/^["'`]+|["'`]+$/g, '').trim();
 
       if (colKey === 'soOSPO') {
         return formatOSPO(s);
@@ -2569,7 +2621,10 @@ export default function Home() {
       if (colKey === 'donViTinh') {
         s = s.replace(/["'?]/g, '').trim();
         const dvt = s.match(/\b(EA|PCS|KG|BOX|CÁI|THÙNG|BỘ|CUỘN|CÂY)\b/i);
-        if (dvt) return dvt[0].toUpperCase();
+        if (dvt) {
+          return dvt[0].toLowerCase() === 'pcs' ? 'pcs' : dvt[0];
+        }
+        return s || 'pcs';
       }
       if (colKey === 'soPallet') {
         s = s.replace(/["'?]/g, '').trim();
@@ -2609,12 +2664,14 @@ export default function Home() {
               const cleaned = {};
               Object.keys(row).forEach((k) => {
                 cleaned[k] = cleanOcrCell(row[k], k);
+                if (k === 'donViTinh' && !cleaned[k]) cleaned[k] = 'pcs';
               });
               return cleaned;
             }
             const obj = {};
             selectedColumns.forEach((colKey, idx) => {
               obj[colKey] = cleanOcrCell(row[idx], colKey);
+              if (colKey === 'donViTinh' && !obj[colKey]) obj[colKey] = 'pcs';
             });
             return obj;
           });
@@ -2623,6 +2680,7 @@ export default function Home() {
           const cleaned = {};
           selectedColumns.forEach((colKey) => {
             cleaned[colKey] = cleanOcrCell(item[colKey], colKey);
+            if (colKey === 'donViTinh' && !cleaned[colKey]) cleaned[colKey] = 'pcs';
           });
           return cleaned;
         });
@@ -2632,12 +2690,17 @@ export default function Home() {
 
     // Dự phòng thông minh
     let fallbackSoPhieu = '';
-    const spMatch = text.match(/(?:Số\s*phiếu|Số\s*chứng\s*từ|Số\s*XKP|Số|No\.?)[:\s]+([A-Z0-9_\-\s\/]+)/i);
+    // Tránh bắt nhầm chữ "Số" trong cụm "Số phiếu" hay "Số lượng"
+    const spMatch = text.match(/(?:Số\s*phiếu|Số\s*chứng\s*từ|Số\s*XKP|No\.?|(?:Số|No)\s*[:：])\s*[:：]?\s*([A-Z0-9_\-\s\/]+)/i);
     if (spMatch) {
-      fallbackSoPhieu = spMatch[1].split('\n')[0].trim().replace(/^[:\s\-]+/, '');
-      if (/maybe|actually|let's/i.test(fallbackSoPhieu)) {
-        const q = fallbackSoPhieu.match(/"([^"]+)"/);
-        if (q) fallbackSoPhieu = q[1].trim();
+      let cand = spMatch[1].split('\n')[0].trim().replace(/^[:\s\-]+/, '');
+      if (/maybe|actually|let's/i.test(cand)) {
+        const q = cand.match(/"([^"]+)"/);
+        if (q) cand = q[1].trim();
+      }
+      // Không nhận nếu chỉ là chữ "phi" hoặc từ tiếng Việt không chứa số/mã
+      if (cand && !/^phi(?:ếu)?$/i.test(cand) && (/\d/.test(cand) || cand.length >= 3)) {
+        fallbackSoPhieu = cand;
       }
     }
 
@@ -2660,6 +2723,12 @@ export default function Home() {
         }
 
         let ten = cleanOcrCell(firstLine, 'ten');
+        // Bỏ qua nếu dòng này là dòng rác gom nhiều mặt hàng / reasoning dump (như dòng 10 trong ảnh)
+        if (ten && (/B:\s*"[^"]+".*C:\s*"[^"]+"/i.test(firstLine) || (firstLine.match(/DO2/g) || []).length > 3 || firstLine.length > 120)) {
+          console.warn('Loại bỏ dòng reasoning dump rác:', firstLine);
+          continue;
+        }
+
         let soOSPO = '', donViTinh = '', slChungTu = '', slThucNhap = '', soPallet = '', ghiChu = '';
         for (const l of lines) {
           const ospoM = l.match(/(?:Số\s*O\.?S\/?PO|PO|OS)[:\s]+([^\n]+)/i);
@@ -2677,7 +2746,7 @@ export default function Home() {
         fallbackItems.push({
           ten: ten || '',
           soOSPO: soOSPO || '',
-          donViTinh: donViTinh || '',
+          donViTinh: donViTinh || 'pcs',
           soLuongChungTu: slChungTu || '',
           soLuongThucNhap: slThucNhap || '',
           soPallet: soPallet || '',
@@ -2773,8 +2842,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       },
     };
 
+    const effectiveGeminiModel = geminiModel || 'gemini-3.6-flash';
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${encodeURIComponent(key)}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(effectiveGeminiModel)}:generateContent?key=${encodeURIComponent(key)}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
     );
 
@@ -2897,14 +2967,31 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       return { data: res, engine: 'bai' };
     }
 
-    // 4. GOOGLE GEMINI PROVIDER (with Failover)
+    // 4. GOOGLE GEMINI PROVIDER (with Round-Robin Key Balancing & Failover)
     const allKeys = getGeminiApiKeys();
-    const apiKeys = allKeys.filter((k) => !rateLimitedKeys.has(k));
-    const keysToTry = apiKeys.length > 0 ? apiKeys : allKeys;
+    if (allKeys.length > 0) {
+      // Cơ chế luân chuyển: Bắt đầu từ vị trí con trỏ hiện tại geminiKeyIndexRef.current
+      const startIndex = geminiKeyIndexRef.current % allKeys.length;
+      const reorderedKeys = [
+        ...allKeys.slice(startIndex),
+        ...allKeys.slice(0, startIndex),
+      ];
 
-    if (keysToTry.length > 0) {
+      const availableKeys = reorderedKeys.filter((k) => !rateLimitedKeys.has(k));
+      const keysToTry = availableKeys.length > 0 ? availableKeys : reorderedKeys;
+
+      const effectiveGeminiModel = geminiModel || 'gemini-3.6-flash';
+      setScanProgress({
+        active: true,
+        percent: 35,
+        text: `${progressPrefix} Đang gửi Google Gemini (${effectiveGeminiModel}) [Key #${((startIndex % allKeys.length) + 1)}/${allKeys.length}]...`,
+      });
+
+      let lastError = null;
       for (let i = 0; i < keysToTry.length; i++) {
         const key = keysToTry[i];
+        const originalIndex = allKeys.indexOf(key);
+
         try {
           const res = await scanClientGeminiWithBase64(base64Data, mimeType, key);
           setRateLimitedKeys((prev) => {
@@ -2912,8 +2999,15 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             next.delete(key);
             return next;
           });
+
+          // LUÂN CHUYỂN: Xử lý xong 1 phiếu thành công -> chuyển con trỏ sang key tiếp theo
+          const nextIndex = (originalIndex + 1) % allKeys.length;
+          geminiKeyIndexRef.current = nextIndex;
+          setActiveGeminiKeyIndex(nextIndex);
+
           return { data: res, engine: 'gemini' };
         } catch (error) {
+          lastError = error;
           const status = error?.status;
           const msg = String(error?.message || '');
           const is429 = status === 429;
@@ -2923,10 +3017,12 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             setRateLimitedKeys((prev) => new Set(prev).add(key));
             if (i < keysToTry.length - 1) {
               const reasonText = is429 ? 'bị giới hạn (429)' : 'không hợp lệ';
+              const nextKey = keysToTry[i + 1];
+              const nextKeyIdx = allKeys.indexOf(nextKey);
               setScanProgress({
                 active: true,
                 percent: 50,
-                text: `${progressPrefix} ↪ Key ${reasonText}, đang chuyển sang API dự phòng #${i + 1}...`,
+                text: `${progressPrefix} ↪ Key #${originalIndex + 1} ${reasonText}, đang luân chuyển sang Key #${nextKeyIdx + 1}...`,
               });
               continue;
             }
@@ -2938,6 +3034,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
           throw error;
         }
       }
+      throw lastError || new Error('Không thể kết nối với Gemini AI.');
     }
 
     // Fallback Offline Tesseract
@@ -3429,7 +3526,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
   };
 
   const copyColumn = (key, itemsToCopy = tableItems, prefix = '') => {
-    const values = itemsToCopy.map((item) => (item[key] || '').trim()).filter(Boolean);
+    const values = itemsToCopy.map((item) => ((item[key] !== undefined && item[key] !== '') ? item[key] : (key === 'donViTinh' ? 'pcs' : '')).trim()).filter(Boolean);
     if (!values.length) {
       showToast(`Chưa có dữ liệu ở cột ${COLUMN_DEFS[key]?.short || key}`, 'error');
       return;
@@ -3809,7 +3906,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 onClick={() => {
                   setAiProvider('bai');
                   localStorage.setItem('ai_provider', 'bai');
-                  showToast('Đang dùng chế độ B.AI (90% Off)');
+                  showToast('Đang dùng chế độ B.AI');
                 }}
                 className={`px-2 py-0.5 rounded-md transition-all ${
                   aiProvider === 'bai'
@@ -3912,7 +4009,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 <span className="font-semibold text-slate-700">
                   {totalApiCount > 0
                     ? availableApiCount > 0
-                      ? `${availableApiCount}/${totalApiCount} API Gemini 3.6 Flash sẵn sàng`
+                      ? `${availableApiCount}/${totalApiCount} API Gemini [${GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || geminiModel}] sẵn sàng • Xoay vòng Key #${activeGeminiKeyIndex + 1}`
                       : 'API Gemini đang bị giới hạn tạm thời (429)'
                     : 'Chế độ OCR Offline (Tesseract)'}
                 </span>
@@ -4254,7 +4351,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                         ? `Bắt Đầu Quét Bằng Kira AI [${KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel}]`
                         : aiProvider === 'openrouter'
                         ? `Bắt Đầu Quét Bằng OpenRouter [${OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || openRouterModel}]`
-                        : 'Bắt Đầu Quét Trích Xuất (Gemini 3.6 Flash)'}
+                        : `Bắt Đầu Quét Trích Xuất (Gemini: ${GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || geminiModel})`}
                     </span>
                   </>
                 )}
@@ -4551,7 +4648,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                                         ) : (
                                           <input
                                             type="text"
-                                            value={item[k] || ''}
+                                            value={item[k] !== undefined && item[k] !== '' ? item[k] : (k === 'donViTinh' ? 'pcs' : '')}
                                             onChange={(e) => updatePageItemCell(page.pageNum, idx, k, e.target.value)}
                                             onBlur={(e) => {
                                               if (k === 'soOSPO') {
@@ -4734,7 +4831,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                                 ) : (
                                   <input
                                     type="text"
-                                    value={item[k] || ''}
+                                    value={item[k] !== undefined && item[k] !== '' ? item[k] : (k === 'donViTinh' ? 'pcs' : '')}
                                     onChange={(e) => updatePageItemCell(singleTabResult.pageNum, idx, k, e.target.value)}
                                     onBlur={(e) => {
                                       if (k === 'soOSPO') {
@@ -5193,7 +5290,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     title="Đổi nhà cung cấp AI để thử quét lại"
                   >
                     <option value="gemini">Google Gemini</option>
-                    <option value="bai">B.AI (90% Off)</option>
+                    <option value="bai">B.AI</option>
                     <option value="kira">Kira AI</option>
                     <option value="openrouter">OpenRouter</option>
                   </select>
@@ -5864,7 +5961,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                       onClick={() => {
                         setAiProvider('bai');
                         localStorage.setItem('ai_provider', 'bai');
-                        showToast('Đã chuyển sang B.AI (90% Off)');
+                        showToast('Đã chuyển sang B.AI');
                       }}
                       className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
                         aiProvider === 'bai'
@@ -5872,7 +5969,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                       }`}
                     >
-                      <span>🔥 B.AI (90% Off)</span>
+                      <span>🔥 B.AI</span>
                     </button>
                   </div>
 
@@ -5883,7 +5980,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                         <div className="font-bold text-rose-950 flex items-center justify-between">
                           <span className="flex items-center gap-1.5">
                             <IconSparkles className="w-4 h-4 text-rose-600" />
-                            <span>Cấu Hình B.AI (b.ai • 300k Credits)</span>
+                            <span>Cấu Hình B.AI (b.ai)</span>
                           </span>
                           <a
                             href="https://b.ai"
@@ -5896,7 +5993,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           </a>
                         </div>
                         <p className="text-[11px] text-rose-900 leading-relaxed">
-                          B.AI cung cấp các mô hình Vision hàng đầu với ưu đãi <strong>Giảm giá 90% (90% Off)</strong>. Phù hợp quét phiếu xuất kho, trích xuất bảng biểu & nhận diện chữ viết tay.
+                          B.AI cung cấp các mô hình Vision hàng đầu. Phù hợp quét phiếu xuất kho, trích xuất bảng biểu & nhận diện chữ viết tay.
                         </p>
                       </div>
 
@@ -5927,7 +6024,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
                       {/* B.AI Models Selector */}
                       <div className="space-y-2">
-                        <label className="font-bold text-slate-700 block text-xs">Chọn Mô Hình B.AI Ưu Tiên (Đang giảm 90%)</label>
+                        <label className="font-bold text-slate-700 block text-xs">Chọn Mô Hình B.AI Ưu Tiên</label>
                         <div className="grid grid-cols-1 gap-2">
                           {BAI_MODELS.map((m) => {
                             const isSelected = baiModel === m.id;
@@ -6199,88 +6296,182 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     <div className="space-y-4 animate-fade-in">
                       {/* Google AI Studio Setup Guide */}
                       <div className="p-3.5 bg-blue-50 rounded-2xl border border-blue-200 space-y-2">
-                        <div className="font-bold text-blue-900 flex items-center gap-2">
-                          <IconKey className="w-4 h-4 text-blue-600" />
-                          <span>Cách Lấy API Key từ Google AI Studio</span>
-                        </div>
-                        <ol className="list-decimal list-inside space-y-1 text-[11px] text-blue-800 leading-relaxed">
-                          <li>Vào trang <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="font-bold underline">aistudio.google.com/apikey</a> (đăng nhập tài khoản Google)</li>
-                          <li>Bấm nút <strong>&ldquo;Create API key&rdquo;</strong> → Chọn project hoặc tạo mới</li>
-                          <li>Sao chép API key (bắt đầu bằng <code className="bg-blue-100 px-1 rounded">AIza...</code>)</li>
-                          <li>Dán vào ô <strong>&ldquo;API Key Gemini Chính&rdquo;</strong> bên dưới → Bấm <strong>Lưu</strong></li>
-                        </ol>
-                        <p className="text-[10px] text-blue-700 font-medium">✅ Gói Pay-as-you-go: Tốc độ cao 1.000 RPM • Không bao giờ nghẽn 429</p>
-                      </div>
-
-                      {/* Primary Key */}
-                      <div className="space-y-1.5">
-                        <label className="font-bold text-slate-700 flex items-center justify-between">
-                          <span>API Key Gemini Chính</span>
+                        <div className="font-bold text-blue-900 flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <IconKey className="w-4 h-4 text-blue-600" />
+                            <span>Cấu Hình Google Gemini (Hỗ trợ Pay-As-You-Go)</span>
+                          </span>
                           <a
                             href="https://aistudio.google.com/apikey"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline flex items-center gap-1 font-semibold text-[11px]"
+                            className="text-blue-700 hover:underline flex items-center gap-1 font-semibold text-[11px]"
                           >
                             <span>Lấy key Google AI Studio</span>
                             <IconExternalLink className="w-3 h-3" />
                           </a>
-                        </label>
-                        <input
-                          type="password"
-                          value={apiKey}
-                          onChange={(e) => setApiKey(e.target.value)}
-                          placeholder="Dán API Key Gemini tại đây (AIza...)..."
-                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 font-mono outline-none"
-                        />
-                        <p className="text-[11px] text-slate-400">Key chỉ lưu trên trình duyệt và mã đồng bộ riêng của bạn.</p>
+                        </div>
+                        <p className="text-[11px] text-blue-800 leading-relaxed">
+                          Hệ thống hỗ trợ tài khoản <strong>Pay-As-You-Go</strong> và tự động <strong>Luân chuyển Key (Round-Robin)</strong> sau mỗi phiếu xuất kho nhằm giảm yêu cầu dồn dập, tối ưu hạn mức và tốc độ.
+                        </p>
                       </div>
 
-                      {/* Backup Keys File */}
+                      {/* Gemini Models Selector */}
+                      <div className="space-y-2">
+                        <label className="font-bold text-slate-700 block text-xs">Chọn Mô Hình Gemini Ưu Tiên</label>
+                        <div className="grid grid-cols-1 gap-2">
+                          {GEMINI_MODELS.map((m) => {
+                            const isSelected = geminiModel === m.id;
+                            return (
+                              <button
+                                key={m.id}
+                                type="button"
+                                onClick={() => {
+                                  setGeminiModel(m.id);
+                                  localStorage.setItem('gemini_model', m.id);
+                                  showToast(`Đã chọn mô hình ${m.name}`);
+                                }}
+                                className={`p-3 rounded-xl border text-left transition-all flex items-start justify-between gap-3 ${
+                                  isSelected
+                                    ? 'border-blue-500 bg-blue-50/60 ring-2 ring-blue-200'
+                                    : 'border-slate-200 hover:border-slate-300 bg-white'
+                                }`}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="font-bold text-slate-900 text-xs">{m.name}</span>
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${m.badgeColor}`}>
+                                      {m.badge}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-slate-500 leading-relaxed">{m.desc}</p>
+                                </div>
+                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                                  isSelected ? 'border-blue-600 bg-blue-600' : 'border-slate-300'
+                                }`}>
+                                  {isSelected && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Primary Key Input (Supports pasting multiple keys) */}
+                      <div className="space-y-1.5">
+                        <label className="font-bold text-slate-700 flex items-center justify-between text-xs">
+                          <span>API Key Gemini (Hỗ trợ dán dàn nhiều key)</span>
+                          <span className="text-[11px] text-slate-400">Mỗi dòng 1 key để luân chuyển</span>
+                        </label>
+                        <textarea
+                          rows={apiKey.includes('\n') ? Math.min(5, apiKey.split('\n').length + 1) : 2}
+                          value={apiKey}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const lines = val.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean);
+                            if (lines.length > 1) {
+                              const primary = lines[0];
+                              const others = lines.slice(1);
+                              setApiKey(primary);
+                              localStorage.setItem('gemini_api_key', primary);
+                              setBackupKeys((prev) => {
+                                const merged = [...new Set([...prev, ...others])].filter((k) => k !== primary);
+                                localStorage.setItem('gemini_backup_api_keys', JSON.stringify(merged));
+                                return merged;
+                              });
+                              showToast(`⚡ Đã tự động nạp dàn ${lines.length} key Gemini và kích hoạt cơ chế luân chuyển!`, 'success');
+                            } else {
+                              setApiKey(val);
+                              localStorage.setItem('gemini_api_key', val.trim());
+                            }
+                          }}
+                          placeholder="Dán 1 key hoặc dán danh sách nhiều key tại đây (mỗi dòng 1 key)..."
+                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 font-mono text-xs outline-none resize-none"
+                        />
+                        <p className="text-[11px] text-slate-400">
+                          Nếu bạn có 5 key API, hãy dán cả 5 key vào đây. Hệ thống sẽ tự động chuyển sang key tiếp theo sau mỗi phiếu xử lý.
+                        </p>
+                      </div>
+
+                      {/* Backup Keys File (.TXT) */}
                       <div className="space-y-1.5 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-                        <label className="font-bold text-slate-700 block">Nạp Danh Sách API Dự Phòng (.TXT)</label>
+                        <label className="font-bold text-slate-700 block text-xs">Nạp Thêm Dàn Key Dự Phòng (.TXT)</label>
                         <p className="text-[11px] text-slate-500 leading-relaxed">
-                          Mỗi dòng 1 key. Tự động luân chuyển sang key kế tiếp khi gặp mã lỗi <strong>429 (Rate Limit)</strong> từ Gemini.
+                          Hoặc tải file text chứa các API Key. Toàn bộ key sẽ tham gia vào vòng luân chuyển Round-Robin tự động.
                         </p>
                         <div className="flex items-center gap-3 pt-1">
                           <button
                             type="button"
                             onClick={() => backupFileInputRef.current?.click()}
-                            className="px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 flex items-center gap-1.5 shadow-sm"
+                            className="px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50 flex items-center gap-1.5 shadow-sm text-xs"
                           >
                             <IconUpload className="w-3.5 h-3.5" />
                             <span>Tải file .TXT</span>
                           </button>
-                          <span className="font-medium text-slate-600">
-                            {backupKeys.length ? `Đã nạp ${backupKeys.length} key dự phòng` : 'Chưa có file'}
+                          <span className="font-medium text-slate-600 text-xs">
+                            {backupKeys.length ? `Đã nạp thêm ${backupKeys.length} key dự phòng` : 'Chưa có file'}
                           </span>
                         </div>
                         <input ref={backupFileInputRef} type="file" className="hidden" accept=".txt,text/plain" onChange={handleBackupApiFile} />
                       </div>
 
-                      {/* API Status Monitor */}
+                      {/* API Status Monitor & Round-Robin Indicator */}
                       <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-700">Kiểm Tra Trạng Thái API</span>
-                          <button onClick={checkAllApis} className="text-blue-600 hover:underline font-semibold text-xs">
-                            Kiểm tra tất cả
-                          </button>
+                        <div className="p-3 rounded-xl bg-blue-50/90 border border-blue-200 text-blue-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-start gap-2">
+                            <span className="text-lg leading-none">🔄</span>
+                            <div>
+                              <div className="font-bold flex items-center gap-2">
+                                <span>Cơ Chế Luân Chuyển Key:</span>
+                                <span className="bg-blue-600 text-white px-2 py-0.5 rounded-full text-[10px] font-bold">Đang Bật</span>
+                              </div>
+                              <p className="text-[11px] text-blue-700 mt-0.5">
+                                Đang quản lý <strong>{getGeminiApiKeys().length} key</strong> • Lượt xử lý tiếp theo: <strong>Key #{activeGeminiKeyIndex + 1}</strong>
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 self-end sm:self-auto">
+                            <button onClick={checkAllApis} className="text-blue-700 hover:underline font-bold text-xs">
+                              Kiểm tra tất cả
+                            </button>
+                            {backupKeys.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBackupKeys([]);
+                                  localStorage.removeItem('gemini_backup_api_keys');
+                                  showToast('Đã xóa danh sách key dự phòng');
+                                }}
+                                className="text-[11px] text-red-600 hover:underline font-bold"
+                              >
+                                Xóa dàn dự phòng
+                              </button>
+                            )}
+                          </div>
                         </div>
 
-                        <div className="p-2 rounded-lg bg-blue-50/80 border border-blue-200 text-blue-900 text-[11px] flex items-center gap-1.5">
-                          <span>🤖</span>
-                          <span>Đang dùng mô hình <strong>Gemini 3.6 Flash</strong> chuẩn mới nhất. Hệ thống tự động chuyển key dự phòng khi gặp lỗi 429.</span>
-                        </div>
-
-                        <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                        <div className="space-y-2 max-h-[170px] overflow-y-auto pr-1">
                           {getGeminiApiKeys().length > 0 ? (
                             getGeminiApiKeys().map((key, index) => {
                               const isLimited = rateLimitedKeys.has(key);
+                              const isNextTurn = index === (activeGeminiKeyIndex % getGeminiApiKeys().length);
                               return (
-                                <div key={key} className="p-2.5 rounded-lg border border-slate-200 bg-white flex items-center justify-between gap-2">
+                                <div
+                                  key={key}
+                                  className={`p-2.5 rounded-lg border transition-all flex items-center justify-between gap-2 ${
+                                    isNextTurn
+                                      ? 'border-blue-400 bg-blue-50/50 ring-1 ring-blue-300'
+                                      : 'border-slate-200 bg-white'
+                                  }`}
+                                >
                                   <div className="min-w-0 flex-1">
-                                    <div className="font-mono font-bold text-slate-800 text-xs truncate">
-                                      {index === 0 ? 'Chính' : `Dự phòng #${index}`} • {maskApiKey(key)}
+                                    <div className="font-mono font-bold text-slate-800 text-xs truncate flex items-center gap-2">
+                                      <span>{index === 0 ? 'Chính' : `Dự phòng #${index}`} • {maskApiKey(key)}</span>
+                                      {isNextTurn && (
+                                        <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.2 rounded font-bold">
+                                          🎯 Lượt tiếp theo
+                                        </span>
+                                      )}
                                     </div>
                                     <div className="text-[10px] flex items-center gap-2 mt-0.5">
                                       <span className={isLimited ? 'text-red-500 font-bold' : 'text-emerald-600 font-bold'}>
