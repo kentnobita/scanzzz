@@ -812,7 +812,7 @@ async function scanWithKira(base64Data, mimeType, key, model, selectedColumns, f
       if (errJson.error?.message) errMsg = errJson.error.message;
     } catch {
       if (res.status === 502) {
-        errMsg = `Mô hình Free [${effectiveModel}] đang tạm thời quá tải hoặc ảnh gửi quá nhanh (502 Bad Gateway). Vui lòng bấm [Thử lại 🔄] sau vài giây hoặc đổi mô hình /model qwen3.8-27b-free.`;
+        errMsg = `Mô hình [${effectiveModel}] đang tạm thời quá tải hoặc ảnh gửi quá nhanh (502 Bad Gateway). Vui lòng bấm [Thử lại 🔄] sau vài giây hoặc đổi mô hình /model qwen3.8-27b-free.`;
       }
     }
     throw new Error(errMsg);
@@ -2320,16 +2320,16 @@ async function handleMessage(msg) {
           '• `/amodel Qwen3.8-27B` (MỚI • Vision 27B siêu tốc 2.5s & chuẩn xác)\n' +
           '• `/amodel GLM-5.3-Flash` (Zhipu AI Siêu nhanh 2.9s)\n' +
           '• `/amodel DeepSeek-V4.1-Flash` (MoE 552B Siêu tốc)\n\n' +
-          '🌟 *Kira AI (kiraai.vn - Free 100M tokens/ngày & Đa dạng Vision):*\n' +
-          '• `/amodel qwen3.8-flash-free` (Khuyên dùng • Free 100M • Cực nhanh 3-5s)\n' +
-          '• `/amodel qwen3.8-27b-free` (Free 100M • Vision đọc chữ viết tay rất tốt)\n' +
+          '🌟 *Kira AI (kiraai.vn - Đa dạng Vision):*\n' +
+          '• `/amodel qwen3.8-flash-free` (Khuyên dùng • Cực nhanh 3-5s & Chuẩn xác)\n' +
+          '• `/amodel qwen3.8-27b-free` (Vision đọc chữ viết tay rất tốt)\n' +
           '• `/amodel kira-3.5-flash-pdf` (MỚI • Chuyên dụng đọc PDF & phiếu kho)\n' +
           '• `/amodel kira-3.5-flash` (MỚI • Thế hệ 3.5 siêu tốc)\n' +
           '• `/amodel deepseek-v4-flash-vision-exp` (MỚI • Vision thử nghiệm)\n' +
-          '• `/amodel glm-5.3-flash-free` (Free 100M • Đa phương thức)\n' +
+          '• `/amodel glm-5.3-flash-free` (Đa phương thức & Tài liệu)\n' +
           '• `/amodel qwen3.8-max` (Đỉnh cao chữ viết tay)\n' +
           '• `/amodel kira-auto` (Tự động điều phối mô hình)\n\n' +
-          '🌐 *OpenRouter (Miễn phí & Tối ưu OCR Vision):*\n' +
+          '🌐 *OpenRouter (Tối ưu OCR Vision):*\n' +
           '• `/amodel nex-agi/nex-n2.5-pro:free` (Khuyên dùng - Rất nhanh & chuẩn)\n' +
           '• `/amodel nex-agi/nex-n2.5-mini:free` (Siêu nhẹ & tốc độ cao)\n' +
           '• `/amodel inclusionai/ling-3.0-flash-vl:free` (MỚI • Vision 3.0)\n' +
@@ -2337,7 +2337,7 @@ async function handleMessage(msg) {
           '• `/amodel google/gemini-2.5-flash` (Google Gemini Vision siêu ổn định)\n' +
           '• `/amodel openai/gpt-4o-mini` (Bóc tách bảng chuẩn)\n' +
           '• `/amodel qwen/qwen2.5-vl-72b-instruct` (Đỉnh cao chữ viết tay châu Á)\n' +
-          '• `/amodel openrouter/free` (MỚI • Auto Free Router)\n\n' +
+          '• `/amodel openrouter/free` (MỚI • Auto Router)\n\n' +
           '_(Senpai có thể gõ `/amodel <mã>` để Akko kích hoạt bất kỳ mã model nào nha)_',
         parse_mode: 'Markdown'
       });

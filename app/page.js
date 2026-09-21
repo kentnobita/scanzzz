@@ -49,33 +49,33 @@ const DEFAULT_COLUMNS = ['ten', 'soOSPO', 'donViTinh', 'soLuongChungTu', 'soLuon
 const OPENROUTER_MODELS = [
   {
     id: 'nex-agi/nex-n2.5-pro:free',
-    name: 'Nex AGI: Nex-N2.5-Pro (Free)',
+    name: 'Nex AGI: Nex-N2.5-Pro',
     shortName: 'Nex-N2.5-Pro',
-    badge: 'MỚI • Free Siêu Chuẩn & Nhanh',
+    badge: 'MỚI • Siêu Chuẩn & Nhanh',
     badgeColor: 'bg-indigo-100 text-indigo-800',
-    desc: 'Mô hình Agentic Vision thế hệ mới của Nex AGI trên OpenRouter. Miễn phí, tốc độ phản hồi cực nhanh (~1.5s), bóc tách cấu trúc phiếu kho và chữ viết tay xuất sắc.',
+    desc: 'Mô hình Agentic Vision thế hệ mới của Nex AGI trên OpenRouter. Tốc độ phản hồi cực nhanh (~1.5s), bóc tách cấu trúc phiếu kho và chữ viết tay xuất sắc.',
   },
   {
     id: 'nex-agi/nex-n2.5-mini:free',
-    name: 'Nex AGI: Nex-N2.5-Mini (Free)',
+    name: 'Nex AGI: Nex-N2.5-Mini',
     shortName: 'Nex-N2.5-Mini',
-    badge: 'MỚI • Free Siêu Tốc',
+    badge: 'MỚI • Siêu Tốc',
     badgeColor: 'bg-teal-100 text-teal-800',
-    desc: 'Bản rút gọn siêu nhẹ của Nex AGI. Miễn phí, phản hồi tức thì dưới 2s cho các phiếu in rõ nét và bảng biểu.',
+    desc: 'Bản rút gọn siêu nhẹ của Nex AGI. Phản hồi tức thì dưới 2s cho các phiếu in rõ nét và bảng biểu.',
   },
   {
     id: 'inclusionai/ling-3.0-flash-vl:free',
-    name: 'InclusionAI: Ling 3.0 Flash VL (Free)',
+    name: 'InclusionAI: Ling 3.0 Flash VL',
     shortName: 'Ling 3.0 Flash VL',
-    badge: 'MỚI • Free Vision 3.0',
+    badge: 'MỚI • Vision 3.0',
     badgeColor: 'bg-cyan-100 text-cyan-800',
-    desc: 'Mô hình Vision đa phương thức thế hệ mới của InclusionAI. Miễn phí, nhận diện chữ viết tay và bảng biểu tiếng Việt tốt.',
+    desc: 'Mô hình Vision đa phương thức thế hệ mới của InclusionAI. Nhận diện chữ viết tay và bảng biểu tiếng Việt tốt.',
   },
   {
     id: 'google/gemma-4-31b-it:free',
-    name: 'Google Gemma 4 31B (Free)',
+    name: 'Google Gemma 4 31B',
     shortName: 'Gemma 4 31B',
-    badge: 'MỚI • Free Vision Thế Hệ 4',
+    badge: 'MỚI • Vision Thế Hệ 4',
     badgeColor: 'bg-sky-100 text-sky-800',
     desc: 'Mô hình Vision mở thế hệ thứ 4 của Google. Cửa sổ ngữ cảnh 262K, hiểu hình ảnh tài liệu phức tạp và dòng kẻ bảng.',
   },
@@ -105,11 +105,11 @@ const OPENROUTER_MODELS = [
   },
   {
     id: 'openrouter/free',
-    name: 'OpenRouter Free Auto-Router',
-    shortName: 'Auto Free Router',
+    name: 'OpenRouter Auto-Router',
+    shortName: 'Auto Router',
     badge: 'MỚI • Tự Động Điều Phối',
     badgeColor: 'bg-amber-100 text-amber-800',
-    desc: 'Router thông minh tự động lựa chọn mô hình Vision miễn phí sẵn có tốt nhất tại thời điểm gửi yêu cầu.',
+    desc: 'Router thông minh tự động lựa chọn mô hình Vision sẵn có tối ưu tại thời điểm gửi yêu cầu.',
   },
 ];
 
@@ -117,19 +117,19 @@ const OPENROUTER_MODELS = [
 const KIRA_MODELS = [
   {
     id: 'qwen3.8-flash-free',
-    name: 'Qwen 3.8 Flash (Free)',
+    name: 'Qwen 3.8 Flash',
     shortName: 'Qwen 3.8 Flash',
-    badge: 'Khuyên Dùng • Free Siêu Tốc',
+    badge: 'Khuyên Dùng • Siêu Tốc',
     badgeColor: 'bg-emerald-100 text-emerald-800',
-    desc: 'Mô hình miễn phí tốt nhất trên Kira AI. Tốc độ phản hồi cực nhanh (3-5s), ổn định, không bị lỗi 502.',
+    desc: 'Mô hình tối ưu trên Kira AI. Tốc độ phản hồi cực nhanh (3-5s), ổn định, không bị lỗi 502.',
   },
   {
     id: 'qwen3.8-27b-free',
-    name: 'Qwen 3.8 27B (Free)',
+    name: 'Qwen 3.8 27B',
     shortName: 'Qwen 3.8 27B',
-    badge: 'Free • Vision Rất Tốt',
+    badge: 'Vision Rất Tốt',
     badgeColor: 'bg-purple-100 text-purple-800',
-    desc: 'Phiên bản Vision 27B miễn phí, đọc tốt chữ viết tay tiếng Việt và nhận diện số lượng.',
+    desc: 'Phiên bản Vision 27B, đọc tốt chữ viết tay tiếng Việt và nhận diện số lượng.',
   },
   {
     id: 'kira-3.5-flash-pdf',
@@ -157,11 +157,11 @@ const KIRA_MODELS = [
   },
   {
     id: 'glm-5.3-flash-free',
-    name: 'GLM 5.3 Flash (Free)',
+    name: 'GLM 5.3 Flash',
     shortName: 'GLM 5.3 Flash',
-    badge: 'Free • Đa Phương Thức',
+    badge: 'Đa Phương Thức',
     badgeColor: 'bg-amber-100 text-amber-800',
-    desc: 'Mô hình GLM 5.3 Flash miễn phí, xử lý đa phương thức và hỗ trợ phân tích tài liệu.',
+    desc: 'Mô hình GLM 5.3 Flash, xử lý đa phương thức và hỗ trợ phân tích tài liệu.',
   },
   {
     id: 'qwen3.8-max',
@@ -223,7 +223,7 @@ const GEMINI_MODELS = [
     shortName: 'Gemini 3.6 Flash',
     badge: 'Mô hình chính mặc định',
     badgeColor: 'bg-emerald-100 text-emerald-800',
-    desc: 'Mô hình chuẩn mặc định của Google Gemini, tối ưu nhất cho mọi API Key (Free & Pay-As-You-Go), đọc chuẩn chữ viết tay tiếng Việt và bóc tách bảng biểu.',
+    desc: 'Mô hình chuẩn mặc định của Google Gemini, tối ưu cho mọi API Key, đọc chuẩn chữ viết tay tiếng Việt và bóc tách bảng biểu.',
   },
   {
     id: 'gemini-3.7-flash',
@@ -439,6 +439,7 @@ export default function Home() {
   const [scanProgress, setScanProgress] = useState({ active: false, percent: 0, text: "" });
   const [showTesseractWarning, setShowTesseractWarning] = useState(false);
   const [engineBadge, setEngineBadge] = useState("");
+  const [scannedModelInfo, setScannedModelInfo] = useState(null);
 
   // Drag and drop state
   const [isDragging, setIsDragging] = useState(false);
@@ -2917,6 +2918,69 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     return { soPhieu: sp, items };
   };
 
+  const getModelBadgeInfo = (provider, modelId = null) => {
+    if (provider === 'bai') {
+      const targetId = modelId || baiModel;
+      const mObj = BAI_MODELS.find((m) => m.id === targetId || m.name.toLowerCase() === String(targetId).toLowerCase());
+      const sName = mObj ? mObj.shortName : (targetId === 'qwen3.8-flash' ? 'Qwen 3.8 Flash' : targetId === 'qwen3.8-27b' ? 'Qwen 3.8 27B' : targetId === 'glm-5.3-flash' ? 'GLM 5.3 Flash' : 'DeepSeek V4.1');
+      return {
+        engine: 'bai',
+        model: targetId,
+        modelName: sName,
+        providerLabel: 'B.AI',
+        badgeText: `✨ B.AI (${sName})`,
+        badgeColor: 'bg-rose-100 text-rose-800 border border-rose-200',
+      };
+    }
+    if (provider === 'kira') {
+      const targetId = modelId || kiraModel;
+      const mObj = KIRA_MODELS.find((m) => m.id === targetId);
+      const sName = mObj ? mObj.shortName : targetId;
+      return {
+        engine: 'kira',
+        model: targetId,
+        modelName: sName,
+        providerLabel: 'Kira AI',
+        badgeText: `✨ Kira AI (${sName})`,
+        badgeColor: 'bg-amber-100 text-amber-800 border border-amber-200',
+      };
+    }
+    if (provider === 'openrouter') {
+      const targetId = modelId || openRouterModel;
+      const mObj = OPENROUTER_MODELS.find((m) => m.id === targetId);
+      const sName = mObj ? mObj.shortName : (targetId.split('/')[1]?.split(':')[0] || targetId);
+      return {
+        engine: 'openrouter',
+        model: targetId,
+        modelName: sName,
+        providerLabel: 'OpenRouter',
+        badgeText: `✨ OpenRouter (${sName})`,
+        badgeColor: 'bg-purple-100 text-purple-800 border border-purple-200',
+      };
+    }
+    if (provider === 'gemini') {
+      const targetId = modelId || geminiModel || 'gemini-3.6-flash';
+      const mObj = GEMINI_MODELS.find((m) => m.id === targetId);
+      const sName = mObj ? mObj.shortName : (targetId === 'gemini-3.7-flash' ? 'Gemini 3.7 Flash' : targetId === 'gemini-3.8-flash' ? 'Gemini 3.8 Flash' : 'Gemini 3.6 Flash');
+      return {
+        engine: 'gemini',
+        model: targetId,
+        modelName: sName,
+        providerLabel: 'Google Gemini',
+        badgeText: `✨ Google Gemini (${sName})`,
+        badgeColor: 'bg-blue-100 text-blue-800 border border-blue-200',
+      };
+    }
+    return {
+      engine: 'tesseract',
+      model: 'tesseract',
+      modelName: 'Tesseract OCR',
+      providerLabel: 'Offline OCR',
+      badgeText: '📝 Tesseract OCR (Offline)',
+      badgeColor: 'bg-slate-100 text-slate-800 border border-slate-200',
+    };
+  };
+
   // OCR Single Image Helper with Failover (Google Gemini 3.6 Flash & OpenRouter)
   const executeOcrOnImage = async (base64Data, mimeType, progressPrefix = '') => {
     // 1. OPENROUTER PROVIDER
@@ -2931,7 +2995,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         text: `${progressPrefix} Đang gọi OpenRouter (${openRouterModel})...`,
       });
       const res = await scanClientOpenRouterWithBase64(base64Data, mimeType, orKey, openRouterModel);
-      return { data: res, engine: 'openrouter' };
+      const badgeInfo = getModelBadgeInfo('openrouter', openRouterModel);
+      return { data: res, engine: 'openrouter', model: openRouterModel, badgeInfo };
     }
 
 
@@ -2948,7 +3013,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         text: `${progressPrefix} Đang gọi Kira AI (${modelToUse})...`,
       });
       const res = await scanClientKiraWithBase64(base64Data, mimeType, kKey, modelToUse);
-      return { data: res, engine: 'kira' };
+      const badgeInfo = getModelBadgeInfo('kira', modelToUse);
+      return { data: res, engine: 'kira', model: modelToUse, badgeInfo };
     }
 
     // 4. B.AI PROVIDER
@@ -2964,7 +3030,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         text: `${progressPrefix} Đang gọi B.AI (${modelToUse})...`,
       });
       const res = await scanClientBaiWithBase64(base64Data, mimeType, bKey, modelToUse);
-      return { data: res, engine: 'bai' };
+      const badgeInfo = getModelBadgeInfo('bai', modelToUse);
+      return { data: res, engine: 'bai', model: modelToUse, badgeInfo };
     }
 
     // 4. GOOGLE GEMINI PROVIDER (with Round-Robin Key Balancing & Failover)
@@ -3005,7 +3072,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
           geminiKeyIndexRef.current = nextIndex;
           setActiveGeminiKeyIndex(nextIndex);
 
-          return { data: res, engine: 'gemini' };
+          const badgeInfo = getModelBadgeInfo('gemini', effectiveGeminiModel);
+          return { data: res, engine: 'gemini', model: effectiveGeminiModel, badgeInfo };
         } catch (error) {
           lastError = error;
           const status = error?.status;
@@ -3047,7 +3115,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         text: `${progressPrefix} Đang nhận diện offline... ${pct}%`,
       });
     });
-    return { data: res, engine: 'tesseract' };
+    const badgeInfo = getModelBadgeInfo('tesseract', 'tesseract');
+    return { data: res, engine: 'tesseract', model: 'tesseract', badgeInfo };
   };
 
   // Main Single Image Scan Dispatcher
@@ -3058,8 +3127,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     setShowTesseractWarning(false);
 
     try {
-      const { data: resultData, engine } = await executeOcrOnImage(currentImageBase64, currentImageMimeType);
+      const { data: resultData, engine, badgeInfo } = await executeOcrOnImage(currentImageBase64, currentImageMimeType);
       setEngineBadge(engine);
+      if (badgeInfo) setScannedModelInfo(badgeInfo);
       setScanProgress({ active: true, percent: 100, text: '✅ Trích xuất thành công!' });
 
       const normalizedItems = parseOcrResultToItems(resultData, null, resultData.soPhieu || '');
@@ -3083,7 +3153,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       setActiveResultTab('separate');
       setResultVisible(true);
 
-      saveHistoryRecord(nextId, resultData.soPhieu || '', normalizedItems, singlePageResult, true);
+      saveHistoryRecord(nextId, resultData.soPhieu || '', normalizedItems, singlePageResult, true, badgeInfo);
 
       // Auto-sync to Google Sheet if enabled
       if (autoSyncSheet && googleSheetUrl) {
@@ -3139,6 +3209,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     let detectedFirstSoPhieu = '';
     let perPageResults = [];
     let usedEngine = 'gemini';
+    let usedBadgeInfo = null;
 
     try {
       for (let i = 0; i < total; i++) {
@@ -3163,8 +3234,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         });
 
         try {
-          const { data: pageResult, engine } = await executeOcrOnImage(page.base64, 'image/jpeg', `[Trang ${pageNum}]`);
+          const { data: pageResult, engine, badgeInfo } = await executeOcrOnImage(page.base64, 'image/jpeg', `[Trang ${pageNum}]`);
           usedEngine = engine;
+          if (badgeInfo) usedBadgeInfo = badgeInfo;
 
           let effectiveSoPhieu = pageResult.soPhieu || '';
           const normalized = parseOcrResultToItems(pageResult, pageNum, effectiveSoPhieu);
@@ -3236,6 +3308,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       }
 
       setEngineBadge(usedEngine);
+      if (usedBadgeInfo) setScannedModelInfo(usedBadgeInfo);
       setScanProgress({ active: true, percent: 100, text: `✅ Đã quét xong ${total} trang!` });
 
       if (targetPages[0]) {
@@ -3250,7 +3323,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       setActiveResultTab('separate');
       setResultVisible(true);
 
-      saveHistoryRecord(nextId, detectedFirstSoPhieu || '', accumulatedItems, perPageResults, true);
+      saveHistoryRecord(nextId, detectedFirstSoPhieu || '', accumulatedItems, perPageResults, true, usedBadgeInfo);
 
       const failedCount = perPageResults.filter((pr) => pr.status === 'error').length;
       if (failedCount > 0) {
@@ -3314,7 +3387,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     });
 
     try {
-      const { data: pageResult, engine } = await executeOcrOnImage(page.base64, 'image/jpeg', `[Quét lại Trang ${targetPageNum}]`);
+      const { data: pageResult, engine, badgeInfo } = await executeOcrOnImage(page.base64, 'image/jpeg', `[Quét lại Trang ${targetPageNum}]`);
+      setEngineBadge(engine);
+      if (badgeInfo) setScannedModelInfo(badgeInfo);
       let effectiveSoPhieu = pageResult.soPhieu || '';
       const normalized = parseOcrResultToItems(pageResult, targetPageNum, effectiveSoPhieu);
       if (!effectiveSoPhieu && normalized.length > 0 && normalized[0].soPhieu) {
@@ -3365,7 +3440,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         };
       });
 
-      saveHistoryRecord(currentHistoryId || ('h_' + Date.now()), soPhieu || effectiveSoPhieu, newTableItems, newPageResults, false);
+      saveHistoryRecord(currentHistoryId || ('h_' + Date.now()), soPhieu || effectiveSoPhieu, newTableItems, newPageResults, false, badgeInfo);
 
       if (autoSyncSheet && googleSheetUrl && normalized.length > 0) {
         syncToGoogleSheet(normalized, effectiveSoPhieu || soPhieu, targetPageNum, true);
@@ -3399,7 +3474,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
   };
 
   // History Operations in LocalStorage (Optimized lightweight storage to prevent QuotaExceededError on mobile)
-  const saveHistoryRecord = (id, spVal, itemsVal, pageResultsVal = [], isNew = false) => {
+  const saveHistoryRecord = (id, spVal, itemsVal, pageResultsVal = [], isNew = false, modelInfoVal = null) => {
     const currentPR = pageResultsVal.length ? pageResultsVal : pageResults;
 
     // Remove heavy base64 / blob previewUrls from pageResults when persisting to localStorage
@@ -3414,6 +3489,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       };
     });
 
+    const activeModelInfo = modelInfoVal || scannedModelInfo || null;
+
     const record = {
       id,
       createdAt: isNew ? new Date().toISOString() : undefined,
@@ -3422,6 +3499,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       items: itemsVal,
       pageResults: lightweightPageResults,
       columns: selectedColumns,
+      scannedModelInfo: activeModelInfo,
     };
 
     setScanHistory((prev) => {
@@ -3429,6 +3507,10 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       let next;
       if (existingIdx >= 0) {
         record.createdAt = prev[existingIdx].createdAt;
+        // Giữ lại scannedModelInfo cũ nếu bản cập nhật không truyền vào
+        if (!record.scannedModelInfo && prev[existingIdx].scannedModelInfo) {
+          record.scannedModelInfo = prev[existingIdx].scannedModelInfo;
+        }
         next = [...prev];
         next[existingIdx] = record;
       } else {
@@ -3473,7 +3555,16 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     setActiveResultTab('separate');
     setResultVisible(true);
     setHistoryOpen(false);
-    setEngineBadge('gemini');
+
+    if (item.scannedModelInfo) {
+      setScannedModelInfo(item.scannedModelInfo);
+      setEngineBadge(item.scannedModelInfo.engine || 'gemini');
+    } else {
+      const fallbackInfo = getModelBadgeInfo('gemini', 'gemini-3.6-flash');
+      setScannedModelInfo(fallbackInfo);
+      setEngineBadge('gemini');
+    }
+
     showToast('🕘 Đã mở phiếu từ lịch sử', 'success');
     setTimeout(() => {
       resultRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -3580,6 +3671,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     setCropSourceSrc(null);
     setPdfPages([]);
     setLastSheetSync(null);
+    setScannedModelInfo(null);
+    setEngineBadge('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
     showToast('Đã đặt lại trạng thái', 'success');
   };
@@ -4185,7 +4278,12 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           </span>
                         )}
                       </div>
-                      <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                      <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        {item.scannedModelInfo && (
+                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${item.scannedModelInfo.badgeColor || 'bg-slate-100 text-slate-700'}`}>
+                            {item.scannedModelInfo.badgeText?.replace('✨ ', '') || item.scannedModelInfo.modelName || item.scannedModelInfo.engine}
+                          </span>
+                        )}
                         <span>{formatDate(item.updatedAt || item.createdAt)}</span>
                         <span>•</span>
                         <span className="font-medium text-slate-600">{item.items?.length || 0} dòng hàng</span>
@@ -4337,7 +4435,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           ? `Kira AI (${KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel})`
                           : aiProvider === 'openrouter'
                           ? `OpenRouter (${OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || 'AI'})`
-                          : 'Gemini 3.6 Flash'
+                          : `Google Gemini (${GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || 'Gemini 3.6 Flash'})`
                       }...
                     </span>
                   </>
@@ -4351,7 +4449,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                         ? `Bắt Đầu Quét Bằng Kira AI [${KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel}]`
                         : aiProvider === 'openrouter'
                         ? `Bắt Đầu Quét Bằng OpenRouter [${OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || openRouterModel}]`
-                        : `Bắt Đầu Quét Trích Xuất (Gemini: ${GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || geminiModel})`}
+                        : `Bắt Đầu Quét Bằng Gemini [${GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || 'Gemini 3.6 Flash'}]`}
                     </span>
                   </>
                 )}
@@ -4381,8 +4479,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">Kết quả trích xuất</h3>
                     <span
-                      className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                        engineBadge === 'bai'
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 ${
+                        scannedModelInfo?.badgeColor ||
+                        (engineBadge === 'bai'
                           ? 'bg-rose-100 text-rose-800 border border-rose-200'
                           : engineBadge === 'kira'
                           ? 'bg-amber-100 text-amber-800 border border-amber-200'
@@ -4392,20 +4491,22 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           ? 'bg-orange-100 text-orange-800 border border-orange-200'
                           : engineBadge === 'gemini'
                           ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                          : 'bg-amber-100 text-amber-800 border border-amber-200'
+                          : 'bg-amber-100 text-amber-800 border border-amber-200')
                       }`}
                     >
-                      {engineBadge === 'bai'
-                        ? `✨ B.AI (${BAI_MODELS.find((m) => m.id === baiModel)?.shortName || baiModel})`
-                        : engineBadge === 'kira'
-                        ? `✨ Kira AI (${KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel})`
-                        : engineBadge === 'openrouter'
-                        ? `✨ OpenRouter (${openRouterModel.split('/')[1]?.split(':')[0] || 'Qwen 2.5 VL'})`
-                        : engineBadge === 'groq'
-                        ? `✨ Groq (${groqModel})`
-                        : engineBadge === 'gemini'
-                        ? '✨ Gemini Vision 3.6 Flash'
-                        : '📝 Tesseract OCR'}
+                      {scannedModelInfo?.badgeText || (
+                        engineBadge === 'bai'
+                          ? `✨ B.AI (${BAI_MODELS.find((m) => m.id === baiModel)?.shortName || baiModel})`
+                          : engineBadge === 'kira'
+                          ? `✨ Kira AI (${KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel})`
+                          : engineBadge === 'openrouter'
+                          ? `✨ OpenRouter (${OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || openRouterModel})`
+                          : engineBadge === 'groq'
+                          ? `✨ Groq (${groqModel})`
+                          : engineBadge === 'gemini'
+                          ? `✨ Google Gemini (${GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || 'Gemini 3.6 Flash'})`
+                          : '📝 Tesseract OCR'
+                      )}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
@@ -4961,7 +5062,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
           <div className="flex items-center gap-2">
             <span className="font-bold text-slate-700">Scan Pro Max — Trích Xuất Phiếu Kho AI</span>
             <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-mono font-bold text-[10px]">
-              Phiên bản v37.0.0
+              Phiên bản v38.0.0
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -5539,8 +5640,15 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           </span>
                         )}
                       </div>
-                      <div className="text-xs text-slate-500 mt-0.5">
-                        {formatDate(item.updatedAt || item.createdAt)} • {item.items?.length || 0} dòng
+                      <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                        {item.scannedModelInfo && (
+                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${item.scannedModelInfo.badgeColor || 'bg-slate-100 text-slate-700'}`}>
+                            {item.scannedModelInfo.badgeText?.replace('✨ ', '') || item.scannedModelInfo.modelName || item.scannedModelInfo.engine}
+                          </span>
+                        )}
+                        <span>{formatDate(item.updatedAt || item.createdAt)}</span>
+                        <span>•</span>
+                        <span>{item.items?.length || 0} dòng</span>
                       </div>
                       <div className="text-[11px] text-slate-400 truncate mt-0.5">
                         {(item.items || []).slice(0, 3).map((x) => x.ten || x.soOSPO || '').filter(Boolean).join(', ')}
@@ -6101,7 +6209,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           </a>
                         </div>
                         <p className="text-[11px] text-amber-900 leading-relaxed">
-                          Kira AI là nền tảng API tương thích chuẩn OpenAI tối ưu tại Việt Nam, cung cấp hạn mức miễn phí lớn hàng ngày (150M - 250M token). <em>Lưu ý: Chỉ nhập các mô hình có hỗ trợ đọc ảnh (Vision) để quét phiếu.</em>
+                          Kira AI là nền tảng API tương thích chuẩn OpenAI tối ưu tại Việt Nam, cung cấp hạ tầng Vision tốc độ cao. <em>Lưu ý: Chỉ nhập các mô hình có hỗ trợ đọc ảnh (Vision) để quét phiếu.</em>
                         </p>
                       </div>
 
@@ -6183,7 +6291,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           />
                         </div>
                         <p className="text-[10px] text-amber-900 bg-amber-100/70 p-2 rounded-lg mt-1 leading-normal">
-                          💡 <strong>Mẹo dùng mượt mà:</strong> Với gói Free 100M tokens/ngày, hãy chọn <code>qwen3.8-flash-free</code> hoặc <code>qwen3.8-27b-free</code> để có tốc độ phản hồi nhanh nhất và độ chính xác cao đối với chữ viết tay.
+                          💡 <strong>Mẹo dùng mượt mà:</strong> Hãy chọn <code>qwen3.8-flash-free</code> hoặc <code>qwen3.8-27b-free</code> để có tốc độ phản hồi nhanh nhất và độ chính xác cao đối với chữ viết tay.
                         </p>
                       </div>
                     </div>
