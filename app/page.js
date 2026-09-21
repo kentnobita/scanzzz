@@ -33,6 +33,15 @@ import {
   IconDevicePhone,
 } from '@/components/Icons';
 import QrCodeCanvas from '@/components/QrCodeCanvas';
+import {
+  requestScreenWakeLock,
+  releaseScreenWakeLock,
+  startBackgroundAudioKeepAlive,
+  stopBackgroundAudioKeepAlive,
+  saveActiveScanSession,
+  loadActiveScanSession,
+  clearActiveScanSession,
+} from '@/lib/keepAlive';
 
 const COLUMN_DEFS = {
   ten: { label: 'Tên, nhãn hiệu, quy cách phẩm chất vật tư, dụng cụ, sản phẩm, hàng hóa', short: 'Tên / mã hàng' },
@@ -708,6 +717,23 @@ export default function Home() {
       }
     }
 
+    // Khôi phục phiên quét nếu bị ngắt quãng do chuyển app / tắt màn hình / kill tab RAM
+    loadActiveScanSession().then((session) => {
+      if (session && (Date.now() - (session.savedAt || 0) < 1000 * 60 * 60 * 2)) {
+        if (session.imageBase64 && !currentImageBase64) {
+          setCurrentImageBase64(session.imageBase64);
+          setCurrentImageMimeType(session.imageMimeType || 'image/jpeg');
+          if (session.previewSrc) {
+            setPreviewSrc(session.previewSrc);
+            setRawOriginalSrc(session.previewSrc);
+          }
+          if (session.pdfPages && session.pdfPages.length > 0) {
+            setPdfPages(session.pdfPages);
+          }
+          showToast('📱 Đã tự động khôi phục tài liệu của bạn trước khi chuyển ứng dụng.', 'info');
+        }
+      }
+    }).catch(() => {});
 
     // Register PWA Service Worker
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
@@ -742,6 +768,33 @@ export default function Home() {
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
+
+  // Lắng nghe trạng thái màn hình & chuyển tab để tự động duy trì Wake Lock và Keep-Alive
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        if (isScanning) {
+          requestScreenWakeLock();
+          startBackgroundAudioKeepAlive();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isScanning]);
+
+  // Tự động sao lưu tài liệu đang mở để chống mất khi hệ điều hành reload tab
+  useEffect(() => {
+    if (currentImageBase64) {
+      saveActiveScanSession({
+        imageBase64: currentImageBase64,
+        imageMimeType: currentImageMimeType,
+        previewSrc,
+        pdfPages,
+        isScanning,
+      });
+    }
+  }, [currentImageBase64, currentImageMimeType, previewSrc, pdfPages, isScanning]);
 
   const installPwaApp = async () => {
     if (deferredPrompt) {
@@ -2983,6 +3036,45 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
   // OCR Single Image Helper with Failover (Google Gemini 3.6 Flash & OpenRouter)
   const executeOcrOnImage = async (base64Data, mimeType, progressPrefix = '') => {
+    // Cơ chế chống ngắt kết nối khi đổi tab hoặc tắt màn hình điện thoại
+    const retryableOcrCall = async (fn, modelDesc = '') => {
+      let lastErr = null;
+      const maxRetries = 2;
+
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+            await new Promise((r) => setTimeout(r, 600));
+          }
+          return await fn();
+        } catch (err) {
+          lastErr = err;
+          const msg = String(err?.message || '').toLowerCase();
+          const isNetworkInterrupted =
+            msg.includes('failed to fetch') ||
+            msg.includes('networkerror') ||
+            msg.includes('load failed') ||
+            msg.includes('aborted') ||
+            msg.includes('network request failed') ||
+            err?.status === 502 ||
+            err?.status === 503 ||
+            err?.status === 504;
+
+          if (attempt < maxRetries && isNetworkInterrupted) {
+            console.warn(`[OCR Resilient] Mạng gián đoạn (${err.message}). Tự động kết nối lại lần ${attempt + 1}/${maxRetries}...`);
+            setScanProgress((prev) => ({
+              ...prev,
+              text: `⚠️ Mạng bị gián đoạn khi chuyển tab. Đang tự động kết nối lại lần ${attempt + 1}/${maxRetries}...`,
+            }));
+            await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+          } else {
+            throw err;
+          }
+        }
+      }
+      throw lastErr;
+    };
+
     // 1. OPENROUTER PROVIDER
     if (aiProvider === 'openrouter') {
       const orKey = openRouterKey.trim();
@@ -2994,7 +3086,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         percent: 45,
         text: `${progressPrefix} Đang gọi OpenRouter (${openRouterModel})...`,
       });
-      const res = await scanClientOpenRouterWithBase64(base64Data, mimeType, orKey, openRouterModel);
+      const res = await retryableOcrCall(() => scanClientOpenRouterWithBase64(base64Data, mimeType, orKey, openRouterModel), openRouterModel);
       const badgeInfo = getModelBadgeInfo('openrouter', openRouterModel);
       return { data: res, engine: 'openrouter', model: openRouterModel, badgeInfo };
     }
@@ -3012,7 +3104,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         percent: 45,
         text: `${progressPrefix} Đang gọi Kira AI (${modelToUse})...`,
       });
-      const res = await scanClientKiraWithBase64(base64Data, mimeType, kKey, modelToUse);
+      const res = await retryableOcrCall(() => scanClientKiraWithBase64(base64Data, mimeType, kKey, modelToUse), modelToUse);
       const badgeInfo = getModelBadgeInfo('kira', modelToUse);
       return { data: res, engine: 'kira', model: modelToUse, badgeInfo };
     }
@@ -3029,7 +3121,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         percent: 45,
         text: `${progressPrefix} Đang gọi B.AI (${modelToUse})...`,
       });
-      const res = await scanClientBaiWithBase64(base64Data, mimeType, bKey, modelToUse);
+      const res = await retryableOcrCall(() => scanClientBaiWithBase64(base64Data, mimeType, bKey, modelToUse), modelToUse);
       const badgeInfo = getModelBadgeInfo('bai', modelToUse);
       return { data: res, engine: 'bai', model: modelToUse, badgeInfo };
     }
@@ -3060,7 +3152,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         const originalIndex = allKeys.indexOf(key);
 
         try {
-          const res = await scanClientGeminiWithBase64(base64Data, mimeType, key);
+          const res = await retryableOcrCall(() => scanClientGeminiWithBase64(base64Data, mimeType, key), effectiveGeminiModel);
           setRateLimitedKeys((prev) => {
             const next = new Set(prev);
             next.delete(key);
@@ -3126,6 +3218,17 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     setScanProgress({ active: true, percent: 10, text: 'Đang chuẩn bị mô hình AI...' });
     setShowTesseractWarning(false);
 
+    // Kích hoạt chống tắt màn hình và giữ kết nối nền khi chuyển app
+    requestScreenWakeLock();
+    startBackgroundAudioKeepAlive();
+    saveActiveScanSession({
+      imageBase64: currentImageBase64,
+      imageMimeType: currentImageMimeType,
+      previewSrc,
+      pdfPages,
+      isScanning: true,
+    });
+
     try {
       const { data: resultData, engine, badgeInfo } = await executeOcrOnImage(currentImageBase64, currentImageMimeType);
       setEngineBadge(engine);
@@ -3169,6 +3272,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       setScanProgress({ active: true, percent: 0, text: 'Lỗi xảy ra, vui lòng thử lại' });
     } finally {
       setIsScanning(false);
+      releaseScreenWakeLock();
+      stopBackgroundAudioKeepAlive();
       setTimeout(() => setScanProgress((prev) => ({ ...prev, active: false })), 1800);
     }
   };
@@ -3184,6 +3289,14 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     setPdfModalOpen(false);
     setIsScanning(true);
     setShowTesseractWarning(false);
+
+    // Kích hoạt chống tắt màn hình và giữ kết nối nền khi chuyển app
+    requestScreenWakeLock();
+    startBackgroundAudioKeepAlive();
+    saveActiveScanSession({
+      pdfPages: targetPages,
+      isScanning: true,
+    });
 
     const total = targetPages.length;
     const initialStatuses = targetPages.map((p) => ({
@@ -3346,6 +3459,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       showToast('❌ Lỗi quét PDF: ' + e.message, 'error');
     } finally {
       setIsScanning(false);
+      releaseScreenWakeLock();
+      stopBackgroundAudioKeepAlive();
       setScanProgress((prev) => ({ ...prev, active: false }));
 
       // NẾU CÓ BẤT KỲ TRANG NÀO BỊ LỖI -> GIỮ NGUYÊN GIAO DIỆN QUÉT để người dùng xem và bấm Quét lại!
@@ -3658,6 +3773,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
   };
 
   const resetAll = () => {
+    clearActiveScanSession();
     setCurrentImageBase64(null);
     setPreviewSrc('');
     setResultVisible(false);
@@ -3820,15 +3936,10 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col relative">
-      {/* Ambient Wallpaper / Watermark Background for Web & Mobile */}
+      {/* Ambient Wallpaper Background for Web & Mobile */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden select-none">
         <div className="absolute -top-32 -right-32 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
         <div className="absolute top-1/2 -left-32 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl" />
-        {/* Aoko Anime Watermark */}
-        <div
-          className="absolute -bottom-10 right-0 sm:right-6 w-[280px] sm:w-[400px] h-[280px] sm:h-[400px] opacity-[0.06] bg-contain bg-no-repeat bg-bottom-right pointer-events-none transition-opacity"
-          style={{ backgroundImage: "url('/bg-aoko.png')" }}
-        />
       </div>
 
       {/* Drag & Drop Visual Overlay */}
