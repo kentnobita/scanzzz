@@ -49,24 +49,20 @@ export async function POST(req) {
 
     // Proxy Chat Completions
     const chatPayload = payload || body;
-    const selectedModel = chatPayload.model || 'qwen3.8-27b-free';
+    const rawModel = (chatPayload.model || 'qwen3.8-flash').trim();
+    const selectedModel = rawModel.replace(/-free$/i, '');
 
-    // Free models on Kira AI have strict parameter rules:
-    // 1. max_tokens must be <= 650 to prevent upstream 502 Bad Gateway
-    // 2. response_format { type: 'json_object' } can cause 500/502 on some free models (like Qwen free)
-    const isFreeModel = selectedModel.includes('-free') || selectedModel.startsWith('kira-');
-    
     const requestBody = {
       model: selectedModel,
       messages: chatPayload.messages,
       temperature: chatPayload.temperature ?? 0.1,
-      max_tokens: chatPayload.max_tokens || 2500
+      max_tokens: chatPayload.max_tokens || 3000
     };
 
     console.log(`[Kira Route] Model: ${selectedModel}, max_tokens: ${requestBody.max_tokens}, messages count: ${chatPayload.messages?.length}`);
     const startTime = Date.now();
 
-    if (chatPayload.response_format && !selectedModel.includes('qwen')) {
+    if (chatPayload.response_format && selectedModel.startsWith('gpt-')) {
       requestBody.response_format = chatPayload.response_format;
     }
 

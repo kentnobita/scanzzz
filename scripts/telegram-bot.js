@@ -719,8 +719,7 @@ async function scanWithBai(base64Data, mimeType, key, model, selectedColumns, fi
 }
 
 async function scanWithKira(base64Data, mimeType, key, model, selectedColumns, fieldPrompts) {
-  const effectiveModel = (model || 'qwen3.8-27b-free').trim();
-  const isFree = effectiveModel.includes('-free') || effectiveModel.startsWith('kira-');
+  const effectiveModel = (model || 'qwen3.8-flash').trim().replace(/-free$/i, '');
 
   // Kira AI payload limit: auto-compress with mupdf if larger than 90KB base64
   let payloadBase64 = base64Data;
@@ -774,14 +773,10 @@ async function scanWithKira(base64Data, mimeType, key, model, selectedColumns, f
           ]
         }
       ],
-      temperature: 0.1
+      temperature: 0.1,
+      max_tokens: 3000
     };
-    if (isFree) {
-      reqBody.max_tokens = 650;
-      if (!effectiveModel.includes('qwen')) {
-        reqBody.response_format = { type: 'json_object' };
-      }
-    } else {
+    if (effectiveModel.startsWith('gpt-')) {
       reqBody.response_format = { type: 'json_object' };
     }
 
@@ -2321,13 +2316,19 @@ async function handleMessage(msg) {
           '• `/amodel GLM-5.3-Flash` (Zhipu AI Siêu nhanh 2.9s)\n' +
           '• `/amodel DeepSeek-V4.1-Flash` (MoE 552B Siêu tốc)\n\n' +
           '🌟 *Kira AI (kiraai.vn - Đa dạng Vision):*\n' +
-          '• `/amodel qwen3.8-flash-free` (Khuyên dùng • Cực nhanh 3-5s & Chuẩn xác)\n' +
-          '• `/amodel qwen3.8-27b-free` (Vision đọc chữ viết tay rất tốt)\n' +
-          '• `/amodel kira-3.5-flash-pdf` (MỚI • Chuyên dụng đọc PDF & phiếu kho)\n' +
-          '• `/amodel kira-3.5-flash` (MỚI • Thế hệ 3.5 siêu tốc)\n' +
+          '• `/amodel qwen3.8-flash` (Khuyên dùng • Cực nhanh 3-5s & Chuẩn xác)\n' +
+          '• `/amodel qwen3.8-27b` (Vision 27B đọc chữ viết tay rất tốt)\n' +
+          '• `/amodel qwen3.8-max` (Đỉnh cao chữ viết tay & bảng biểu)\n' +
+          '• `/amodel deepseek-v4.1-flash` (MỚI • MoE 552B Siêu tốc & Tiết kiệm)\n' +
           '• `/amodel deepseek-v4-flash-vision-exp` (MỚI • Vision thử nghiệm)\n' +
-          '• `/amodel glm-5.3-flash-free` (Đa phương thức & Tài liệu)\n' +
-          '• `/amodel qwen3.8-max` (Đỉnh cao chữ viết tay)\n' +
+          '• `/amodel glm-5.3-flash` (Zhipu AI Đa phương thức)\n' +
+          '• `/amodel glm-5.3-flashx` (MỚI • Bản nâng cấp tốc độ)\n' +
+          '• `/amodel kira-3.5-flash-pdf` (Chuyên dụng đọc PDF & phiếu kho)\n' +
+          '• `/amodel mimo-v2.6-flash` (MỚI • Siêu tốc 2.5s)\n' +
+          '• `/amodel kimi-k3` (MỚI • Moonshot AI đọc tài liệu & PDF)\n' +
+          '• `/amodel gpt-5.4-nano` (MỚI • OpenAI Vision gọn nhẹ)\n' +
+          '• `/amodel minimax-m3` (MỚI • MiniMax Vision)\n' +
+          '• `/amodel ox-alpha` (MỚI • Đa phương thức & PDF)\n' +
           '• `/amodel kira-auto` (Tự động điều phối mô hình)\n\n' +
           '🌐 *OpenRouter (Tối ưu OCR Vision):*\n' +
           '• `/amodel nex-agi/nex-n2.5-pro:free` (Khuyên dùng - Rất nhanh & chuẩn)\n' +
@@ -2338,37 +2339,37 @@ async function handleMessage(msg) {
           '• `/amodel openai/gpt-4o-mini` (Bóc tách bảng chuẩn)\n' +
           '• `/amodel qwen/qwen2.5-vl-72b-instruct` (Đỉnh cao chữ viết tay châu Á)\n' +
           '• `/amodel openrouter/free` (MỚI • Auto Router)\n\n' +
-          '_(Senpai có thể gõ `/amodel <mã>` để Akko kích hoạt bất kỳ mã model nào nha)_',
+          '_(Senpai có thể gõ `/amodel <mã>` hoặc `/amodel kira <mã>` để Akko kích hoạt bất kỳ mã model nào nha)_',
         parse_mode: 'Markdown'
       });
     }
 
     const cfg = getBotConfig();
-    const lowerModel = modelName.toLowerCase();
+    let targetProvider = null;
+    let targetModel = modelName.trim();
 
-    if (
-      lowerModel === 'deepseek-v4.1-flash' ||
-      lowerModel === 'glm-5.3-flash' ||
-      lowerModel === 'qwen3.8-flash' ||
-      lowerModel === 'qwen3.8-27b' ||
-      lowerModel.startsWith('deepseek-v4.1')
-    ) {
-      cfg.aiProvider = 'bai';
-      cfg.baiModel = lowerModel;
-    } else if (
-      modelName.startsWith('kira_') ||
-      modelName.startsWith('kira-') ||
-      modelName.startsWith('deepseek-v4-flash-vision') ||
-      lowerModel.includes('-free') ||
-      lowerModel.startsWith('qwen3.8') ||
-      lowerModel.startsWith('qwen3.7') ||
-      lowerModel.startsWith('glm-5.3') ||
-      lowerModel.startsWith('mimo-') ||
-      lowerModel.startsWith('hy3') ||
-      lowerModel.startsWith('mercury-')
-    ) {
+    // Hỗ trợ cú pháp rõ ràng: /amodel kira <model> hoặc /amodel bai <model>...
+    const parts = targetModel.split(/\s+/);
+    if (parts.length >= 2 && ['kira', 'bai', 'gemini', 'openrouter'].includes(parts[0].toLowerCase())) {
+      targetProvider = parts[0].toLowerCase();
+      targetModel = parts.slice(1).join(' ');
+    }
+
+    const lowerModel = targetModel.toLowerCase();
+    const cleanModel = targetModel.replace(/-free$/i, '');
+
+    if (targetProvider === 'kira') {
       cfg.aiProvider = 'kira';
-      cfg.kiraModel = modelName;
+      cfg.kiraModel = cleanModel;
+    } else if (targetProvider === 'bai') {
+      cfg.aiProvider = 'bai';
+      cfg.baiModel = cleanModel;
+    } else if (targetProvider === 'gemini') {
+      cfg.aiProvider = 'gemini';
+      cfg.geminiModel = cleanModel;
+    } else if (targetProvider === 'openrouter') {
+      cfg.aiProvider = 'openrouter';
+      cfg.openRouterModel = cleanModel;
     } else if (
       lowerModel.startsWith('gemini') ||
       lowerModel.includes('gemini-3.7') ||
@@ -2377,19 +2378,44 @@ async function handleMessage(msg) {
       lowerModel === 'gemini-1.5-flash'
     ) {
       cfg.aiProvider = 'gemini';
-      cfg.geminiModel = modelName;
-    } else if (modelName.includes('/') || modelName.includes(':free') || modelName.startsWith('openrouter')) {
+      cfg.geminiModel = targetModel;
+    } else if (targetModel.includes('/') || targetModel.includes(':free') || targetModel.startsWith('openrouter')) {
       cfg.aiProvider = 'openrouter';
-      cfg.openRouterModel = modelName;
+      cfg.openRouterModel = targetModel;
+    } else if (
+      // Nếu user đang dùng Kira AI hoặc mã model mang đặc trưng của Kira AI
+      cfg.aiProvider === 'kira' ||
+      cleanModel.startsWith('kira_') ||
+      cleanModel.startsWith('kira-') ||
+      cleanModel.startsWith('kimi-') ||
+      cleanModel.startsWith('mimo-') ||
+      cleanModel.startsWith('ox-') ||
+      cleanModel.startsWith('minimax-') ||
+      cleanModel.startsWith('gpt-5.4') ||
+      cleanModel.startsWith('hy3') ||
+      cleanModel.startsWith('mercury-')
+    ) {
+      cfg.aiProvider = 'kira';
+      cfg.kiraModel = cleanModel;
+    } else if (
+      cfg.aiProvider === 'bai' ||
+      lowerModel === 'deepseek-v4.1-flash' ||
+      lowerModel === 'glm-5.3-flash' ||
+      lowerModel === 'qwen3.8-flash' ||
+      lowerModel === 'qwen3.8-27b' ||
+      lowerModel.startsWith('deepseek-v4.1')
+    ) {
+      cfg.aiProvider = 'bai';
+      cfg.baiModel = cleanModel;
     } else {
       if (cfg.aiProvider === 'gemini') {
-        cfg.geminiModel = modelName;
+        cfg.geminiModel = targetModel;
       } else if (cfg.aiProvider === 'bai') {
-        cfg.baiModel = modelName;
+        cfg.baiModel = cleanModel;
       } else if (cfg.aiProvider === 'kira') {
-        cfg.kiraModel = modelName;
+        cfg.kiraModel = cleanModel;
       } else {
-        cfg.openRouterModel = modelName;
+        cfg.openRouterModel = targetModel;
       }
     }
 
@@ -2397,7 +2423,7 @@ async function handleMessage(msg) {
     const info = getActiveProviderInfo(cfg);
     return sendTelegram('sendMessage', {
       chat_id: chatId,
-      text: `✅ Tuân lệnh Senpai! Akko đã đổi mô hình AI sang: \`${modelName}\`\n• Nhà cung cấp kích hoạt: *${info.providerName}* (≧◡≦) ♡`,
+      text: `✅ Tuân lệnh Senpai! Akko đã đổi mô hình AI sang: \`${targetModel}\`\n• Nhà cung cấp kích hoạt: *${info.providerName}* (≧◡≦) ♡`,
       parse_mode: 'Markdown'
     });
   }

@@ -1,8 +1,9 @@
 name: Build Android APK
 
 on:
-  push:
-    branches: [ main ]
+  # Tạm thời dừng tự động tạo APK khi push theo yêu cầu
+  # push:
+  #   branches: [ main ]
   workflow_dispatch:
 
 permissions:

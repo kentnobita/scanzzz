@@ -42,6 +42,12 @@ import {
   loadActiveScanSession,
   clearActiveScanSession,
 } from '@/lib/keepAlive';
+import {
+  logScanEvent,
+  getAnalyticsSummary,
+  clearAnalyticsLogs,
+} from '@/lib/analytics';
+import ModelDistributionChart from '@/components/ModelDistributionChart';
 
 const COLUMN_DEFS = {
   ten: { label: 'Tên, nhãn hiệu, quy cách phẩm chất vật tư, dụng cụ, sản phẩm, hàng hóa', short: 'Tên / mã hàng' },
@@ -125,52 +131,20 @@ const OPENROUTER_MODELS = [
 
 const KIRA_MODELS = [
   {
-    id: 'qwen3.8-flash-free',
+    id: 'qwen3.8-flash',
     name: 'Qwen 3.8 Flash',
     shortName: 'Qwen 3.8 Flash',
-    badge: 'Khuyên Dùng • Siêu Tốc',
+    badge: 'Khuyên Dùng • Siêu Tốc 3-5s',
     badgeColor: 'bg-emerald-100 text-emerald-800',
-    desc: 'Mô hình tối ưu trên Kira AI. Tốc độ phản hồi cực nhanh (3-5s), ổn định, không bị lỗi 502.',
+    desc: 'Mô hình Vision tối ưu nhất trên Kira AI. Hỗ trợ cả hình ảnh & PDF nhiều trang, phản hồi siêu tốc và cực kỳ ổn định.',
   },
   {
-    id: 'qwen3.8-27b-free',
+    id: 'qwen3.8-27b',
     name: 'Qwen 3.8 27B',
     shortName: 'Qwen 3.8 27B',
-    badge: 'Vision Rất Tốt',
+    badge: 'Vision 27B Rất Tốt',
     badgeColor: 'bg-purple-100 text-purple-800',
-    desc: 'Phiên bản Vision 27B, đọc tốt chữ viết tay tiếng Việt và nhận diện số lượng.',
-  },
-  {
-    id: 'kira-3.5-flash-pdf',
-    name: 'Kira 3.5 Flash PDF',
-    shortName: 'Kira 3.5 PDF',
-    badge: 'MỚI • Chuyên Dụng Đọc PDF & Phiếu',
-    badgeColor: 'bg-indigo-100 text-indigo-800',
-    desc: 'Dòng mô hình thế hệ 3.5 mới nhất của Kira AI được tinh chỉnh đặc thù để đọc và bóc tách tài liệu PDF, phiếu kho.',
-  },
-  {
-    id: 'kira-3.5-flash',
-    name: 'Kira 3.5 Flash',
-    shortName: 'Kira 3.5 Flash',
-    badge: 'MỚI • Thế Hệ 3.5 Siêu Tốc',
-    badgeColor: 'bg-teal-100 text-teal-800',
-    desc: 'Mô hình chính thế hệ 3.5 của Kira AI tại Việt Nam, độ trễ thấp và tối ưu hóa xử lý ngôn ngữ tiếng Việt.',
-  },
-  {
-    id: 'deepseek-v4-flash-vision-exp',
-    name: 'DeepSeek V4 Flash Vision Exp',
-    shortName: 'DeepSeek V4 Vision',
-    badge: 'MỚI • Vision Thử Nghiệm Mới',
-    badgeColor: 'bg-rose-100 text-rose-800',
-    desc: 'Bản thử nghiệm Vision thế hệ mới của DeepSeek trên cụm máy chủ Kira AI, bóc tách cấu trúc hình ảnh sáng tạo.',
-  },
-  {
-    id: 'glm-5.3-flash-free',
-    name: 'GLM 5.3 Flash',
-    shortName: 'GLM 5.3 Flash',
-    badge: 'Đa Phương Thức',
-    badgeColor: 'bg-amber-100 text-amber-800',
-    desc: 'Mô hình GLM 5.3 Flash, xử lý đa phương thức và hỗ trợ phân tích tài liệu.',
+    desc: 'Phiên bản Vision 27B, bóc tách chuẩn xác chữ viết tay tiếng Việt và nhận diện số lượng chi tiết.',
   },
   {
     id: 'qwen3.8-max',
@@ -178,7 +152,95 @@ const KIRA_MODELS = [
     shortName: 'Qwen 3.8 MAX',
     badge: 'Đỉnh Cao Chữ Viết Tay',
     badgeColor: 'bg-purple-100 text-purple-800',
-    desc: 'Mô hình Qwen MAX cao cấp nhất, nhận diện chữ viết tay mờ hoặc nét bút bi phức tạp.',
+    desc: 'Mô hình cao cấp nhất của Qwen, nhận diện chữ viết tay mờ hoặc nét bút bi phức tạp.',
+  },
+  {
+    id: 'deepseek-v4.1-flash',
+    name: 'DeepSeek V4.1 Flash',
+    shortName: 'DeepSeek V4.1',
+    badge: 'MỚI • MoE Siêu Tốc',
+    badgeColor: 'bg-rose-100 text-rose-800',
+    desc: 'Dòng mô hình Vision thế hệ mới của DeepSeek trên máy chủ Kira AI, bóc tách cấu trúc bảng biểu xuất sắc với giá thành cực rẻ.',
+  },
+  {
+    id: 'deepseek-v4-flash-vision-exp',
+    name: 'DeepSeek V4 Flash Vision Exp',
+    shortName: 'DeepSeek V4 Vision',
+    badge: 'Vision Thử Nghiệm',
+    badgeColor: 'bg-rose-100 text-rose-800',
+    desc: 'Bản thử nghiệm Vision của DeepSeek, chuyên bóc tách cấu trúc hình ảnh và tài liệu.',
+  },
+  {
+    id: 'glm-5.3-flash',
+    name: 'GLM 5.3 Flash',
+    shortName: 'GLM 5.3 Flash',
+    badge: 'Zhipu AI Đa Phương Thức',
+    badgeColor: 'bg-amber-100 text-amber-800',
+    desc: 'Mô hình GLM 5.3 thế hệ mới của Zhipu AI, xử lý đa phương thức và hỗ trợ phân tích chứng từ nhanh.',
+  },
+  {
+    id: 'glm-5.3-flashx',
+    name: 'GLM 5.3 Flashx',
+    shortName: 'GLM 5.3 Flashx',
+    badge: 'MỚI • Bản Nâng Cấp',
+    badgeColor: 'bg-amber-100 text-amber-800',
+    desc: 'Phiên bản tăng tốc mở rộng của GLM 5.3 Flash, tối ưu tốc độ đọc ảnh phiếu.',
+  },
+  {
+    id: 'kira-3.5-flash-pdf',
+    name: 'Kira 3.5 Flash PDF',
+    shortName: 'Kira 3.5 PDF',
+    badge: 'Chuyên Dụng PDF & Phiếu Kho',
+    badgeColor: 'bg-indigo-100 text-indigo-800',
+    desc: 'Dòng mô hình chuyên biệt được tinh chỉnh đặc thù để đọc và bóc tách tài liệu PDF, phiếu xuất nhập kho.',
+  },
+  {
+    id: 'mimo-v2.6-flash',
+    name: 'MiMo V2.6 Flash',
+    shortName: 'MiMo V2.6',
+    badge: 'MỚI • Siêu Tốc 2.5s',
+    badgeColor: 'bg-teal-100 text-teal-800',
+    desc: 'Mô hình Vision thế hệ mới siêu nhẹ, tốc độ nhận diện chỉ 2.5s với chi phí tiết kiệm.',
+  },
+  {
+    id: 'mimo-v2.5',
+    name: 'MiMo V2.5',
+    shortName: 'MiMo V2.5',
+    badge: 'Đa Phương Thức & PDF',
+    badgeColor: 'bg-teal-100 text-teal-800',
+    desc: 'Mô hình MiMo V2.5 hỗ trợ phân tích đa tài liệu hình ảnh và PDF.',
+  },
+  {
+    id: 'kimi-k3',
+    name: 'Kimi K3',
+    shortName: 'Kimi K3',
+    badge: 'MỚI • Đọc Tài Liệu & PDF Chuẩn',
+    badgeColor: 'bg-sky-100 text-sky-800',
+    desc: 'Mô hình Moonshot AI Kimi K3, khả năng trích xuất văn bản và tài liệu bảng biểu chuyên sâu.',
+  },
+  {
+    id: 'gpt-5.4-nano',
+    name: 'GPT 5.4 Nano',
+    shortName: 'GPT 5.4 Nano',
+    badge: 'OpenAI Vision Gọn Nhẹ',
+    badgeColor: 'bg-blue-100 text-blue-800',
+    desc: 'Mô hình OpenAI thế hệ 5.4 nhỏ gọn, nhận diện hình ảnh chính xác và bóc tách dữ liệu có cấu trúc.',
+  },
+  {
+    id: 'minimax-m3',
+    name: 'MiniMax M3',
+    shortName: 'MiniMax M3',
+    badge: 'MỚI • MiniMax Vision',
+    badgeColor: 'bg-violet-100 text-violet-800',
+    desc: 'Mô hình đa phương thức MiniMax M3 phân tích chi tiết hình ảnh chứng từ và bảng kê.',
+  },
+  {
+    id: 'ox-alpha',
+    name: 'Ox Alpha',
+    shortName: 'Ox Alpha',
+    badge: 'MỚI • Đa Phương Thức & PDF',
+    badgeColor: 'bg-cyan-100 text-cyan-800',
+    desc: 'Mô hình Ox Alpha hỗ trợ đọc toàn diện tài liệu, ảnh và PDF với chi phí tối ưu.',
   },
   {
     id: 'kira-auto',
@@ -186,7 +248,7 @@ const KIRA_MODELS = [
     shortName: 'Kira Auto',
     badge: 'Tự Động Chọn Mô Hình',
     badgeColor: 'bg-blue-100 text-blue-800',
-    desc: 'Hệ thống tự động điều hướng request sang mô hình đang có độ trễ thấp nhất và sẵn sàng nhất.',
+    desc: 'Hệ thống tự động điều hướng request sang mô hình Vision đang có độ trễ thấp nhất và sẵn sàng nhất.',
   },
 ];
 
@@ -476,7 +538,7 @@ export default function Home() {
   const [openRouterModel, setOpenRouterModel] = useState("google/gemini-2.5-flash");
   const [openRouterTesting, setOpenRouterTesting] = useState(false);
   const [kiraKey, setKiraKey] = useState("");
-  const [kiraModel, setKiraModel] = useState("qwen3.8-27b-free");
+  const [kiraModel, setKiraModel] = useState("qwen3.8-flash");
   const [kiraTesting, setKiraTesting] = useState(false);
   const [baiKey, setBaiKey] = useState("");
   const [baiModel, setBaiModel] = useState("deepseek-v4.1-flash");
@@ -505,6 +567,34 @@ export default function Home() {
   const [fieldPrompts, setFieldPrompts] = useState(DEFAULT_FIELD_PROMPTS);
   const [viewMode, setViewMode] = useState('auto');
   const [scanHistory, setScanHistory] = useState([]);
+
+  // Toàn hệ thống Analytics & Donut Chart (Reset 05:00 GMT+7)
+  const [analyticsModalOpen, setAnalyticsModalOpen] = useState(false);
+  const [analyticsPeriod, setAnalyticsPeriod] = useState('today'); // 'today' | 'week' | 'month' | 'all'
+  const [analyticsSelectedModel, setAnalyticsSelectedModel] = useState('all');
+  const [analyticsSummary, setAnalyticsSummary] = useState({
+    period: 'today',
+    selectedModel: 'all',
+    total: 0,
+    success: 0,
+    error: 0,
+    successRate: '0.0',
+    totalItems: 0,
+    availableModels: [],
+    logs: [],
+  });
+  const [todayScanCount, setTodayScanCount] = useState(0);
+
+  const updateAnalyticsData = useCallback((period = analyticsPeriod, model = analyticsSelectedModel) => {
+    try {
+      const summary = getAnalyticsSummary(period, model);
+      setAnalyticsSummary(summary);
+      const todayStats = getAnalyticsSummary('today', 'all');
+      setTodayScanCount(todayStats.total);
+    } catch (e) {
+      console.error('Lỗi cập nhật analytics:', e);
+    }
+  }, [analyticsPeriod, analyticsSelectedModel]);
 
   const getActiveProviderLabel = (short = false) => {
     if (aiProvider === 'bai') {
@@ -622,7 +712,8 @@ export default function Home() {
 
     const savedKiraKey = localStorage.getItem('kira_api_key') || '';
     setKiraKey(savedKiraKey);
-    const savedKiraModel = localStorage.getItem('kira_model') || 'qwen3.8-27b-free';
+    let savedKiraModel = (localStorage.getItem('kira_model') || 'qwen3.8-flash').replace(/-free$/i, '');
+    if (!savedKiraModel) savedKiraModel = 'qwen3.8-flash';
     setKiraModel(savedKiraModel);
 
     const savedBaiKey = localStorage.getItem('bai_api_key') || '';
@@ -762,6 +853,9 @@ export default function Home() {
     if (typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone)) {
       setIsPwaInstalled(true);
     }
+
+    // Tải số liệu thống kê toàn hệ thống ban đầu
+    updateAnalyticsData();
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
@@ -2297,7 +2391,8 @@ export default function Home() {
 
   // Direct Kira AI OCR (supports both Free & VIP models faithfully)
   const scanClientKiraWithBase64 = async (base64Data, mimeType, key, model) => {
-    const effectiveModel = model?.trim() || 'qwen3.8-27b-free';
+    const rawModel = model?.trim() || 'qwen3.8-flash';
+    const effectiveModel = rawModel.replace(/-free$/i, '');
 
     // Auto-compress image to ensure fast processing and prevent payload limit / 502
     let payloadBase64 = base64Data;
@@ -2308,7 +2403,7 @@ export default function Home() {
           const img = new Image();
           img.onload = () => {
             const canvas = document.createElement('canvas');
-            const maxDim = 1000;
+            const maxDim = 1200;
             let w = img.width, h = img.height;
             if (w > maxDim || h > maxDim) {
               if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
@@ -2318,7 +2413,7 @@ export default function Home() {
             canvas.height = h;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, w, h);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.74);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.80);
             resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg' });
           };
           img.onerror = () => resolve(null);
@@ -2352,7 +2447,6 @@ export default function Home() {
       'ĐỊNH DẠNG TRẢ VỀ: Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
       '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
 
-    const isFree = effectiveModel.includes('-free') || effectiveModel.startsWith('kira-');
     const reqPayload = {
       key: key.trim(),
       model: effectiveModel,
@@ -2369,7 +2463,7 @@ export default function Home() {
       max_tokens: 3000,
     };
 
-    if (!effectiveModel.includes('qwen')) {
+    if (effectiveModel.startsWith('gpt-')) {
       reqPayload.response_format = { type: 'json_object' };
     }
 
@@ -2986,16 +3080,21 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       };
     }
     if (provider === 'kira') {
-      const targetId = modelId || kiraModel;
-      const mObj = KIRA_MODELS.find((m) => m.id === targetId);
-      const sName = mObj ? mObj.shortName : targetId;
+      const rawTarget = (modelId || kiraModel || 'qwen3.8-flash').trim();
+      const cleanId = rawTarget.replace(/-free$/i, '');
+      const mObj = KIRA_MODELS.find(
+        (m) =>
+          m.id.toLowerCase() === rawTarget.toLowerCase() ||
+          m.id.toLowerCase() === cleanId.toLowerCase()
+      );
+      const sName = mObj ? mObj.shortName : (cleanId.length > 24 ? cleanId.slice(0, 22) + '...' : cleanId);
       return {
         engine: 'kira',
-        model: targetId,
+        model: rawTarget,
         modelName: sName,
         providerLabel: 'Kira AI',
         badgeText: `✨ Kira AI (${sName})`,
-        badgeColor: 'bg-amber-100 text-amber-800 border border-amber-200',
+        badgeColor: mObj?.badgeColor || 'bg-amber-100 text-amber-800 border border-amber-200',
       };
     }
     if (provider === 'openrouter') {
@@ -3258,6 +3357,16 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
       saveHistoryRecord(nextId, resultData.soPhieu || '', normalizedItems, singlePageResult, true, badgeInfo);
 
+      // Ghi nhận sự kiện quét thành công vào bộ đếm toàn hệ thống
+      logScanEvent({
+        engine,
+        model: badgeInfo?.model || engine,
+        modelName: badgeInfo?.modelName || badgeInfo?.badgeText || engine,
+        status: 'success',
+        itemCount: normalizedItems.length,
+      });
+      updateAnalyticsData();
+
       // Auto-sync to Google Sheet if enabled
       if (autoSyncSheet && googleSheetUrl) {
         syncToGoogleSheet(normalizedItems, resultData.soPhieu || '', 1, true);
@@ -3268,6 +3377,17 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       }, 200);
     } catch (e) {
       console.error(e);
+      // Ghi nhận lỗi quét vào bộ đếm toàn hệ thống
+      const errModelInfo = getModelBadgeInfo(aiProvider);
+      logScanEvent({
+        engine: errModelInfo.engine,
+        model: errModelInfo.model,
+        modelName: errModelInfo.modelName || errModelInfo.badgeText || errModelInfo.engine,
+        status: 'error',
+        error: e.message,
+      });
+      updateAnalyticsData();
+
       showToast('❌ Lỗi: ' + e.message, 'error');
       setScanProgress({ active: true, percent: 0, text: 'Lỗi xảy ra, vui lòng thử lại' });
     } finally {
@@ -3364,6 +3484,16 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
           accumulatedItems = [...accumulatedItems, ...normalized];
 
+          // Ghi nhận trang thành công vào bộ đếm toàn hệ thống
+          logScanEvent({
+            engine: usedEngine,
+            model: badgeInfo?.model || usedEngine,
+            modelName: badgeInfo?.modelName || badgeInfo?.badgeText || usedEngine,
+            status: 'success',
+            itemCount: normalized.length,
+          });
+          updateAnalyticsData();
+
           const singleResult = {
             pageNum,
             soPhieu: effectiveSoPhieu,
@@ -3391,6 +3521,17 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
           });
         } catch (pageErr) {
           console.error(`Error on page ${pageNum}:`, pageErr);
+          // Ghi nhận lỗi trang vào bộ đếm toàn hệ thống
+          const pageErrInfo = getModelBadgeInfo(aiProvider);
+          logScanEvent({
+            engine: pageErrInfo.engine,
+            model: pageErrInfo.model,
+            modelName: pageErrInfo.modelName || pageErrInfo.badgeText || pageErrInfo.engine,
+            status: 'error',
+            error: pageErr.message,
+          });
+          updateAnalyticsData();
+
           // Ghi nhận trang lỗi vào perPageResults để giao diện phân trang hiển thị và có nút Quét Lại
           perPageResults.push({
             pageNum,
@@ -3557,6 +3698,16 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
       saveHistoryRecord(currentHistoryId || ('h_' + Date.now()), soPhieu || effectiveSoPhieu, newTableItems, newPageResults, false, badgeInfo);
 
+      // Ghi nhận sự kiện quét lại thành công vào bộ đếm toàn hệ thống
+      logScanEvent({
+        engine,
+        model: badgeInfo?.model || engine,
+        modelName: badgeInfo?.modelName || badgeInfo?.badgeText || engine,
+        status: 'success',
+        itemCount: normalized.length,
+      });
+      updateAnalyticsData();
+
       if (autoSyncSheet && googleSheetUrl && normalized.length > 0) {
         syncToGoogleSheet(normalized, effectiveSoPhieu || soPhieu, targetPageNum, true);
       }
@@ -3564,6 +3715,18 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       showToast(`✨ Đã quét lại thành công Trang ${targetPageNum} (+${normalized.length} dòng)!`, 'success');
     } catch (err) {
       console.error(`Lỗi quét lại trang ${targetPageNum}:`, err);
+
+      // Ghi nhận lỗi quét lại vào bộ đếm toàn hệ thống
+      const retryErrInfo = getModelBadgeInfo(aiProvider);
+      logScanEvent({
+        engine: retryErrInfo.engine,
+        model: retryErrInfo.model,
+        modelName: retryErrInfo.modelName || retryErrInfo.badgeText || retryErrInfo.engine,
+        status: 'error',
+        error: err.message,
+      });
+      updateAnalyticsData();
+
       setBatchProgressModal((prev) => {
         const nextStatuses = prev.pageStatuses.map((ps) =>
           ps.pageNum === targetPageNum ? { ...ps, status: 'error', detail: `Lỗi: ${err.message}` } : ps
@@ -4030,6 +4193,27 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 <IconQrCode className="w-5 h-5 text-blue-400" />
               </button>
             )}
+
+            {/* Analytics Dashboard Button */}
+            <button
+              onClick={() => {
+                updateAnalyticsData();
+                setAnalyticsModalOpen(true);
+              }}
+              className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 active:scale-95 transition-all text-slate-200 hover:text-white border border-slate-700/60 relative flex items-center gap-1.5"
+              title="Thống kê quét toàn hệ thống & Biểu đồ phân bổ Model (Reset 5:00 GMT+7)"
+            >
+              <svg className="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+              </svg>
+              <span className="hidden xl:inline text-xs font-bold text-slate-200">Thống Kê</span>
+              {todayScanCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center border-2 border-slate-900 shadow-sm">
+                  {todayScanCount}
+                </span>
+              )}
+            </button>
 
             <button
               onClick={() => setHistoryOpen(true)}
@@ -6397,12 +6581,12 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                               setKiraModel(e.target.value);
                               localStorage.setItem('kira_model', e.target.value);
                             }}
-                            placeholder="Ví dụ: qwen3.8-flash-free hoặc kira-3.5-flash-pdf"
+                            placeholder="Ví dụ: qwen3.8-flash, deepseek-v4.1-flash, kimi-k3, kira-3.5-flash-pdf..."
                             className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-amber-500 font-mono text-xs outline-none bg-slate-50"
                           />
                         </div>
                         <p className="text-[10px] text-amber-900 bg-amber-100/70 p-2 rounded-lg mt-1 leading-normal">
-                          💡 <strong>Mẹo dùng mượt mà:</strong> Hãy chọn <code>qwen3.8-flash-free</code> hoặc <code>qwen3.8-27b-free</code> để có tốc độ phản hồi nhanh nhất và độ chính xác cao đối với chữ viết tay.
+                          💡 <strong>Mẹo dùng mượt mà:</strong> Hãy chọn <code>qwen3.8-flash</code>, <code>deepseek-v4.1-flash</code> hoặc <code>qwen3.8-27b</code> để có tốc độ phản hồi nhanh nhất (3-5s) và độ chính xác cao đối với chữ viết tay.
                         </p>
                       </div>
                     </div>
@@ -7028,6 +7212,211 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 title="Xóa toàn bộ API keys đã lưu"
               >
                 Xóa Key
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Analytics Modal Dialog */}
+      {analyticsModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-fade-in">
+          <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-3xl w-full p-4 sm:p-6 shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-100 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                    Thống Kê Quét Toàn Hệ Thống
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Bộ đếm độc lập toàn hệ thống • Chu kỳ ngày tự động làm mới vào <span className="font-semibold text-indigo-600 dark:text-indigo-400">05:00 sáng hàng ngày (GMT+7)</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setAnalyticsModalOpen(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800 transition-colors"
+              >
+                <IconClose className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Filter Tabs Period */}
+            <div className="flex items-center gap-1.5 p-1 bg-slate-200/70 dark:bg-slate-800/80 rounded-2xl my-4 self-start text-xs font-semibold">
+              {[
+                { id: 'today', label: 'Hôm nay (từ 5h)' },
+                { id: 'week', label: 'Tuần này' },
+                { id: 'month', label: 'Tháng này' },
+                { id: 'all', label: 'Tất cả' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setAnalyticsPeriod(tab.id);
+                    setAnalyticsSummary(getAnalyticsSummary(tab.id, analyticsSelectedModel));
+                  }}
+                  className={`px-3 py-1.5 rounded-xl transition-all ${
+                    analyticsPeriod === tab.id
+                      ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-xs font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {/* 3 Overview Stat Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Thành công */}
+                <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-emerald-100 dark:border-emerald-900/40 shadow-xs flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Thành công</span>
+                    <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
+                      {analyticsSummary.success}
+                    </div>
+                    <span className="text-[11px] text-emerald-700/80 dark:text-emerald-400/80 font-medium">
+                      Tỷ lệ: {analyticsSummary.successRate}%
+                    </span>
+                  </div>
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                    <IconCheck className="w-5 h-5" />
+                  </div>
+                </div>
+
+                {/* Thất bại */}
+                <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-rose-100 dark:border-rose-900/40 shadow-xs flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Thất bại</span>
+                    <div className="text-2xl font-black text-rose-600 dark:text-rose-400 mt-0.5">
+                      {analyticsSummary.error}
+                    </div>
+                    <span className="text-[11px] text-rose-700/80 dark:text-rose-400/80 font-medium">
+                      {analyticsSummary.total > 0
+                        ? `Tỷ lệ: ${((analyticsSummary.error / analyticsSummary.total) * 100).toFixed(1)}%`
+                        : '0.0%'}
+                    </span>
+                  </div>
+                  <div className="w-10 h-10 rounded-2xl bg-rose-50 dark:bg-rose-900/30 flex items-center justify-center text-rose-600 dark:text-rose-400">
+                    <IconClose className="w-5 h-5" />
+                  </div>
+                </div>
+
+                {/* Tổng lượt */}
+                <div className="bg-white dark:bg-slate-800/90 rounded-2xl p-4 border border-indigo-100 dark:border-indigo-900/40 shadow-xs flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Tổng lượt quét</span>
+                    <div className="text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-0.5">
+                      {analyticsSummary.total}
+                    </div>
+                    <span className="text-[11px] text-indigo-700/80 dark:text-indigo-400/80 font-medium">
+                      {analyticsSummary.totalItems} dòng hàng bóc tách
+                    </span>
+                  </div>
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                    <IconScan className="w-5 h-5" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Component Phân Bổ Theo Model (Donut Chart) */}
+              <ModelDistributionChart
+                availableModels={analyticsSummary.availableModels}
+                selectedModel={analyticsSelectedModel}
+                onSelectModel={(mId) => {
+                  setAnalyticsSelectedModel(mId);
+                  setAnalyticsSummary(getAnalyticsSummary(analyticsPeriod, mId));
+                }}
+                totalScans={analyticsSummary.total}
+                successScans={analyticsSummary.success}
+                errorScans={analyticsSummary.error}
+              />
+
+              {/* Bảng Chi Tiết Từng Model */}
+              {analyticsSummary.availableModels.length > 0 && (
+                <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden shadow-xs">
+                  <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 font-bold text-xs text-slate-800 dark:text-slate-200 flex items-center justify-between">
+                    <span>Chi Tiết Từng Mô Hình</span>
+                    <span className="text-[11px] font-normal text-slate-400">
+                      {analyticsSummary.availableModels.length} mô hình đã sử dụng
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-100 dark:border-slate-700">
+                        <tr>
+                          <th className="py-2.5 px-3">Mô hình</th>
+                          <th className="py-2.5 px-3">Engine</th>
+                          <th className="py-2.5 px-3 text-center">Thành công</th>
+                          <th className="py-2.5 px-3 text-center">Thất bại</th>
+                          <th className="py-2.5 px-3 text-center">Tổng lượt</th>
+                          <th className="py-2.5 px-3 text-right">Tỷ lệ</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50 text-slate-700 dark:text-slate-300">
+                        {analyticsSummary.availableModels.map((m) => {
+                          const rate = m.total > 0 ? ((m.success / m.total) * 100).toFixed(1) : '0.0';
+                          return (
+                            <tr key={m.modelId} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
+                              <td className="py-2.5 px-3 font-semibold text-slate-900 dark:text-white">
+                                {m.modelName || m.modelId}
+                              </td>
+                              <td className="py-2.5 px-3 uppercase text-[10px] font-bold text-slate-400">
+                                {m.engine}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-bold text-emerald-600 dark:text-emerald-400">
+                                {m.success}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-bold text-rose-500">
+                                {m.error}
+                              </td>
+                              <td className="py-2.5 px-3 text-center font-extrabold text-slate-900 dark:text-white">
+                                {m.total}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-semibold text-indigo-600 dark:text-indigo-400">
+                                {rate}%
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-200 dark:border-slate-800 mt-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm('Senpai có chắc chắn muốn xóa toàn bộ lịch sử bộ đếm thống kê không?')) {
+                    clearAnalyticsLogs();
+                    updateAnalyticsData();
+                    showToast('Đã làm mới bộ đếm thống kê toàn hệ thống', 'success');
+                  }
+                }}
+                className="px-3.5 py-2 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 transition-colors"
+              >
+                Xóa lịch sử thống kê
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAnalyticsModalOpen(false)}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs active:scale-95 transition-all"
+              >
+                Đóng
               </button>
             </div>
           </div>
