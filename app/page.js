@@ -44,6 +44,7 @@ import {
 } from '@/lib/keepAlive';
 import {
   logScanEvent,
+  fetchServerAnalytics,
   getAnalyticsSummary,
   clearAnalyticsLogs,
 } from '@/lib/analytics';
@@ -585,14 +586,29 @@ export default function Home() {
   });
   const [todayScanCount, setTodayScanCount] = useState(0);
 
-  const updateAnalyticsData = useCallback((period = analyticsPeriod, model = analyticsSelectedModel) => {
+  const updateAnalyticsData = useCallback(async (period = analyticsPeriod, model = analyticsSelectedModel) => {
+    // 1. Phản hồi tức thì từ cache
     try {
-      const summary = getAnalyticsSummary(period, model);
-      setAnalyticsSummary(summary);
-      const todayStats = getAnalyticsSummary('today', 'all');
-      setTodayScanCount(todayStats.total);
+      const cached = getAnalyticsSummary(period, model);
+      if (cached) {
+        setAnalyticsSummary(cached);
+        if (typeof cached.todayTotal === 'number') {
+          setTodayScanCount(cached.todayTotal);
+        }
+      }
+    } catch {}
+
+    // 2. Đồng bộ số liệu toàn hệ thống từ Server Backend (đa trình duyệt / đa thiết bị)
+    try {
+      const serverData = await fetchServerAnalytics(period, model);
+      if (serverData) {
+        setAnalyticsSummary(serverData);
+        if (typeof serverData.todayTotal === 'number') {
+          setTodayScanCount(serverData.todayTotal);
+        }
+      }
     } catch (e) {
-      console.error('Lỗi cập nhật analytics:', e);
+      console.error('Lỗi cập nhật analytics từ server:', e);
     }
   }, [analyticsPeriod, analyticsSelectedModel]);
 
@@ -863,19 +879,28 @@ export default function Home() {
     };
   }, []);
 
-  // Lắng nghe trạng thái màn hình & chuyển tab để tự động duy trì Wake Lock và Keep-Alive
+  // Lắng nghe trạng thái màn hình & chuyển tab để tự động duy trì Wake Lock và đồng bộ số liệu thống kê
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
+        updateAnalyticsData();
         if (isScanning) {
           requestScreenWakeLock();
           startBackgroundAudioKeepAlive();
         }
       }
     };
+    const handleFocus = () => {
+      updateAnalyticsData();
+    };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [isScanning]);
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [isScanning, updateAnalyticsData]);
 
   // Tự động sao lưu tài liệu đang mở để chống mất khi hệ điều hành reload tab
   useEffect(() => {
@@ -4201,7 +4226,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 setAnalyticsModalOpen(true);
               }}
               className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 active:scale-95 transition-all text-slate-200 hover:text-white border border-slate-700/60 relative flex items-center gap-1.5"
-              title="Thống kê quét toàn hệ thống & Biểu đồ phân bổ Model (Reset 5:00 GMT+7)"
+              title="Thống kê quét toàn hệ thống & Biểu đồ phân bổ Model"
             >
               <svg className="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
@@ -6533,60 +6558,26 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                         <p className="text-[11px] text-slate-400">Key của Kira thường có định dạng tiền tố <code className="text-amber-700 font-bold">kira_...</code></p>
                       </div>
 
-                      {/* Kira Models Selector */}
-                      <div className="space-y-2">
-                        <label className="font-bold text-slate-700 block text-xs">Chọn Mô Hình AI Kira AI (kiraai.vn)</label>
-                        <div className="grid grid-cols-1 gap-2">
-                          {KIRA_MODELS.map((m) => {
-                            const isSelected = kiraModel === m.id;
-                            return (
-                              <button
-                                key={m.id}
-                                type="button"
-                                onClick={() => {
-                                  setKiraModel(m.id);
-                                  localStorage.setItem('kira_model', m.id);
-                                }}
-                                className={`p-3 rounded-xl border text-left transition-all flex items-start justify-between gap-3 ${
-                                  isSelected
-                                    ? 'border-amber-500 bg-amber-50/70 shadow-sm ring-1 ring-amber-500'
-                                    : 'border-slate-200 bg-white hover:bg-slate-50'
-                                }`}
-                              >
-                                <div className="space-y-1 flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-bold text-slate-900 text-xs">{m.name}</span>
-                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${m.badgeColor}`}>{m.badge}</span>
-                                  </div>
-                                  <p className="text-[11px] text-slate-500 leading-tight">{m.desc}</p>
-                                  <div className="font-mono text-[10px] text-amber-700 font-semibold">{m.id}</div>
-                                </div>
-                                {isSelected && (
-                                  <div className="text-right shrink-0">
-                                    <div className="text-[11px] text-amber-600 font-bold">✓ Đang chọn</div>
-                                  </div>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {/* Custom Kira Model Input */}
-                        <div className="pt-1">
-                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">Hoặc nhập mã model Kira AI tùy chỉnh:</label>
-                          <input
-                            type="text"
-                            value={kiraModel}
-                            onChange={(e) => {
-                              setKiraModel(e.target.value);
-                              localStorage.setItem('kira_model', e.target.value);
-                            }}
-                            placeholder="Ví dụ: qwen3.8-flash, deepseek-v4.1-flash, kimi-k3, kira-3.5-flash-pdf..."
-                            className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-amber-500 font-mono text-xs outline-none bg-slate-50"
-                          />
-                        </div>
-                        <p className="text-[10px] text-amber-900 bg-amber-100/70 p-2 rounded-lg mt-1 leading-normal">
-                          💡 <strong>Mẹo dùng mượt mà:</strong> Hãy chọn <code>qwen3.8-flash</code>, <code>deepseek-v4.1-flash</code> hoặc <code>qwen3.8-27b</code> để có tốc độ phản hồi nhanh nhất (3-5s) và độ chính xác cao đối với chữ viết tay.
+                      {/* Kira AI Model Input */}
+                      <div className="space-y-1.5">
+                        <label className="font-bold text-slate-700 flex items-center justify-between text-xs">
+                          <span>Mã Mô Hình AI (Model ID)</span>
+                          <span className="text-[11px] text-amber-700 font-mono font-semibold truncate max-w-[200px]">
+                            {kiraModel || 'Chưa điền'}
+                          </span>
+                        </label>
+                        <input
+                          type="text"
+                          value={kiraModel}
+                          onChange={(e) => {
+                            setKiraModel(e.target.value);
+                            localStorage.setItem('kira_model', e.target.value);
+                          }}
+                          placeholder="Điền mã mô hình Kira AI (ví dụ: qwen3.8-flash, deepseek-v4.1-flash, kira-3.5-flash-pdf...)"
+                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-100 font-mono text-xs outline-none bg-white"
+                        />
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          Bạn có thể tự chủ động điền bất kỳ mã mô hình nào được hỗ trợ trên Kira AI (kiraai.vn) để sử dụng.
                         </p>
                       </div>
                     </div>
@@ -6641,55 +6632,27 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                         <p className="text-[11px] text-slate-400">Key được lưu an toàn trên máy và tự động đồng bộ sang điện thoại qua Cloud Sync.</p>
                       </div>
 
-                      {/* 4 Models Selector */}
-                      <div className="space-y-2">
-                        <label className="font-bold text-slate-700 block text-xs">Chọn Mô Hình AI OpenRouter</label>
-                        <div className="grid grid-cols-1 gap-2">
-                          {OPENROUTER_MODELS.map((m) => {
-                            const isSelected = openRouterModel === m.id;
-                            return (
-                              <button
-                                key={m.id}
-                                type="button"
-                                onClick={() => {
-                                  setOpenRouterModel(m.id);
-                                  localStorage.setItem('openrouter_model', m.id);
-                                }}
-                                className={`p-3 rounded-xl border text-left transition-all flex items-start justify-between gap-3 ${
-                                  isSelected
-                                    ? 'border-purple-500 bg-purple-50/70 shadow-sm ring-1 ring-purple-500'
-                                    : 'border-slate-200 bg-white hover:bg-slate-50'
-                                }`}
-                              >
-                                <div className="space-y-1 flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-bold text-slate-900 text-xs">{m.name}</span>
-                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${m.badgeColor}`}>{m.badge}</span>
-                                  </div>
-                                  <p className="text-[11px] text-slate-500 leading-tight">{m.desc}</p>
-                                  <div className="font-mono text-[10px] text-purple-700 font-semibold">{m.id}</div>
-                                </div>
-                                {isSelected && (
-                                  <div className="text-right shrink-0">
-                                    <div className="text-[11px] text-purple-600 font-bold">✓ Đang chọn</div>
-                                  </div>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {/* Custom Model Input */}
-                        <div className="pt-1">
-                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">Hoặc nhập mã model OpenRouter tùy chỉnh:</label>
-                          <input
-                            type="text"
-                            value={openRouterModel}
-                            onChange={(e) => setOpenRouterModel(e.target.value)}
-                            placeholder="Ví dụ: google/gemini-2.0-flash-001"
-                            className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-purple-500 font-mono text-xs outline-none bg-slate-50"
-                          />
-                        </div>
+                      {/* OpenRouter Model Input */}
+                      <div className="space-y-1.5">
+                        <label className="font-bold text-slate-700 flex items-center justify-between text-xs">
+                          <span>Mã Mô Hình AI (Model ID)</span>
+                          <span className="text-[11px] text-purple-700 font-mono font-semibold truncate max-w-[200px]">
+                            {openRouterModel || 'Chưa điền'}
+                          </span>
+                        </label>
+                        <input
+                          type="text"
+                          value={openRouterModel}
+                          onChange={(e) => {
+                            setOpenRouterModel(e.target.value);
+                            localStorage.setItem('openrouter_model', e.target.value);
+                          }}
+                          placeholder="Điền mã mô hình OpenRouter (ví dụ: google/gemini-2.5-flash, openai/gpt-4o-mini...)"
+                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 font-mono text-xs outline-none bg-white"
+                        />
+                        <p className="text-[11px] text-slate-400 leading-normal">
+                          Bạn có thể tự chủ động điền bất kỳ mã mô hình Vision nào có trên OpenRouter (openrouter.ai/models) để sử dụng.
+                        </p>
                       </div>
                     </div>
                   )}
@@ -7236,7 +7199,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     Thống Kê Quét Toàn Hệ Thống
                   </h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Bộ đếm độc lập toàn hệ thống • Chu kỳ ngày tự động làm mới vào <span className="font-semibold text-indigo-600 dark:text-indigo-400">05:00 sáng hàng ngày (GMT+7)</span>
+                    Bộ đếm thống kê độc lập toàn hệ thống
                   </p>
                 </div>
               </div>
@@ -7251,7 +7214,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             {/* Filter Tabs Period */}
             <div className="flex items-center gap-1.5 p-1 bg-slate-200/70 dark:bg-slate-800/80 rounded-2xl my-4 self-start text-xs font-semibold">
               {[
-                { id: 'today', label: 'Hôm nay (từ 5h)' },
+                { id: 'today', label: 'Hôm nay' },
                 { id: 'week', label: 'Tuần này' },
                 { id: 'month', label: 'Tháng này' },
                 { id: 'all', label: 'Tất cả' },
@@ -7260,7 +7223,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   key={tab.id}
                   onClick={() => {
                     setAnalyticsPeriod(tab.id);
-                    setAnalyticsSummary(getAnalyticsSummary(tab.id, analyticsSelectedModel));
+                    updateAnalyticsData(tab.id, analyticsSelectedModel);
                   }}
                   className={`px-3 py-1.5 rounded-xl transition-all ${
                     analyticsPeriod === tab.id
@@ -7334,7 +7297,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 selectedModel={analyticsSelectedModel}
                 onSelectModel={(mId) => {
                   setAnalyticsSelectedModel(mId);
-                  setAnalyticsSummary(getAnalyticsSummary(analyticsPeriod, mId));
+                  updateAnalyticsData(analyticsPeriod, mId);
                 }}
                 totalScans={analyticsSummary.total}
                 successScans={analyticsSummary.success}
@@ -7399,10 +7362,10 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-200 dark:border-slate-800 mt-3">
               <button
                 type="button"
-                onClick={() => {
-                  if (window.confirm('Senpai có chắc chắn muốn xóa toàn bộ lịch sử bộ đếm thống kê không?')) {
-                    clearAnalyticsLogs();
-                    updateAnalyticsData();
+                onClick={async () => {
+                  if (window.confirm('Senpai có chắc chắn muốn xóa toàn bộ lịch sử bộ đếm thống kê trên toàn hệ thống không?')) {
+                    await clearAnalyticsLogs();
+                    await updateAnalyticsData();
                     showToast('Đã làm mới bộ đếm thống kê toàn hệ thống', 'success');
                   }
                 }}
