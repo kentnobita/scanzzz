@@ -46,6 +46,7 @@ import {
   logScanEvent,
   fetchServerAnalytics,
   getAnalyticsSummary,
+  getInitialTodayScanCount,
   clearAnalyticsLogs,
 } from '@/lib/analytics';
 import ModelDistributionChart from '@/components/ModelDistributionChart';
@@ -608,21 +609,30 @@ export default function Home() {
   const [analyticsModalOpen, setAnalyticsModalOpen] = useState(false);
   const [analyticsPeriod, setAnalyticsPeriod] = useState('today'); // 'today' | 'week' | 'month' | 'all'
   const [analyticsSelectedModel, setAnalyticsSelectedModel] = useState('all');
-  const [analyticsSummary, setAnalyticsSummary] = useState({
-    period: 'today',
-    selectedModel: 'all',
-    total: 0,
-    success: 0,
-    error: 0,
-    successRate: '0.0',
-    totalItems: 0,
-    availableModels: [],
-    logs: [],
+  const [analyticsSummary, setAnalyticsSummary] = useState(() => {
+    try {
+      return getAnalyticsSummary('today', 'all');
+    } catch {
+      return {
+        period: 'today',
+        selectedModel: 'all',
+        total: 0,
+        success: 0,
+        error: 0,
+        successRate: '0.0',
+        totalItems: 0,
+        availableModels: [],
+        logs: [],
+      };
+    }
   });
-  const [todayScanCount, setTodayScanCount] = useState(0);
+  const [todayScanCount, setTodayScanCount] = useState(getInitialTodayScanCount);
 
-  const updateAnalyticsData = useCallback(async (period = analyticsPeriod, model = analyticsSelectedModel) => {
-    // 1. Phản hồi tức thì từ cache
+  const lastAnalyticsFetchRef = useRef(0);
+  const isAnalyticsFetchingRef = useRef(false);
+
+  const updateAnalyticsData = useCallback(async (period = analyticsPeriod, model = analyticsSelectedModel, force = false) => {
+    // 1. Phản hồi tức thì từ cache snapshot (0ms, loại bỏ hoàn toàn chớp nháy về 0)
     try {
       const cached = getAnalyticsSummary(period, model);
       if (cached) {
@@ -633,7 +643,16 @@ export default function Home() {
       }
     } catch {}
 
-    // 2. Đồng bộ số liệu toàn hệ thống từ Server Backend (đa trình duyệt / đa thiết bị)
+    // 2. Chống gọi API trùng lặp (throttle tối thiểu 2.5s khi chuyển tab hoặc focus liên tục)
+    const now = Date.now();
+    if (!force) {
+      if (now - lastAnalyticsFetchRef.current < 2500) return;
+      if (isAnalyticsFetchingRef.current) return;
+    }
+    lastAnalyticsFetchRef.current = now;
+    isAnalyticsFetchingRef.current = true;
+
+    // 3. Đồng bộ số liệu toàn hệ thống từ Server Backend (đa trình duyệt / đa thiết bị)
     try {
       const serverData = await fetchServerAnalytics(period, model);
       if (serverData) {
@@ -644,6 +663,8 @@ export default function Home() {
       }
     } catch (e) {
       console.error('Lỗi cập nhật analytics từ server:', e);
+    } finally {
+      isAnalyticsFetchingRef.current = false;
     }
   }, [analyticsPeriod, analyticsSelectedModel]);
 
@@ -3435,7 +3456,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         status: 'success',
         itemCount: normalizedItems.length,
       });
-      updateAnalyticsData();
+      updateAnalyticsData(analyticsPeriod, analyticsSelectedModel, true);
 
       // Auto-sync to Google Sheet if enabled
       if (autoSyncSheet && googleSheetUrl) {
@@ -3456,7 +3477,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         status: 'error',
         error: e.message,
       });
-      updateAnalyticsData();
+      updateAnalyticsData(analyticsPeriod, analyticsSelectedModel, true);
 
       showToast('❌ Lỗi: ' + e.message, 'error');
       setScanProgress({ active: true, percent: 0, text: 'Lỗi xảy ra, vui lòng thử lại' });
@@ -3562,7 +3583,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             status: 'success',
             itemCount: normalized.length,
           });
-          updateAnalyticsData();
+          updateAnalyticsData(analyticsPeriod, analyticsSelectedModel, true);
 
           const singleResult = {
             pageNum,
@@ -3600,7 +3621,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             status: 'error',
             error: pageErr.message,
           });
-          updateAnalyticsData();
+          updateAnalyticsData(analyticsPeriod, analyticsSelectedModel, true);
 
           // Ghi nhận trang lỗi vào perPageResults để giao diện phân trang hiển thị và có nút Quét Lại
           perPageResults.push({
@@ -3776,7 +3797,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         status: 'success',
         itemCount: normalized.length,
       });
-      updateAnalyticsData();
+      updateAnalyticsData(analyticsPeriod, analyticsSelectedModel, true);
 
       if (autoSyncSheet && googleSheetUrl && normalized.length > 0) {
         syncToGoogleSheet(normalized, effectiveSoPhieu || soPhieu, targetPageNum, true);
@@ -3795,7 +3816,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         status: 'error',
         error: err.message,
       });
-      updateAnalyticsData();
+      updateAnalyticsData(analyticsPeriod, analyticsSelectedModel, true);
 
       setBatchProgressModal((prev) => {
         const nextStatuses = prev.pageStatuses.map((ps) =>
@@ -4267,7 +4288,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             {/* Analytics Dashboard Button */}
             <button
               onClick={() => {
-                updateAnalyticsData();
+                updateAnalyticsData(analyticsPeriod, analyticsSelectedModel, true);
                 setAnalyticsModalOpen(true);
               }}
               className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 active:scale-95 transition-all text-slate-200 hover:text-white border border-slate-700/60 relative flex items-center gap-1.5"
@@ -7268,7 +7289,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   key={tab.id}
                   onClick={() => {
                     setAnalyticsPeriod(tab.id);
-                    updateAnalyticsData(tab.id, analyticsSelectedModel);
+                    updateAnalyticsData(tab.id, analyticsSelectedModel, true);
                   }}
                   className={`px-3 py-1.5 rounded-xl transition-all ${
                     analyticsPeriod === tab.id
@@ -7342,7 +7363,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 selectedModel={analyticsSelectedModel}
                 onSelectModel={(mId) => {
                   setAnalyticsSelectedModel(mId);
-                  updateAnalyticsData(analyticsPeriod, mId);
+                  updateAnalyticsData(analyticsPeriod, mId, true);
                 }}
                 totalScans={analyticsSummary.total}
                 successScans={analyticsSummary.success}
@@ -7410,7 +7431,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 onClick={async () => {
                   if (window.confirm('Senpai có chắc chắn muốn xóa toàn bộ lịch sử bộ đếm thống kê trên toàn hệ thống không?')) {
                     await clearAnalyticsLogs();
-                    await updateAnalyticsData();
+                    await updateAnalyticsData(analyticsPeriod, analyticsSelectedModel, true);
                     showToast('Đã làm mới bộ đếm thống kê toàn hệ thống', 'success');
                   }
                 }}
