@@ -6,3 +6,5 @@ out/
 .env.*.local
 .agents/
 .data/
+*.zip
+.temp_chatgpt_bundle/

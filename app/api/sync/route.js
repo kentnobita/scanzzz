@@ -157,7 +157,7 @@ export async function POST(request) {
       apiUsage: body.apiUsage && typeof body.apiUsage === 'object' ? body.apiUsage : {},
       aiProvider: (body.aiProvider === 'apinex' ? 'gemini' : (body.aiProvider || 'gemini')),
       openRouterKey: body.openRouterKey || '',
-      openRouterModel: body.openRouterModel || 'google/gemini-2.5-flash',
+      openRouterModel: body.openRouterModel || 'nex-agi/nex-n2.5-pro:free',
       kiraKey: body.kiraKey || '',
       kiraModel: body.kiraModel || 'qwen3.8-max',
       baiKey: body.baiKey || '',

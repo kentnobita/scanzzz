@@ -80,12 +80,47 @@ const OPENROUTER_MODELS = [
     desc: 'Bản rút gọn siêu nhẹ của Nex AGI. Phản hồi tức thì dưới 2s cho các phiếu in rõ nét và bảng biểu.',
   },
   {
-    id: 'inclusionai/ling-3.0-flash-vl:free',
-    name: 'InclusionAI: Ling 3.0 Flash VL',
-    shortName: 'Ling 3.0 Flash VL',
-    badge: 'MỚI • Vision 3.0',
+    id: 'qwen/qwen3.8-27b:free',
+    name: 'Qwen: Qwen3.8 27B',
+    shortName: 'Qwen3.8 27B',
+    badge: 'MỚI • Vision & Video',
+    badgeColor: 'bg-violet-100 text-violet-800',
+    desc: 'Mô hình Vision 27B mới của Qwen, phù hợp đọc bảng biểu và tài liệu có hình ảnh.',
+    supportsJsonMode: false,
+  },
+  {
+    id: 'dots-studio/dots-3-note-preview:free',
+    name: 'Dots Studio: Dots3-Note Preview',
+    shortName: 'Dots3-Note',
+    badge: 'MỚI • Chuyên Tài Liệu',
     badgeColor: 'bg-cyan-100 text-cyan-800',
-    desc: 'Mô hình Vision đa phương thức thế hệ mới của InclusionAI. Nhận diện chữ viết tay và bảng biểu tiếng Việt tốt.',
+    desc: 'Mô hình Vision hướng đến ghi chú và tài liệu, có ngữ cảnh 512K và hỗ trợ JSON có cấu trúc.',
+  },
+  {
+    id: 'thinkingmachines/inkling-small:free',
+    name: 'Thinking Machines: Inkling Small',
+    shortName: 'Inkling Small',
+    badge: 'MỚI • Siêu Nhanh',
+    badgeColor: 'bg-teal-100 text-teal-800',
+    desc: 'Phiên bản Vision nhỏ, tốc độ cao, hỗ trợ hình ảnh và ngữ cảnh 1M.',
+    supportsJsonMode: false,
+  },
+  {
+    id: 'thinkingmachines/inkling:free',
+    name: 'Thinking Machines: Inkling',
+    shortName: 'Inkling',
+    badge: 'MỚI • Ngữ Cảnh 1M',
+    badgeColor: 'bg-sky-100 text-sky-800',
+    desc: 'Mô hình Vision đầy đủ với ngữ cảnh lớn, phù hợp cho phiếu nhiều chi tiết.',
+    supportsJsonMode: false,
+  },
+  {
+    id: 'google/gemma-4-26b-a4b-it:free',
+    name: 'Google: Gemma 4 26B A4B',
+    shortName: 'Gemma 4 26B',
+    badge: 'MỚI • Nhẹ & Ổn Định',
+    badgeColor: 'bg-blue-100 text-blue-800',
+    desc: 'Bản Gemma Vision 26B nhẹ hơn, hỗ trợ ảnh, video và JSON có cấu trúc.',
   },
   {
     id: 'google/gemma-4-31b-it:free',
@@ -536,7 +571,7 @@ export default function Home() {
   const [activeGeminiKeyIndex, setActiveGeminiKeyIndex] = useState(0);
   const geminiKeyIndexRef = useRef(0);
   const [openRouterKey, setOpenRouterKey] = useState("");
-  const [openRouterModel, setOpenRouterModel] = useState("google/gemini-2.5-flash");
+  const [openRouterModel, setOpenRouterModel] = useState("nex-agi/nex-n2.5-pro:free");
   const [openRouterTesting, setOpenRouterTesting] = useState(false);
   const [kiraKey, setKiraKey] = useState("");
   const [kiraModel, setKiraModel] = useState("qwen3.8-flash");
@@ -719,7 +754,7 @@ export default function Home() {
 
     const savedOrKey = localStorage.getItem('openrouter_api_key') || '';
     setOpenRouterKey(savedOrKey);
-    let savedOrModel = localStorage.getItem('openrouter_model') || 'google/gemini-2.5-flash';
+    let savedOrModel = localStorage.getItem('openrouter_model') || 'nex-agi/nex-n2.5-pro:free';
     if (savedOrModel === 'google/gemini-2.0-flash-001') {
       savedOrModel = 'google/gemini-2.5-flash';
       localStorage.setItem('openrouter_model', savedOrModel);
@@ -2253,13 +2288,17 @@ export default function Home() {
       max_tokens: 3000,
     };
 
-    // Tắt suy luận dài dòng cho các dòng model OpenRouter hỗ trợ reasoning (như Nex AGI) để đạt tốc độ siêu tốc 1-3s và trả thẳng JSON
-    if (selectedModel.includes('nex') || selectedModel.includes('free') || selectedModel.includes('thinking')) {
+    const configuredModel = OPENROUTER_MODELS.find((entry) => entry.id === selectedModel);
+
+    // Chỉ tắt reasoning ở model đã xác nhận hỗ trợ chế độ này.
+    if (configuredModel?.disableReasoning) {
       reqBody.include_reasoning = false;
       reqBody.reasoning = { effort: 'none' };
     }
 
-    if (!selectedModel.includes('qwen')) {
+    // Một vài model Vision miễn phí không hỗ trợ response_format. Prompt vẫn yêu
+    // cầu JSON, nhưng không gửi tham số không được nhà cung cấp hỗ trợ.
+    if (configuredModel?.supportsJsonMode !== false && !selectedModel.includes('qwen')) {
       reqBody.response_format = { type: 'json_object' };
     }
 
@@ -2276,7 +2315,13 @@ export default function Home() {
 
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      const err = new Error(errData.error?.message || ('OpenRouter Error: ' + res.status));
+      const providerMessage =
+        errData.error?.message ||
+        (typeof errData.error === 'string' ? errData.error : '') ||
+        errData.message ||
+        errData.detail ||
+        `OpenRouter Error: ${res.status}`;
+      const err = new Error(providerMessage);
       err.status = res.status;
       throw err;
     }
@@ -3383,7 +3428,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       saveHistoryRecord(nextId, resultData.soPhieu || '', normalizedItems, singlePageResult, true, badgeInfo);
 
       // Ghi nhận sự kiện quét thành công vào bộ đếm toàn hệ thống
-      logScanEvent({
+      await logScanEvent({
         engine,
         model: badgeInfo?.model || engine,
         modelName: badgeInfo?.modelName || badgeInfo?.badgeText || engine,
@@ -3404,7 +3449,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       console.error(e);
       // Ghi nhận lỗi quét vào bộ đếm toàn hệ thống
       const errModelInfo = getModelBadgeInfo(aiProvider);
-      logScanEvent({
+      await logScanEvent({
         engine: errModelInfo.engine,
         model: errModelInfo.model,
         modelName: errModelInfo.modelName || errModelInfo.badgeText || errModelInfo.engine,
@@ -3510,7 +3555,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
           accumulatedItems = [...accumulatedItems, ...normalized];
 
           // Ghi nhận trang thành công vào bộ đếm toàn hệ thống
-          logScanEvent({
+          await logScanEvent({
             engine: usedEngine,
             model: badgeInfo?.model || usedEngine,
             modelName: badgeInfo?.modelName || badgeInfo?.badgeText || usedEngine,
@@ -3548,7 +3593,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
           console.error(`Error on page ${pageNum}:`, pageErr);
           // Ghi nhận lỗi trang vào bộ đếm toàn hệ thống
           const pageErrInfo = getModelBadgeInfo(aiProvider);
-          logScanEvent({
+          await logScanEvent({
             engine: pageErrInfo.engine,
             model: pageErrInfo.model,
             modelName: pageErrInfo.modelName || pageErrInfo.badgeText || pageErrInfo.engine,
@@ -3724,7 +3769,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       saveHistoryRecord(currentHistoryId || ('h_' + Date.now()), soPhieu || effectiveSoPhieu, newTableItems, newPageResults, false, badgeInfo);
 
       // Ghi nhận sự kiện quét lại thành công vào bộ đếm toàn hệ thống
-      logScanEvent({
+      await logScanEvent({
         engine,
         model: badgeInfo?.model || engine,
         modelName: badgeInfo?.modelName || badgeInfo?.badgeText || engine,
@@ -3743,7 +3788,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
       // Ghi nhận lỗi quét lại vào bộ đếm toàn hệ thống
       const retryErrInfo = getModelBadgeInfo(aiProvider);
-      logScanEvent({
+      await logScanEvent({
         engine: retryErrInfo.engine,
         model: retryErrInfo.model,
         modelName: retryErrInfo.modelName || retryErrInfo.badgeText || retryErrInfo.engine,

@@ -13,6 +13,15 @@ const RESET_OFFSET_MS = 2 * 60 * 60 * 1000;
 
 // Bộ nhớ đệm in-memory (hữu ích trên môi trường serverless nếu file read-only)
 let inMemoryLogs = null;
+let mutationQueue = Promise.resolve();
+
+// fs và bộ nhớ đệm là dùng chung trong một tiến trình Next.js. Xếp hàng các
+// thao tác thay đổi để hai trang PDF hoàn tất cùng lúc không ghi đè lẫn nhau.
+function enqueueMutation(operation) {
+  const result = mutationQueue.then(operation, operation);
+  mutationQueue = result.catch(() => {});
+  return result;
+}
 
 function getShiftedDate(timestamp = Date.now()) {
   return new Date(timestamp + RESET_OFFSET_MS);
@@ -213,7 +222,10 @@ function computeSummary(allLogs, period = 'today', selectedModel = 'all') {
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const period = searchParams.get('period') || 'today';
+    const requestedPeriod = searchParams.get('period') || 'today';
+    const period = ['today', 'week', 'month', 'all'].includes(requestedPeriod)
+      ? requestedPeriod
+      : 'today';
     const model = searchParams.get('model') || 'all';
 
     const allLogs = await readAllLogs();
@@ -246,25 +258,24 @@ export async function POST(request) {
       timestamp = Date.now(),
     } = body;
 
-    const allLogs = await readAllLogs();
+    const entry = await enqueueMutation(async () => {
+      const allLogs = await readAllLogs();
+      const nextEntry = {
+        id: 'scan_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        timestamp: Number(timestamp) || Date.now(),
+        engine: String(engine).slice(0, 100),
+        model: String(model || 'default').slice(0, 200),
+        modelName: String(modelName || model || 'Không xác định').slice(0, 200),
+        status: status === 'error' ? 'error' : 'success',
+        itemCount: Math.max(0, Number(itemCount) || 0),
+        error: error ? String(error).slice(0, 300) : null,
+      };
 
-    const entry = {
-      id: 'scan_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
-      timestamp: Number(timestamp) || Date.now(),
-      engine,
-      model: model || 'default',
-      modelName: modelName || model || 'Không xác định',
-      status: status === 'error' ? 'error' : 'success',
-      itemCount: Number(itemCount) || 0,
-      error: error ? String(error).slice(0, 300) : null,
-    };
-
-    allLogs.unshift(entry);
-    if (allLogs.length > MAX_LOGS) {
-      allLogs.length = MAX_LOGS;
-    }
-
-    await saveAllLogs(allLogs);
+      allLogs.unshift(nextEntry);
+      if (allLogs.length > MAX_LOGS) allLogs.length = MAX_LOGS;
+      await saveAllLogs(allLogs);
+      return nextEntry;
+    });
 
     return NextResponse.json({
       success: true,
@@ -278,7 +289,7 @@ export async function POST(request) {
 
 export async function DELETE() {
   try {
-    await saveAllLogs([]);
+    await enqueueMutation(() => saveAllLogs([]));
     return NextResponse.json({ success: true, message: 'Đã xóa toàn bộ lịch sử thống kê' });
   } catch (error) {
     console.error('API DELETE /api/analytics error:', error);
