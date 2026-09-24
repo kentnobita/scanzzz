@@ -11,7 +11,10 @@ const MAX_LOGS = 10000;
 // GMT+7 chênh lệch +7h so với UTC. Muốn 5h thành 0h: +7h - 5h = +2h (7200000 ms)
 const RESET_OFFSET_MS = 2 * 60 * 60 * 1000;
 
-// Bộ nhớ đệm in-memory (hữu ích trên môi trường serverless nếu file read-only)
+const LEGACY_REDIS_KEY = 'global_analytics_logs';
+const REDIS_LOG_LIST_KEY = 'global_analytics_logs:v2';
+
+// Chỉ dùng làm phương án dự phòng khi Redis chưa cấu hình hoặc đang lỗi.
 let inMemoryLogs = null;
 let mutationQueue = Promise.resolve();
 
@@ -61,97 +64,108 @@ function isSameMonthCycle(timestamp, referenceTime = Date.now()) {
   );
 }
 
-// Upstash / Vercel KV REST helpers (nếu có cấu hình)
-async function getUpstashAnalytics() {
+function getRedisConfig() {
   const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return null;
-
-  try {
-    const res = await fetch(`${url}/get/global_analytics_logs`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.result) {
-        return typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
-      }
-    }
-  } catch (e) {
-    console.error('Upstash GET Analytics error:', e);
-  }
-  return null;
+  return url && token ? { url: url.replace(/\/$/, ''), token } : null;
 }
 
-async function setUpstashAnalytics(logs) {
-  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) return false;
-
+async function runRedisPipeline(commands) {
+  const config = getRedisConfig();
+  if (!config) return null;
   try {
-    const res = await fetch(`${url}/set/global_analytics_logs`, {
+    const res = await fetch(`${config.url}/pipeline`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(JSON.stringify(logs)),
+      headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(commands),
       cache: 'no-store',
     });
-    return res.ok;
+    if (!res.ok) throw new Error(`Redis HTTP ${res.status}`);
+    const results = await res.json();
+    if (!Array.isArray(results) || results.some((result) => result.error)) {
+      throw new Error(results?.find((result) => result.error)?.error || 'Redis pipeline thất bại');
+    }
+    return results.map((result) => result.result);
   } catch (e) {
-    console.error('Upstash SET Analytics error:', e);
-    return false;
+    console.error('Redis Analytics error:', e);
+    return null;
   }
 }
 
-// Đọc toàn bộ logs từ file hoặc bộ nhớ
+function parseLogEntries(values) {
+  if (!Array.isArray(values)) return [];
+  return values.flatMap((value) => {
+    try {
+      const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      return [];
+    }
+  }).filter((entry) => entry && typeof entry === 'object');
+}
+
+function mergeLogs(...groups) {
+  const unique = new Map();
+  groups.flat().forEach((log) => {
+    const key = log.id || `${log.timestamp}_${log.model}_${log.status}`;
+    if (!unique.has(key)) unique.set(key, log);
+  });
+  return [...unique.values()]
+    .sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0))
+    .slice(0, MAX_LOGS);
+}
+
+async function getRedisLogs() {
+  const results = await runRedisPipeline([
+    ['LRANGE', REDIS_LOG_LIST_KEY, 0, MAX_LOGS - 1],
+    // Tương thích với dữ liệu mảng JSON của phiên bản trước.
+    ['GET', LEGACY_REDIS_KEY],
+  ]);
+  if (!results) return null;
+  return mergeLogs(parseLogEntries(results[0]), parseLogEntries([results[1]]));
+}
+
+async function appendRedisLog(entry) {
+  const results = await runRedisPipeline([
+    ['LPUSH', REDIS_LOG_LIST_KEY, JSON.stringify(entry)],
+    ['LTRIM', REDIS_LOG_LIST_KEY, 0, MAX_LOGS - 1],
+  ]);
+  return Boolean(results);
+}
+
+async function clearRedisLogs() {
+  const results = await runRedisPipeline([
+    ['DEL', REDIS_LOG_LIST_KEY],
+    ['DEL', LEGACY_REDIS_KEY],
+  ]);
+  return Boolean(results);
+}
+
 async function readAllLogs() {
-  if (inMemoryLogs !== null) {
-    return inMemoryLogs;
+  if (getRedisConfig()) {
+    const redisLogs = await getRedisLogs();
+    if (redisLogs !== null) return redisLogs;
   }
-
-  // Thử đọc từ Upstash nếu có
-  const upstashLogs = await getUpstashAnalytics();
-  if (Array.isArray(upstashLogs)) {
-    inMemoryLogs = upstashLogs;
-    return inMemoryLogs;
-  }
-
+  if (inMemoryLogs !== null) return inMemoryLogs;
   try {
     if (fs.existsSync(storeFile)) {
-      const raw = fs.readFileSync(storeFile, 'utf8');
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        inMemoryLogs = parsed;
-        return inMemoryLogs;
-      }
+      const parsed = JSON.parse(fs.readFileSync(storeFile, 'utf8'));
+      if (Array.isArray(parsed)) return (inMemoryLogs = parsed);
     }
   } catch (e) {
     console.error('Lỗi khi đọc file analytics_store.json:', e);
   }
-
-  inMemoryLogs = [];
-  return inMemoryLogs;
+  return (inMemoryLogs = []);
 }
 
-// Lưu toàn bộ logs vào file và bộ nhớ
-async function saveAllLogs(logs) {
+async function saveFallbackLogs(logs) {
   inMemoryLogs = logs;
-
-  // Lưu vào file local
   try {
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
+    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
     fs.writeFileSync(storeFile, JSON.stringify(logs, null, 2), 'utf8');
   } catch (e) {
     console.error('Lỗi khi ghi file analytics_store.json:', e.message);
   }
-
-  // Đồng bộ lên Upstash nếu có cấu hình
-  await setUpstashAnalytics(logs);
 }
 
 // Tính toán tóm tắt thống kê từ danh sách logs
@@ -259,7 +273,6 @@ export async function POST(request) {
     } = body;
 
     const entry = await enqueueMutation(async () => {
-      const allLogs = await readAllLogs();
       const nextEntry = {
         id: 'scan_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
         timestamp: Number(timestamp) || Date.now(),
@@ -271,9 +284,16 @@ export async function POST(request) {
         error: error ? String(error).slice(0, 300) : null,
       };
 
+      // LPUSH là lệnh nguyên tử: nhiều PC/Android quét đồng thời sẽ không ghi
+      // đè lượt của nhau như cách GET/SET cả mảng trước đây.
+      if (getRedisConfig() && await appendRedisLog(nextEntry)) {
+        return nextEntry;
+      }
+
+      const allLogs = await readAllLogs();
       allLogs.unshift(nextEntry);
       if (allLogs.length > MAX_LOGS) allLogs.length = MAX_LOGS;
-      await saveAllLogs(allLogs);
+      await saveFallbackLogs(allLogs);
       return nextEntry;
     });
 
@@ -289,7 +309,13 @@ export async function POST(request) {
 
 export async function DELETE() {
   try {
-    await enqueueMutation(() => saveAllLogs([]));
+    await enqueueMutation(async () => {
+      if (getRedisConfig() && await clearRedisLogs()) {
+        inMemoryLogs = [];
+        return;
+      }
+      await saveFallbackLogs([]);
+    });
     return NextResponse.json({ success: true, message: 'Đã xóa toàn bộ lịch sử thống kê' });
   } catch (error) {
     console.error('API DELETE /api/analytics error:', error);
