@@ -2165,7 +2165,7 @@ async function handleMessage(msg) {
   }
 
   if (matchCommand('sync')) {
-    const args = cleanText.split(' ');
+    const args = cleanText.split(/\s+/);
     const code = (args[1] || '').trim().toUpperCase();
     if (!code) {
       return sendTelegram('sendMessage', {
@@ -2180,34 +2180,68 @@ async function handleMessage(msg) {
       let cloudData = null;
       let matchedSource = '';
 
-      // Danh sách các địa chỉ máy chủ thử đồng bộ theo thứ tự ưu tiên
-      const endpoints = [];
-      if (cfg.serverUrl) endpoints.push(`${cfg.serverUrl.replace(/\/+$/, '')}/api/sync`);
-      if (process.env.WEB_APP_URL) endpoints.push(`${process.env.WEB_APP_URL.replace(/\/+$/, '')}/api/sync`);
-      endpoints.push('https://scanzzz.vercel.app/api/sync');
-      endpoints.push('http://localhost:3000/api/sync');
-      endpoints.push('http://127.0.0.1:3000/api/sync');
-
-      for (const ep of endpoints) {
+      // 1. Thử kéo trực tiếp từ Redis Upstash nếu bot có biến môi trường Redis
+      const redisUrl = process.env.KV_REST_API_URL || 
+                       process.env.UPSTASH_REDIS_REST_URL || 
+                       process.env.UPSTASH_REDIS_URL || 
+                       process.env.REDIS_REST_URL;
+      const redisToken = process.env.KV_REST_API_TOKEN || 
+                         process.env.UPSTASH_REDIS_REST_TOKEN || 
+                         process.env.UPSTASH_REDIS_TOKEN || 
+                         process.env.REDIS_REST_TOKEN;
+      if (redisUrl && redisToken) {
         try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 6000);
-          const res = await fetch(`${ep}?code=${encodeURIComponent(code)}`, {
-            signal: controller.signal,
-            headers: { 'Cache-Control': 'no-cache' }
+          const redisKey = `sync_${code.trim().toUpperCase()}`;
+          const res = await fetch(`${redisUrl.replace(/\/+$/, '')}/pipeline`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${redisToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify([['GET', redisKey]])
           });
-          clearTimeout(timeoutId);
           if (res.ok) {
-            const json = await res.json();
-            if (json && json.data) {
-              cloudData = json.data;
-              matchedSource = ep;
-              break;
+            const results = await res.json();
+            if (Array.isArray(results) && results[0] && results[0].result) {
+              const val = results[0].result;
+              cloudData = typeof val === 'string' ? JSON.parse(val) : val;
+              if (cloudData) matchedSource = 'Redis Upstash (Trực tiếp)';
             }
           }
         } catch (e) {}
       }
 
+      // 2. Thử các địa chỉ Web Server theo thứ tự ưu tiên
+      if (!cloudData) {
+        const endpoints = [];
+        if (cfg.serverUrl) endpoints.push(`${cfg.serverUrl.replace(/\/+$/, '')}/api/sync`);
+        if (process.env.WEB_APP_URL) endpoints.push(`${process.env.WEB_APP_URL.replace(/\/+$/, '')}/api/sync`);
+        endpoints.push('https://scanzzz.vercel.app/api/sync');
+        endpoints.push('http://localhost:3000/api/sync');
+        endpoints.push('http://127.0.0.1:3000/api/sync');
+
+        for (const ep of endpoints) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 6000);
+            const res = await fetch(`${ep}?code=${encodeURIComponent(code)}`, {
+              signal: controller.signal,
+              headers: { 'Cache-Control': 'no-cache' }
+            });
+            clearTimeout(timeoutId);
+            if (res.ok) {
+              const json = await res.json();
+              if (json && json.data) {
+                cloudData = json.data;
+                matchedSource = ep;
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+      }
+
+      // 3. Thử bộ nhớ cục bộ (.data / candidate dirs)
       if (!cloudData) {
         const candidateDirs = getCandidateDataDirs();
         for (const dir of candidateDirs) {
@@ -2256,31 +2290,28 @@ async function handleMessage(msg) {
         cfg.geminiModel = cloudData.geminiModel === 'gemini-2.5-flash' ? 'gemini-3.6-flash' : String(cloudData.geminiModel).trim();
       }
 
-      // Cập nhật API Keys
-      if (cloudData.apiKey !== undefined && cloudData.apiKey !== null) {
-        const val = String(cloudData.apiKey).trim();
-        if (val || !cfg.geminiKey) cfg.geminiKey = val;
+      // Cập nhật toàn diện tất cả các API Keys
+      const gKey = String(cloudData.geminiKey || cloudData.apiKey || '').trim();
+      if (gKey) cfg.geminiKey = gKey;
+
+      const gBackups = cloudData.geminiBackupKeys || cloudData.backupKeys;
+      if (Array.isArray(gBackups) && gBackups.length > 0) {
+        cfg.geminiBackupKeys = gBackups.map(k => String(k).trim()).filter(Boolean);
       }
-      if (Array.isArray(cloudData.backupKeys)) {
-        cfg.geminiBackupKeys = cloudData.backupKeys.map(k => String(k).trim()).filter(Boolean);
-      }
-      if (cloudData.openRouterKey !== undefined && cloudData.openRouterKey !== null) {
-        const val = String(cloudData.openRouterKey).trim();
-        if (val || !cfg.openRouterKey) cfg.openRouterKey = val;
-      }
-      if (cloudData.kiraKey !== undefined && cloudData.kiraKey !== null) {
-        const val = String(cloudData.kiraKey).trim();
-        if (val || !cfg.kiraKey) cfg.kiraKey = val;
-      }
-      if (cloudData.baiKey !== undefined && cloudData.baiKey !== null) {
-        const val = String(cloudData.baiKey).trim();
-        if (val || !cfg.baiKey) cfg.baiKey = val;
-      }
+
+      const orKey = String(cloudData.openRouterKey || '').trim();
+      if (orKey) cfg.openRouterKey = orKey;
+
+      const kKey = String(cloudData.kiraKey || '').trim();
+      if (kKey) cfg.kiraKey = kKey;
+
+      const bKey = String(cloudData.baiKey || '').trim();
+      if (bKey) cfg.baiKey = bKey;
 
       // Cập nhật cấu hình Google Sheet & Cột
       if (cloudData.googleSheetUrl !== undefined && cloudData.googleSheetUrl !== null) {
         const val = String(cloudData.googleSheetUrl).trim();
-        if (val || !cfg.googleSheetUrl) cfg.googleSheetUrl = val;
+        if (val) cfg.googleSheetUrl = val;
       }
       if (cloudData.autoSyncSheet !== undefined) {
         cfg.autoSyncSheet = Boolean(cloudData.autoSyncSheet);
@@ -2295,17 +2326,26 @@ async function handleMessage(msg) {
 
       saveBotConfig(cfg);
       const info = getActiveProviderInfo(cfg);
-      const gKeys = getGeminiKeys(cfg);
-      const geminiStatusStr = gKeys.length > 1
-        ? `\`${cfg.geminiModel || 'gemini-3.6-flash'}\` (${gKeys.length} keys luân chuyển 🎯)`
+      const allGKeys = getGeminiKeys(cfg);
+      const geminiStatusStr = allGKeys.length > 1
+        ? `\`${cfg.geminiModel || 'gemini-3.6-flash'}\` (${allGKeys.length} keys luân chuyển 🎯)`
         : `\`${cfg.geminiModel || 'gemini-3.6-flash'}\``;
+
+      // Thống kê các key đã được nạp
+      const loadedKeyNames = [];
+      if (allGKeys.length > 0) loadedKeyNames.push(`Gemini (${allGKeys.length} keys)`);
+      if (cfg.baiKey) loadedKeyNames.push('B.AI');
+      if (cfg.kiraKey) loadedKeyNames.push('Kira AI');
+      if (cfg.openRouterKey) loadedKeyNames.push('OpenRouter');
+      const keySummaryText = loadedKeyNames.length > 0 ? loadedKeyNames.join(' • ') : 'Chưa có key';
 
       return sendTelegram('sendMessage', {
         chat_id: chatId,
         text: `🎉 *Yatta~! Akko đã đồng bộ thành công từ Cloud* 【${maskSyncCode(code)}】 *rồi nè Senpai ơi!* ٩(◕‿◕｡)۶\n\n` +
-          `• Nguồn máy chủ: \`${matchedSource}\`\n` +
+          `• Nguồn dữ liệu: \`${matchedSource}\`\n` +
           `• Nhà cung cấp đang chọn: *${info.providerName.toUpperCase()}* 🎯\n` +
           `• Mô hình AI đang chạy: \`${info.model}\`\n` +
+          `• Ví API Keys đã nạp: \`${keySummaryText}\` 🔑\n` +
           `• Model Gemini: ${geminiStatusStr}\n` +
           `• Model B.AI: \`${cfg.baiModel || 'DeepSeek-V4.1-Flash'}\`\n` +
           `• Model Kira AI: \`${cfg.kiraModel || 'qwen3.8-27b-free'}\`\n` +
