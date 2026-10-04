@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 // Tự động nạp biến môi trường từ .env.local hoặc .env (nếu có) mà không để lộ key vào Git
 try {
@@ -30,10 +31,52 @@ async function getMupdf() {
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8387886894:AAG5fHgOiRN7s8q7ufOygMxTrrvavmjOW2c';
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
-const DATA_DIR = path.join(process.cwd(), '.data');
+
+// Dò tìm danh sách các thư mục lưu trữ khả thi theo thứ tự ưu tiên
+function getCandidateDataDirs() {
+  const dirs = [];
+  try {
+    dirs.push(path.resolve(__dirname, '..', '.data'));
+  } catch (e) {}
+  try {
+    dirs.push(path.join(process.cwd(), '.data'));
+  } catch (e) {}
+  try {
+    if (os.homedir()) {
+      dirs.push(path.join(os.homedir(), '.data_scan_phieu'));
+    }
+  } catch (e) {}
+  try {
+    if (os.tmpdir()) {
+      dirs.push(path.join(os.tmpdir(), '.data_scan_phieu'));
+    }
+  } catch (e) {}
+  return Array.from(new Set(dirs.filter(Boolean)));
+}
+
+function resolveWritableDataDir() {
+  const candidates = getCandidateDataDirs();
+  for (const dir of candidates) {
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const testFile = path.join(dir, `.write_test_${Date.now()}`);
+      fs.writeFileSync(testFile, 'ok', 'utf8');
+      fs.unlinkSync(testFile);
+      return dir;
+    } catch (e) {}
+  }
+  return path.resolve(__dirname, '..', '.data');
+}
+
+const DATA_DIR = resolveWritableDataDir();
 const CONFIG_FILE = path.join(DATA_DIR, 'bot_config.json');
 const SYNC_STORE = path.join(DATA_DIR, 'sync_store.json');
 const BOT_HISTORY_FILE = path.join(DATA_DIR, 'bot_history.json');
+
+// Biến Singleton RAM duy trì cấu hình suốt vòng đời tiến trình Bot
+let inMemoryBotConfig = null;
 
 const BOT_COMMANDS = [
   { command: 'astart', description: 'Khởi động bé Akko & xem hướng dẫn quét phiếu' },
@@ -135,88 +178,133 @@ function getGeminiKeys(cfg) {
 let botGeminiKeyIndex = 0;
 
 function getBotConfig() {
-  try {
-    if (fs.existsSync(CONFIG_FILE)) {
-      const parsed = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-      if (!parsed.openRouterModel) parsed.openRouterModel = 'nex-agi/nex-n2.5-pro:free';
-      if (!parsed.kiraModel) parsed.kiraModel = 'qwen3.8-27b-free';
-      if (!parsed.baiModel) parsed.baiModel = 'DeepSeek-V4.1-Flash';
-      if (!parsed.geminiModel || parsed.geminiModel === 'gemini-2.5-flash') parsed.geminiModel = 'gemini-3.6-flash';
-      if (!Array.isArray(parsed.geminiBackupKeys)) parsed.geminiBackupKeys = [];
-      if (!parsed.aiProvider || parsed.aiProvider === 'apinex') parsed.aiProvider = 'gemini';
-      if (!parsed.groupTopics) parsed.groupTopics = {};
-      return parsed;
-    }
-  } catch (e) {}
+  if (inMemoryBotConfig && typeof inMemoryBotConfig === 'object') {
+    return { ...inMemoryBotConfig };
+  }
 
-  let defaultSync = {};
-  try {
-    if (fs.existsSync(SYNC_STORE)) {
-      const store = JSON.parse(fs.readFileSync(SYNC_STORE, 'utf8'));
-      const keys = Object.keys(store);
-      if (keys.length > 0) {
-        const sorted = keys
-          .map(k => store[k])
-          .filter(Boolean)
-          .sort((a, b) => (b.updatedAt ? new Date(b.updatedAt).getTime() : 0) - (a.updatedAt ? new Date(a.updatedAt).getTime() : 0));
-        if (sorted.length > 0) defaultSync = sorted[0];
+  let parsed = null;
+  const candidateDirs = getCandidateDataDirs();
+
+  // 1. Tìm nạp bot_config.json từ các thư mục candidate
+  for (const dir of candidateDirs) {
+    try {
+      const fPath = path.join(dir, 'bot_config.json');
+      if (fs.existsSync(fPath)) {
+        const raw = fs.readFileSync(fPath, 'utf8');
+        const data = JSON.parse(raw);
+        if (data && typeof data === 'object') {
+          parsed = data;
+          break;
+        }
       }
-    }
-  } catch (e) {}
+    } catch (e) {}
+  }
 
-  const rawProv = defaultSync.aiProvider || process.env.AI_PROVIDER || 'gemini';
+  // 2. Tìm nạp sync_store.json dự phòng nếu chưa có
+  let defaultSync = {};
+  for (const dir of candidateDirs) {
+    try {
+      const sPath = path.join(dir, 'sync_store.json');
+      if (fs.existsSync(sPath)) {
+        const store = JSON.parse(fs.readFileSync(sPath, 'utf8'));
+        const keys = Object.keys(store || {});
+        if (keys.length > 0) {
+          const sorted = keys
+            .map(k => store[k])
+            .filter(Boolean)
+            .sort((a, b) => (b.updatedAt ? new Date(b.updatedAt).getTime() : 0) - (a.updatedAt ? new Date(a.updatedAt).getTime() : 0));
+          if (sorted.length > 0) {
+            defaultSync = sorted[0];
+            break;
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  const rawProv = (parsed && parsed.aiProvider) || defaultSync.aiProvider || process.env.AI_PROVIDER || 'gemini';
   const effectiveProv = rawProv === 'apinex' ? 'gemini' : rawProv;
 
-  return {
+  const finalCfg = {
     aiProvider: effectiveProv,
-    geminiKey: defaultSync.apiKey || process.env.GEMINI_API_KEY || '',
-    geminiBackupKeys: Array.isArray(defaultSync.backupKeys) ? defaultSync.backupKeys : [],
-    geminiModel: (defaultSync.geminiModel && defaultSync.geminiModel !== 'gemini-2.5-flash') ? defaultSync.geminiModel : (process.env.GEMINI_MODEL || 'gemini-3.6-flash'),
-    openRouterKey: defaultSync.openRouterKey || process.env.OPENROUTER_API_KEY || '',
-    openRouterModel: defaultSync.openRouterModel || process.env.OPENROUTER_MODEL || 'nex-agi/nex-n2.5-pro:free',
-    kiraKey: defaultSync.kiraKey || process.env.KIRA_API_KEY || '',
-    kiraModel: defaultSync.kiraModel || process.env.KIRA_MODEL || 'qwen3.8-27b-free',
-    baiKey: defaultSync.baiKey || process.env.BAI_API_KEY || '',
-    baiModel: defaultSync.baiModel || process.env.BAI_MODEL || 'DeepSeek-V4.1-Flash',
-    googleSheetUrl: defaultSync.googleSheetUrl || process.env.GOOGLE_SHEET_URL || 'https://script.google.com/macros/s/AKfycbxvSkHl-Ebg-VDX88B-iF0BhiH6ujtJ9ZKk-MroWOlU2ky4K4IBG40zyt2qsMfBa0gE/exec',
-    autoSyncSheet: defaultSync.autoSyncSheet !== undefined ? !!defaultSync.autoSyncSheet : true,
-    cloudSyncCode: defaultSync.code || '',
-    selectedColumns: defaultSync.selectedColumns && defaultSync.selectedColumns.length ? defaultSync.selectedColumns : DEFAULT_COLUMNS,
-    fieldPrompts: defaultSync.fieldPrompts || DEFAULT_FIELD_PROMPTS,
-    groupTopics: defaultSync.groupTopics || {}
+    geminiKey: (parsed && parsed.geminiKey) || defaultSync.apiKey || process.env.GEMINI_API_KEY || '',
+    geminiBackupKeys: (parsed && Array.isArray(parsed.geminiBackupKeys)) ? parsed.geminiBackupKeys : (Array.isArray(defaultSync.backupKeys) ? defaultSync.backupKeys : []),
+    geminiModel: (parsed && parsed.geminiModel && parsed.geminiModel !== 'gemini-2.5-flash') ? parsed.geminiModel : ((defaultSync.geminiModel && defaultSync.geminiModel !== 'gemini-2.5-flash') ? defaultSync.geminiModel : (process.env.GEMINI_MODEL || 'gemini-3.6-flash')),
+    openRouterKey: (parsed && parsed.openRouterKey) || defaultSync.openRouterKey || process.env.OPENROUTER_API_KEY || '',
+    openRouterModel: (parsed && parsed.openRouterModel) || defaultSync.openRouterModel || process.env.OPENROUTER_MODEL || 'nex-agi/nex-n2.5-pro:free',
+    kiraKey: (parsed && parsed.kiraKey) || defaultSync.kiraKey || process.env.KIRA_API_KEY || '',
+    kiraModel: (parsed && parsed.kiraModel) || defaultSync.kiraModel || process.env.KIRA_MODEL || 'qwen3.8-27b-free',
+    baiKey: (parsed && parsed.baiKey) || defaultSync.baiKey || process.env.BAI_API_KEY || '',
+    baiModel: (parsed && parsed.baiModel) || defaultSync.baiModel || process.env.BAI_MODEL || 'DeepSeek-V4.1-Flash',
+    googleSheetUrl: (parsed && parsed.googleSheetUrl) || defaultSync.googleSheetUrl || process.env.GOOGLE_SHEET_URL || 'https://script.google.com/macros/s/AKfycbxvSkHl-Ebg-VDX88B-iF0BhiH6ujtJ9ZKk-MroWOlU2ky4K4IBG40zyt2qsMfBa0gE/exec',
+    autoSyncSheet: (parsed && parsed.autoSyncSheet !== undefined) ? !!parsed.autoSyncSheet : (defaultSync.autoSyncSheet !== undefined ? !!defaultSync.autoSyncSheet : true),
+    cloudSyncCode: (parsed && parsed.cloudSyncCode) || defaultSync.code || '',
+    selectedColumns: (parsed && parsed.selectedColumns && parsed.selectedColumns.length) ? parsed.selectedColumns : (defaultSync.selectedColumns && defaultSync.selectedColumns.length ? defaultSync.selectedColumns : DEFAULT_COLUMNS),
+    fieldPrompts: (parsed && parsed.fieldPrompts) || defaultSync.fieldPrompts || DEFAULT_FIELD_PROMPTS,
+    groupTopics: (parsed && parsed.groupTopics) || defaultSync.groupTopics || {},
+    serverUrl: (parsed && parsed.serverUrl) || 'https://scanzzz.vercel.app'
   };
+
+  inMemoryBotConfig = { ...finalCfg };
+  return { ...finalCfg };
 }
 
 function saveBotConfig(cfg) {
-  try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
-  } catch (e) {
-    console.error('Lỗi lưu bot_config:', e);
+  if (!cfg || typeof cfg !== 'object') return;
+  // 1. Cập nhật ngay lập tức vào biến RAM Singleton trước tiên
+  inMemoryBotConfig = { ...(inMemoryBotConfig || {}), ...cfg };
+
+  // 2. Ghi bền vững xuống đĩa ở các candidate thư mục
+  const candidateDirs = getCandidateDataDirs();
+  const jsonStr = JSON.stringify(inMemoryBotConfig, null, 2);
+
+  for (const dir of candidateDirs) {
+    try {
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const targetFile = path.join(dir, 'bot_config.json');
+      const tmpFile = path.join(dir, `bot_config.${Date.now()}.${Math.random().toString(36).slice(2, 6)}.tmp`);
+      try {
+        fs.writeFileSync(tmpFile, jsonStr, 'utf8');
+        fs.renameSync(tmpFile, targetFile);
+      } catch (atomicErr) {
+        fs.writeFileSync(targetFile, jsonStr, 'utf8');
+      }
+    } catch (e) {
+      // Bỏ qua thư mục không ghi được, tiếp tục ghi các thư mục khác
+    }
   }
 }
 
 // History Storage for Resync
 function getBotHistory() {
-  try {
-    if (fs.existsSync(BOT_HISTORY_FILE)) {
-      return JSON.parse(fs.readFileSync(BOT_HISTORY_FILE, 'utf8'));
-    }
-  } catch (e) {}
+  const candidateDirs = getCandidateDataDirs();
+  for (const dir of candidateDirs) {
+    try {
+      const histPath = path.join(dir, 'bot_history.json');
+      if (fs.existsSync(histPath)) {
+        return JSON.parse(fs.readFileSync(histPath, 'utf8'));
+      }
+    } catch (e) {}
+  }
   return {};
 }
 
 function saveBotHistoryItem(id, data) {
   try {
-    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     const hist = getBotHistory();
     hist[id] = { ...data, timestamp: Date.now() };
-    // Keep max 50 items
     const keys = Object.keys(hist);
     if (keys.length > 50) {
       delete hist[keys[0]];
     }
-    fs.writeFileSync(BOT_HISTORY_FILE, JSON.stringify(hist, null, 2), 'utf8');
+    const jsonStr = JSON.stringify(hist, null, 2);
+    const candidateDirs = getCandidateDataDirs();
+    for (const dir of candidateDirs) {
+      try {
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, 'bot_history.json'), jsonStr, 'utf8');
+      } catch (e) {}
+    }
   } catch (e) {
     console.error('Lỗi lưu bot_history:', e);
   }
@@ -506,16 +594,19 @@ async function scanWithOpenRouter(base64Data, mimeType, key, model, selectedColu
       {
         role: 'user',
         content: [
-          { type: 'text', text: promptText },
-          { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64Data } }
+          { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64Data } },
+          { type: 'text', text: promptText }
         ]
       }
     ],
     temperature: 0.1,
-    max_tokens: 3000,
+    max_tokens: 3500,
   };
 
-  if (selectedModel.includes('nex') || selectedModel.includes('free') || selectedModel.includes('thinking')) {
+  if (selectedModel.includes('qwen3.8') || selectedModel.includes('qwen-3.8')) {
+    reqBody.include_reasoning = false;
+    reqBody.reasoning = { effort: 'low' };
+  } else if (selectedModel.includes('nex') || selectedModel.includes('thinking')) {
     reqBody.include_reasoning = false;
     reqBody.reasoning = { effort: 'none' };
   }
@@ -2117,14 +2208,21 @@ async function handleMessage(msg) {
         } catch (e) {}
       }
 
-      if (!cloudData && fs.existsSync(SYNC_STORE)) {
-        try {
-          const store = JSON.parse(fs.readFileSync(SYNC_STORE, 'utf8'));
-          if (store[code]) {
-            cloudData = store[code];
-            matchedSource = 'Bộ nhớ cục bộ (.data)';
-          }
-        } catch (e) {}
+      if (!cloudData) {
+        const candidateDirs = getCandidateDataDirs();
+        for (const dir of candidateDirs) {
+          try {
+            const syncPath = path.join(dir, 'sync_store.json');
+            if (fs.existsSync(syncPath)) {
+              const store = JSON.parse(fs.readFileSync(syncPath, 'utf8'));
+              if (store[code]) {
+                cloudData = store[code];
+                matchedSource = 'Bộ nhớ cục bộ (.data)';
+                break;
+              }
+            }
+          } catch (e) {}
+        }
       }
 
       if (!cloudData) {
@@ -2246,7 +2344,7 @@ async function handleMessage(msg) {
   }
 
   if (matchCommand('provider')) {
-    const args = cleanText.split(' ');
+    const args = cleanText.split(/\s+/);
     const prov = (args[1] || '').trim().toLowerCase();
     const cfg = getBotConfig();
 
@@ -2300,7 +2398,7 @@ async function handleMessage(msg) {
   }
 
   if (matchCommand('model')) {
-    const args = cleanText.split(' ');
+    const args = cleanText.split(/\s+/);
     const modelName = args.slice(1).join(' ').trim();
     if (!modelName) {
       return sendTelegram('sendMessage', {
@@ -2331,6 +2429,7 @@ async function handleMessage(msg) {
           '• `/amodel ox-alpha` (MỚI • Đa phương thức & PDF)\n' +
           '• `/amodel kira-auto` (Tự động điều phối mô hình)\n\n' +
           '🌐 *OpenRouter (Tối ưu OCR Vision):*\n' +
+          '• `/amodel qwen/qwen3.8-27b:free` (MỚI • Qwen Vision 27B Miễn Phí)\n' +
           '• `/amodel nex-agi/nex-n2.5-pro:free` (Khuyên dùng - Rất nhanh & chuẩn)\n' +
           '• `/amodel nex-agi/nex-n2.5-mini:free` (Siêu nhẹ & tốc độ cao)\n' +
           '• `/amodel inclusionai/ling-3.0-flash-vl:free` (MỚI • Vision 3.0)\n' +
@@ -2339,7 +2438,7 @@ async function handleMessage(msg) {
           '• `/amodel openai/gpt-4o-mini` (Bóc tách bảng chuẩn)\n' +
           '• `/amodel qwen/qwen2.5-vl-72b-instruct` (Đỉnh cao chữ viết tay châu Á)\n' +
           '• `/amodel openrouter/free` (MỚI • Auto Router)\n\n' +
-          '_(Senpai có thể gõ `/amodel <mã>` hoặc `/amodel kira <mã>` để Akko kích hoạt bất kỳ mã model nào nha)_',
+          '_(Senpai có thể gõ `/amodel <mã>` hoặc `/amodel <provider> <mã>` để Akko kích hoạt bất kỳ mã model nào nha)_',
         parse_mode: 'Markdown'
       });
     }
@@ -2352,11 +2451,11 @@ async function handleMessage(msg) {
     const parts = targetModel.split(/\s+/);
     if (parts.length >= 2 && ['kira', 'bai', 'gemini', 'openrouter'].includes(parts[0].toLowerCase())) {
       targetProvider = parts[0].toLowerCase();
-      targetModel = parts.slice(1).join(' ');
+      targetModel = parts.slice(1).join(' ').trim();
     }
 
     const lowerModel = targetModel.toLowerCase();
-    const cleanModel = targetModel.replace(/-free$/i, '');
+    const cleanModel = targetModel.replace(/-free$/i, '').trim();
 
     if (targetProvider === 'kira') {
       cfg.aiProvider = 'kira';
@@ -2366,10 +2465,21 @@ async function handleMessage(msg) {
       cfg.baiModel = cleanModel;
     } else if (targetProvider === 'gemini') {
       cfg.aiProvider = 'gemini';
-      cfg.geminiModel = cleanModel;
+      cfg.geminiModel = targetModel;
     } else if (targetProvider === 'openrouter') {
       cfg.aiProvider = 'openrouter';
-      cfg.openRouterModel = cleanModel;
+      if (lowerModel === 'qwen3.8-27b:free' || lowerModel === 'qwen3.8-27b') {
+        cfg.openRouterModel = 'qwen/qwen3.8-27b:free';
+      } else {
+        cfg.openRouterModel = targetModel;
+      }
+    } else if (targetModel.includes('/') || targetModel.includes(':free') || lowerModel.startsWith('openrouter/')) {
+      cfg.aiProvider = 'openrouter';
+      if (lowerModel === 'qwen3.8-27b:free' || lowerModel === 'qwen3.8-27b') {
+        cfg.openRouterModel = 'qwen/qwen3.8-27b:free';
+      } else {
+        cfg.openRouterModel = targetModel;
+      }
     } else if (
       lowerModel.startsWith('gemini') ||
       lowerModel.includes('gemini-3.7') ||
@@ -2379,12 +2489,7 @@ async function handleMessage(msg) {
     ) {
       cfg.aiProvider = 'gemini';
       cfg.geminiModel = targetModel;
-    } else if (targetModel.includes('/') || targetModel.includes(':free') || targetModel.startsWith('openrouter')) {
-      cfg.aiProvider = 'openrouter';
-      cfg.openRouterModel = targetModel;
     } else if (
-      // Nếu user đang dùng Kira AI hoặc mã model mang đặc trưng của Kira AI
-      cfg.aiProvider === 'kira' ||
       cleanModel.startsWith('kira_') ||
       cleanModel.startsWith('kira-') ||
       cleanModel.startsWith('kimi-') ||
@@ -2397,17 +2502,8 @@ async function handleMessage(msg) {
     ) {
       cfg.aiProvider = 'kira';
       cfg.kiraModel = cleanModel;
-    } else if (
-      cfg.aiProvider === 'bai' ||
-      lowerModel === 'deepseek-v4.1-flash' ||
-      lowerModel === 'glm-5.3-flash' ||
-      lowerModel === 'qwen3.8-flash' ||
-      lowerModel === 'qwen3.8-27b' ||
-      lowerModel.startsWith('deepseek-v4.1')
-    ) {
-      cfg.aiProvider = 'bai';
-      cfg.baiModel = cleanModel;
     } else {
+      // Áp dụng trực tiếp cho Provider hiện tại đang kích hoạt
       if (cfg.aiProvider === 'gemini') {
         cfg.geminiModel = targetModel;
       } else if (cfg.aiProvider === 'bai') {
@@ -2423,7 +2519,7 @@ async function handleMessage(msg) {
     const info = getActiveProviderInfo(cfg);
     return sendTelegram('sendMessage', {
       chat_id: chatId,
-      text: `✅ Tuân lệnh Senpai! Akko đã đổi mô hình AI sang: \`${targetModel}\`\n• Nhà cung cấp kích hoạt: *${info.providerName}* (≧◡≦) ♡`,
+      text: `✅ Tuân lệnh Senpai! Akko đã đổi mô hình AI sang: \`${info.model}\`\n• Nhà cung cấp kích hoạt: *${info.providerName}* (≧◡≦) ♡`,
       parse_mode: 'Markdown'
     });
   }

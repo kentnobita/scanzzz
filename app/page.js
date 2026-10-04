@@ -65,6 +65,15 @@ const DEFAULT_COLUMNS = ['ten', 'soOSPO', 'donViTinh', 'soLuongChungTu', 'soLuon
 
 const OPENROUTER_MODELS = [
   {
+    id: 'qwen/qwen3.8-27b:free',
+    name: 'Qwen: Qwen3.8 27B (free)',
+    shortName: 'Qwen 3.8 27B',
+    badge: 'MỚI • Vision 27B Miễn Phí',
+    badgeColor: 'bg-violet-100 text-violet-800',
+    desc: 'Mô hình Vision 27B thế hệ mới của Qwen trên OpenRouter. Bóc tách chữ viết tay tiếng Việt và cấu trúc bảng rất tốt, ngữ cảnh 262K.',
+    supportsJsonMode: false,
+  },
+  {
     id: 'nex-agi/nex-n2.5-pro:free',
     name: 'Nex AGI: Nex-N2.5-Pro',
     shortName: 'Nex-N2.5-Pro',
@@ -79,15 +88,6 @@ const OPENROUTER_MODELS = [
     badge: 'MỚI • Siêu Tốc',
     badgeColor: 'bg-teal-100 text-teal-800',
     desc: 'Bản rút gọn siêu nhẹ của Nex AGI. Phản hồi tức thì dưới 2s cho các phiếu in rõ nét và bảng biểu.',
-  },
-  {
-    id: 'qwen/qwen3.8-27b:free',
-    name: 'Qwen: Qwen3.8 27B',
-    shortName: 'Qwen3.8 27B',
-    badge: 'MỚI • Vision & Video',
-    badgeColor: 'bg-violet-100 text-violet-800',
-    desc: 'Mô hình Vision 27B mới của Qwen, phù hợp đọc bảng biểu và tài liệu có hình ảnh.',
-    supportsJsonMode: false,
   },
   {
     id: 'dots-studio/dots-3-note-preview:free',
@@ -2300,19 +2300,23 @@ export default function Home() {
         {
           role: 'user',
           content: [
-            { type: 'text', text: promptText },
             { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } },
+            { type: 'text', text: promptText },
           ],
         },
       ],
       temperature: 0.1,
-      max_tokens: 3000,
+      max_tokens: 3500,
     };
 
     const configuredModel = OPENROUTER_MODELS.find((entry) => entry.id === selectedModel);
 
-    // Chỉ tắt reasoning ở model đã xác nhận hỗ trợ chế độ này.
-    if (configuredModel?.disableReasoning) {
+    // Cấu hình reasoning phù hợp với từng mô hình (tránh gửi effort: none tới ModelRun gây lỗi Provider returned error)
+    if (selectedModel.includes('qwen3.8') || selectedModel.includes('qwen-3.8')) {
+      // ModelRun của Qwen3.8 hỗ trợ low/medium/xhigh, không hỗ trợ none. Bật low để suy luận nhanh, không timeout
+      reqBody.include_reasoning = false;
+      reqBody.reasoning = { effort: 'low' };
+    } else if (configuredModel?.disableReasoning) {
       reqBody.include_reasoning = false;
       reqBody.reasoning = { effort: 'none' };
     }
@@ -2336,14 +2340,28 @@ export default function Home() {
 
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      const providerMessage =
+      console.error('[OpenRouter API Error Details]:', errData);
+      let providerMessage =
         errData.error?.message ||
         (typeof errData.error === 'string' ? errData.error : '') ||
         errData.message ||
-        errData.detail ||
         `OpenRouter Error: ${res.status}`;
+
+      const rawDetail = errData.error?.metadata?.raw;
+      const providerName = errData.error?.metadata?.provider_name;
+
+      if (providerMessage.toLowerCase().includes('provider returned error')) {
+        const detailStr = typeof rawDetail === 'string' ? rawDetail : (rawDetail?.error?.message || rawDetail?.message || '');
+        if (detailStr) {
+          providerMessage = `Máy chủ ${providerName || 'OpenRouter'} báo lỗi: ${detailStr}`;
+        } else {
+          providerMessage = `Máy chủ (${providerName || 'ModelRun'}) của [${selectedModel}] đang quá tải hoặc tạm thời gián đoạn. Bạn có thể bấm [Quét lại] hoặc thử nex-agi/nex-n2.5-pro:free`;
+        }
+      }
+
       const err = new Error(providerMessage);
       err.status = res.status;
+      err.rawError = errData;
       throw err;
     }
 
@@ -3246,17 +3264,21 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             msg.includes('load failed') ||
             msg.includes('aborted') ||
             msg.includes('network request failed') ||
+            msg.includes('provider returned error') ||
+            msg.includes('quá tải') ||
+            msg.includes('gián đoạn') ||
+            err?.status === 500 ||
             err?.status === 502 ||
             err?.status === 503 ||
             err?.status === 504;
 
           if (attempt < maxRetries && isNetworkInterrupted) {
-            console.warn(`[OCR Resilient] Mạng gián đoạn (${err.message}). Tự động kết nối lại lần ${attempt + 1}/${maxRetries}...`);
+            console.warn(`[OCR Resilient] Mạng/Máy chủ gián đoạn (${err.message}). Tự động kết nối lại lần ${attempt + 1}/${maxRetries}...`);
             setScanProgress((prev) => ({
               ...prev,
-              text: `⚠️ Mạng bị gián đoạn khi chuyển tab. Đang tự động kết nối lại lần ${attempt + 1}/${maxRetries}...`,
+              text: `⚠️ Máy chủ nhà cung cấp phản hồi chậm. Đang tự động kết nối lại lần ${attempt + 1}/${maxRetries}...`,
             }));
-            await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
+            await new Promise((r) => setTimeout(r, 1800 * (attempt + 1)));
           } else {
             throw err;
           }
@@ -6713,7 +6735,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                             setOpenRouterModel(e.target.value);
                             localStorage.setItem('openrouter_model', e.target.value);
                           }}
-                          placeholder="Điền mã mô hình OpenRouter (ví dụ: google/gemini-2.5-flash, openai/gpt-4o-mini...)"
+                          placeholder="Điền mã mô hình OpenRouter (ví dụ: qwen/qwen3.8-27b:free, google/gemini-2.5-flash...)"
                           className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 font-mono text-xs outline-none bg-white"
                         />
                         <p className="text-[11px] text-slate-400 leading-normal">
