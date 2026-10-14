@@ -219,6 +219,9 @@ export async function POST(request) {
       kiraModel: String(body.kiraModel || 'qwen3.8-27b-free').trim(),
       baiKey: String(body.baiKey || '').trim(),
       baiModel: String(body.baiModel || 'DeepSeek-V4.1-Flash').trim(),
+      customBaseUrl: String(body.customBaseUrl || '').trim(),
+      customApiKey: String(body.customApiKey || '').trim(),
+      customModel: String(body.customModel || '').trim(),
 
       // Google Sheet & Bảng biểu
       googleSheetUrl: String(body.googleSheetUrl || '').trim(),

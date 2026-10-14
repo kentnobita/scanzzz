@@ -580,6 +580,10 @@ export default function Home() {
   const [baiKey, setBaiKey] = useState("");
   const [baiModel, setBaiModel] = useState("deepseek-v4.1-flash");
   const [baiTesting, setBaiTesting] = useState(false);
+  const [customBaseUrl, setCustomBaseUrl] = useState("");
+  const [customApiKey, setCustomApiKey] = useState("");
+  const [customModel, setCustomModel] = useState("");
+  const [customTesting, setCustomTesting] = useState(false);
   const [rateLimitedKeys, setRateLimitedKeys] = useState(new Set()); 
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
 
@@ -669,6 +673,9 @@ export default function Home() {
   }, [analyticsPeriod, analyticsSelectedModel]);
 
   const getActiveProviderLabel = (short = false) => {
+    if (aiProvider === 'custom') {
+      return short ? 'Custom API' : `Custom (${customModel || 'Tùy chỉnh'})`;
+    }
     if (aiProvider === 'bai') {
       const bName = BAI_MODELS.find((m) => m.id === baiModel)?.shortName || baiModel;
       return short ? 'B.AI' : `B.AI (${bName || 'DeepSeek V4.1'})`;
@@ -792,6 +799,13 @@ export default function Home() {
     setBaiKey(savedBaiKey);
     const savedBaiModel = (localStorage.getItem('bai_model') || 'deepseek-v4.1-flash').toLowerCase();
     setBaiModel(savedBaiModel);
+
+    const savedCustomUrl = localStorage.getItem('custom_base_url') || '';
+    setCustomBaseUrl(savedCustomUrl);
+    const savedCustomKey = localStorage.getItem('custom_api_key') || '';
+    setCustomApiKey(savedCustomKey);
+    const savedCustomModel = localStorage.getItem('custom_model') || '';
+    setCustomModel(savedCustomModel);
 
     const sheetUrl = localStorage.getItem('google_sheet_webhook_url') || '';
     setGoogleSheetUrl(sheetUrl);
@@ -1016,6 +1030,9 @@ export default function Home() {
         kiraModel: kiraModel.trim(),
         baiKey: baiKey.trim(),
         baiModel: baiModel.trim(),
+        customBaseUrl: customBaseUrl.trim(),
+        customApiKey: customApiKey.trim(),
+        customModel: customModel.trim(),
         googleSheetUrl: googleSheetUrl.trim(),
         autoSyncSheet,
         selectedColumns,
@@ -1130,6 +1147,18 @@ export default function Home() {
       if (data.baiModel) {
         setBaiModel(data.baiModel);
         localStorage.setItem('bai_model', data.baiModel);
+      }
+      if (data.customBaseUrl !== undefined) {
+        setCustomBaseUrl(data.customBaseUrl);
+        localStorage.setItem('custom_base_url', data.customBaseUrl);
+      }
+      if (data.customApiKey !== undefined) {
+        setCustomApiKey(data.customApiKey);
+        localStorage.setItem('custom_api_key', data.customApiKey);
+      }
+      if (data.customModel !== undefined) {
+        setCustomModel(data.customModel);
+        localStorage.setItem('custom_model', data.customModel);
       }
       if (data.googleSheetUrl !== undefined) {
         setGoogleSheetUrl(data.googleSheetUrl);
@@ -2726,6 +2755,53 @@ export default function Home() {
     }
   };
 
+  // Hàm làm sạch giá trị từng ô OCR, loại bỏ suy luận nháp tiếng Anh (thinking leak)
+  const cleanOcrCell = (val, colKey) => {
+    if (val === null || val === undefined) return colKey === 'donViTinh' ? 'pcs' : '';
+    let s = String(val).trim();
+    if (!s || s === '???') return colKey === 'donViTinh' ? 'pcs' : '';
+
+    // 1. Loại bỏ các tiền tố nhãn thông thường do AI sinh ra (Tên:, Mã hàng:, Cột B:...)
+    s = s.replace(/^(?:Tên\s*(?:hàng|mã|sản\s*phẩm)?|Mã\s*(?:hàng)?|Cột\s*[A-Z]|Item)\s*[:：\-]\s*/i, '');
+
+    // 2. Loại bỏ các hậu tố ghi chú như (same), (như trên), (trùng)
+    s = s.replace(/\s*\((?:same|như trên|trùng|giống trên|tương tự)\)\s*$/i, '');
+
+    // 3. Phát hiện suy luận nháp / so sánh lựa chọn của AI (ví dụ: "A" or "B"? It looks "B".)
+    if (/(?:maybe|actually|let's read|let's see|in column|it might be|handwritten|looks like|wait column|we have|the table shows|could be|probably|seems to be|not sure|i think|first row|second row|\bor\b|\?|it looks|分析|猜测|可能是|我认为)/i.test(s)) {
+      const quotes = [...s.matchAll(/"([^"]+)"/g)].map(m => m[1].trim());
+      if (quotes.length > 0) {
+        s = quotes[quotes.length - 1]; // Lấy chuỗi chốt cuối cùng
+      } else {
+        s = s.replace(/(?:maybe|actually|let's see|let's read|in column|it might be|handwritten|looks like|wait column|we have|the table shows|could be|probably|seems to be|not sure|i think|first row|second row|\bor\b|\?|it looks|分析|猜测|可能是|我认为)[\s\S]*/i, '').trim();
+      }
+    }
+
+    // 4. Bỏ ngoặc kép bao quanh nếu còn sót lại
+    s = s.replace(/^["'`]+|["'`]+$/g, '').trim();
+
+    if (colKey === 'soOSPO') {
+      return formatOSPO(s);
+    }
+    if (colKey === 'soLuongChungTu' || colKey === 'soLuongThucNhap') {
+      const m = s.match(/\b\d+(?:[.,]\d+)?\b/);
+      if (m) return m[0].replace(',', '.');
+    }
+    if (colKey === 'donViTinh') {
+      s = s.replace(/["'?]/g, '').trim();
+      const dvt = s.match(/\b(EA|PCS|KG|BOX|CÁI|THÙNG|BỘ|CUỘN|CÂY)\b/i);
+      if (dvt) {
+        return dvt[0].toLowerCase() === 'pcs' ? 'pcs' : dvt[0];
+      }
+      return s || 'pcs';
+    }
+    if (colKey === 'soPallet') {
+      s = s.replace(/["'?]/g, '').trim();
+      s = s.replace(/(?:ghi chú|actually|maybe)[\s\S]*/i, '').trim();
+    }
+    return s.replace(/^[:\s\-]+/, '').replace(/[:\s\-]+$/, '');
+  };
+
   // Direct B.AI OCR (supports deepseek-v4.1-flash, glm-5.3-flash, qwen3.8-flash, hy3, mimo-v2.5)
   const scanClientBaiWithBase64 = async (base64Data, mimeType, key, model) => {
     const effectiveModel = (model?.trim() || 'deepseek-v4.1-flash').toLowerCase();
@@ -2843,52 +2919,7 @@ export default function Home() {
       throw new Error('Không nhận được dữ liệu phản hồi từ B.AI. Vui lòng thử lại hoặc chọn mô hình Qwen3.8-Flash.');
     }
 
-    // Hàm làm sạch giá trị từng ô, loại bỏ suy luận nháp tiếng Anh (thinking leak)
-    const cleanOcrCell = (val, colKey) => {
-      if (val === null || val === undefined) return colKey === 'donViTinh' ? 'pcs' : '';
-      let s = String(val).trim();
-      if (!s || s === '???') return colKey === 'donViTinh' ? 'pcs' : '';
 
-      // 1. Loại bỏ các tiền tố nhãn thông thường do AI sinh ra (Tên:, Mã hàng:, Cột B:...)
-      s = s.replace(/^(?:Tên\s*(?:hàng|mã|sản\s*phẩm)?|Mã\s*(?:hàng)?|Cột\s*[A-Z]|Item)\s*[:：\-]\s*/i, '');
-
-      // 2. Loại bỏ các hậu tố ghi chú như (same), (như trên), (trùng)
-      s = s.replace(/\s*\((?:same|như trên|trùng|giống trên|tương tự)\)\s*$/i, '');
-
-      // 3. Phát hiện suy luận nháp / so sánh lựa chọn của AI (ví dụ: "A" or "B"? It looks "B".)
-      if (/(?:maybe|actually|let's read|let's see|in column|it might be|handwritten|looks like|wait column|we have|the table shows|could be|probably|seems to be|not sure|i think|first row|second row|\bor\b|\?|it looks|分析|猜测|可能是|我认为)/i.test(s)) {
-        const quotes = [...s.matchAll(/"([^"]+)"/g)].map(m => m[1].trim());
-        if (quotes.length > 0) {
-          s = quotes[quotes.length - 1]; // Lấy chuỗi chốt cuối cùng
-        } else {
-          s = s.replace(/(?:maybe|actually|let's see|let's read|in column|it might be|handwritten|looks like|wait column|we have|the table shows|could be|probably|seems to be|not sure|i think|first row|second row|\bor\b|\?|it looks|分析|猜测|可能是|我认为)[\s\S]*/i, '').trim();
-        }
-      }
-
-      // 4. Bỏ ngoặc kép bao quanh nếu còn sót lại
-      s = s.replace(/^["'`]+|["'`]+$/g, '').trim();
-
-      if (colKey === 'soOSPO') {
-        return formatOSPO(s);
-      }
-      if (colKey === 'soLuongChungTu' || colKey === 'soLuongThucNhap') {
-        const m = s.match(/\b\d+(?:[.,]\d+)?\b/);
-        if (m) return m[0].replace(',', '.');
-      }
-      if (colKey === 'donViTinh') {
-        s = s.replace(/["'?]/g, '').trim();
-        const dvt = s.match(/\b(EA|PCS|KG|BOX|CÁI|THÙNG|BỘ|CUỘN|CÂY)\b/i);
-        if (dvt) {
-          return dvt[0].toLowerCase() === 'pcs' ? 'pcs' : dvt[0];
-        }
-        return s || 'pcs';
-      }
-      if (colKey === 'soPallet') {
-        s = s.replace(/["'?]/g, '').trim();
-        s = s.replace(/(?:ghi chú|actually|maybe)[\s\S]*/i, '').trim();
-      }
-      return s.replace(/^[:\s\-]+/, '').replace(/[:\s\-]+$/, '');
-    };
 
     // Parse JSON trực tiếp
     const cleanText = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
@@ -3020,6 +3051,257 @@ export default function Home() {
     }
 
     throw new Error('B.AI chưa trích xuất được bảng hàng hóa. Vui lòng bấm Quét Lại hoặc chọn mô hình DeepSeek-V4.1-Flash / Qwen3.8-Flash.');
+  };
+
+  // Test Custom API Connection
+  const testCustomConnection = async () => {
+    const baseUrl = customBaseUrl.trim();
+    const key = customApiKey.trim();
+    const model = customModel.trim();
+    if (!baseUrl) {
+      showToast('Vui lòng nhập Base URL trước khi kiểm tra kết nối', 'error');
+      return;
+    }
+    setCustomTesting(true);
+    try {
+      const res = await fetch('/api/custom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'test', baseUrl, key, model }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error?.message || ('Lỗi máy chủ ' + res.status));
+      }
+      showToast(`✅ Kết nối Custom API thành công! (${data.message || 'Sẵn sàng sử dụng'})`, 'success');
+    } catch (e) {
+      showToast('❌ Lỗi kết nối Custom API: ' + e.message, 'error');
+    } finally {
+      setCustomTesting(false);
+    }
+  };
+
+  // Custom OpenAI-Compatible Provider OCR
+  const scanClientCustomWithBase64 = async (base64Data, mimeType, baseUrl, key, model) => {
+    const effectiveBaseUrl = (baseUrl || '').trim();
+    const effectiveModel = (model || '').trim();
+
+    // Auto-compress image to ensure fast processing and prevent payload limit
+    let payloadBase64 = base64Data;
+    let payloadMime = mimeType;
+    if (base64Data && base64Data.length > 90000) {
+      try {
+        const compressed = await new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const maxDim = 1600;
+            let w = img.width, h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
+              else { w = Math.round((w * maxDim) / h); h = maxDim; }
+            }
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg' });
+          };
+          img.onerror = () => resolve(null);
+          img.src = `data:${mimeType};base64,${base64Data}`;
+        });
+        if (compressed?.base64) {
+          payloadBase64 = compressed.base64;
+          payloadMime = compressed.mime;
+        }
+      } catch (e) {
+        console.warn('Không thể nén ảnh cho Custom API:', e);
+      }
+    }
+
+    const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
+    const rules = ['soPhieu', ...selectedColumns]
+      .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
+      .join('\n');
+
+    const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (đọc chuẩn chữ in & chữ viết tay).\n' +
+      'YÊU CẦU BẮT BUỘC:\n' +
+      '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON.\n' +
+      '- Định dạng trả về duy nhất là chuỗi JSON:\n' +
+      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}\n\n' +
+      'Quy tắc trích xuất quan trọng:\n' +
+      '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
+      '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
+      '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
+      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1") nhưng chỉ có chung 1 bộ số lượng thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất.\n' +
+      '5. CHỮ VIẾT TAY SỐ 9: Cột O.S/PO thường có chữ số 9 viết tay đuôi cong rất dễ nhầm với chữ "g" hoặc "q" (ví dụ g-297, q-697 thực chất là 9-297, 9-697 -> ghép thành số 90297, 90697).\n' +
+      'Hướng dẫn cột:\n' + rules + '\n\n' +
+      'ĐỊNH DẠNG TRẢ VỀ: Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
+      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
+
+    const reqPayload = {
+      baseUrl: effectiveBaseUrl,
+      key: (key || '').trim(),
+      model: effectiveModel,
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an automated OCR parser for Vietnamese warehouse receipts. Output ONLY the raw JSON object matching the requested schema. DO NOT output internal reasoning, conversational thinking, or explanations.'
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: promptText },
+            { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } },
+          ],
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 4000,
+      response_format: { type: 'json_object' }
+    };
+
+    const res = await fetch('/api/custom', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(reqPayload),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const err = new Error(errData.error?.message || ('Custom API Error: ' + res.status));
+      err.status = res.status;
+      throw err;
+    }
+
+    const data = await res.json();
+    const msg = data.choices?.[0]?.message;
+    let text = (msg?.content || '').trim();
+
+    // Loại bỏ tag <think>...</think> nếu có từ các reasoning model
+    if (text) {
+      text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    }
+    if (!text && msg?.reasoning_content) {
+      text = msg.reasoning_content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    }
+    if (!text && msg?.reasoning) {
+      text = msg.reasoning.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    }
+
+    if (!text) {
+      throw new Error('Không nhận được dữ liệu phản hồi từ Custom API');
+    }
+
+    // Parse JSON
+    const cleanText = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+    let parsed = null;
+    try {
+      parsed = JSON.parse(cleanText);
+    } catch {
+      const m = cleanText.match(/\{[\s\S]*\}/);
+      if (m) {
+        try { parsed = JSON.parse(m[0]); } catch {}
+      }
+    }
+
+    if (parsed && (Array.isArray(parsed.rows) || Array.isArray(parsed.items))) {
+      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
+        parsed.items = parsed.rows
+          .filter((row) => Array.isArray(row) || (typeof row === 'object' && row !== null))
+          .map((row) => {
+            if (typeof row === 'object' && !Array.isArray(row)) {
+              const cleaned = {};
+              selectedColumns.forEach((colKey) => {
+                cleaned[colKey] = cleanOcrCell(row[colKey], colKey);
+                if (colKey === 'donViTinh' && !cleaned[colKey]) cleaned[colKey] = 'pcs';
+              });
+              return cleaned;
+            }
+            const obj = {};
+            selectedColumns.forEach((colKey, idx) => {
+              obj[colKey] = cleanOcrCell(row[idx], colKey);
+              if (colKey === 'donViTinh' && !obj[colKey]) obj[colKey] = 'pcs';
+            });
+            return obj;
+          });
+      } else if (Array.isArray(parsed.items)) {
+        parsed.items = parsed.items.map((item) => {
+          const cleaned = {};
+          selectedColumns.forEach((colKey) => {
+            cleaned[colKey] = cleanOcrCell(item[colKey], colKey);
+            if (colKey === 'donViTinh' && !cleaned[colKey]) cleaned[colKey] = 'pcs';
+          });
+          return cleaned;
+        });
+      }
+      return parsed;
+    }
+
+    // Dự phòng phân tích dòng text nếu model trả về dạng danh sách
+    let fallbackSoPhieu = '';
+    const spMatch = text.match(/(?:Số\s*phiếu|Số\s*chứng\s*từ|Số\s*XKP|No\.?|(?:Số|No)\s*[:：])\s*[:：]?\s*([A-Z0-9_\-\s\/]+)/i);
+    if (spMatch) {
+      fallbackSoPhieu = spMatch[1].split('\n')[0].trim().replace(/^[:\s\-]+/, '');
+    }
+
+    const fallbackItems = [];
+    const sections = text.split(/(?:^|\n)\s*(?:\d+[\.\)]\s*(?:STT\s*\d+[:\s]*)?|STT\s*\d+[:\s]*)/i);
+    if (sections.length > 1) {
+      for (let i = 1; i < sections.length; i++) {
+        const sec = sections[i];
+        const lines = sec.split('\n').map((l) => l.trim()).filter(Boolean);
+        if (!lines.length) continue;
+        const firstLine = lines[0];
+
+        const parts = firstLine.split(',').map((p) => p.trim());
+        if (parts.length >= 3) {
+          const itemObj = {};
+          selectedColumns.forEach((col, idx) => {
+            itemObj[col] = parts[idx] ? cleanOcrCell(parts[idx], col) : '';
+          });
+          fallbackItems.push(itemObj);
+          continue;
+        }
+
+        let ten = firstLine.replace(/^[:\s\-]+/, '');
+        let soOSPO = '', donViTinh = '', slChungTu = '', slThucNhap = '', soPallet = '', ghiChu = '';
+        for (const l of lines) {
+          const ospoM = l.match(/(?:Số\s*O\.?S\/?PO|PO|OS)[:\s]+([^\n]+)/i);
+          if (ospoM) soOSPO = cleanOcrCell(ospoM[1], 'soOSPO');
+          const dvtM = l.match(/(?:ĐVT|Đơn\s*vị\s*tính)[:\s]+([^\n]+)/i);
+          if (dvtM) donViTinh = cleanOcrCell(dvtM[1], 'donViTinh');
+          const slctM = l.match(/(?:SL\s*chứng\s*từ|Số\s*lượng\s*chứng\s*từ)[:\s]+([^\n]+)/i);
+          if (slctM) slChungTu = cleanOcrCell(slctM[1], 'soLuongChungTu');
+          const sltnM = l.match(/(?:SL\s*thực\s*nhập|Số\s*lượng\s*thực\s*nhập)[:\s]+([^\n]+)/i);
+          if (sltnM) slThucNhap = cleanOcrCell(sltnM[1], 'soLuongThucNhap');
+          const palM = l.match(/(?:Số\s*pallet|Pallet)[:\s]+([^\n]+)/i);
+          if (palM) soPallet = cleanOcrCell(palM[1], 'soPallet');
+        }
+
+        fallbackItems.push({
+          ten: ten || '',
+          soOSPO: soOSPO || '',
+          donViTinh: donViTinh || 'pcs',
+          soLuongChungTu: slChungTu || '',
+          soLuongThucNhap: slThucNhap || '',
+          soPallet: soPallet || '',
+          ghiChu: ghiChu || '',
+        });
+      }
+    }
+
+    if (fallbackItems.length > 0) {
+      return {
+        soPhieu: fallbackSoPhieu,
+        items: fallbackItems,
+      };
+    }
+
+    throw new Error('Custom API chưa trích xuất được bảng hàng hóa. Hãy kiểm tra lại Base URL hoặc chọn Model khác.');
   };
 
   // Direct Gemini OCR with Google Generative AI (Optimized Compact 2D Matrix Output & Fast Vision)
@@ -3175,6 +3457,18 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
   };
 
   const getModelBadgeInfo = (provider, modelId = null) => {
+    if (provider === 'custom') {
+      const targetId = modelId || customModel || 'Custom-Model';
+      const sName = targetId.length > 22 ? targetId.slice(0, 20) + '...' : targetId;
+      return {
+        engine: 'custom',
+        model: targetId,
+        modelName: sName,
+        providerLabel: 'Custom API',
+        badgeText: `⚙️ Custom API (${sName})`,
+        badgeColor: 'bg-cyan-100 text-cyan-800 border border-cyan-200',
+      };
+    }
     if (provider === 'bai') {
       const targetId = modelId || baiModel;
       const mObj = BAI_MODELS.find((m) => m.id === targetId || m.name.toLowerCase() === String(targetId).toLowerCase());
@@ -3336,6 +3630,27 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       const res = await retryableOcrCall(() => scanClientBaiWithBase64(base64Data, mimeType, bKey, modelToUse), modelToUse);
       const badgeInfo = getModelBadgeInfo('bai', modelToUse);
       return { data: res, engine: 'bai', model: modelToUse, badgeInfo };
+    }
+
+    // 5. CUSTOM API PROVIDER (OpenAI-compatible)
+    if (aiProvider === 'custom') {
+      const cBaseUrl = (customBaseUrl || '').trim();
+      const cKey = (customApiKey || '').trim();
+      const cModel = (customModel || '').trim();
+      if (!cBaseUrl) {
+        throw new Error('Chưa cấu hình Base URL cho Custom API! Vui lòng vào Cài đặt ⚙️ -> Tab API -> Chọn Tùy chỉnh (Custom API) và nhập Base URL.');
+      }
+      if (!cModel) {
+        throw new Error('Chưa cấu hình Tên Model cho Custom API! Vui lòng vào Cài đặt ⚙️ -> Tab API -> Chọn Tùy chỉnh (Custom API) và nhập Tên mô hình.');
+      }
+      setScanProgress({
+        active: true,
+        percent: 45,
+        text: `${progressPrefix} Đang gọi Custom API (${cModel})...`,
+      });
+      const res = await retryableOcrCall(() => scanClientCustomWithBase64(base64Data, mimeType, cBaseUrl, cKey, cModel), cModel);
+      const badgeInfo = getModelBadgeInfo('custom', cModel);
+      return { data: res, engine: 'custom', model: cModel, badgeInfo };
     }
 
     // 4. GOOGLE GEMINI PROVIDER (with Round-Robin Key Balancing & Failover)
@@ -4417,10 +4732,51 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               >
                 B.AI
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAiProvider('custom');
+                  localStorage.setItem('ai_provider', 'custom');
+                  showToast('Đang dùng chế độ Tùy chỉnh (Custom API)');
+                }}
+                className={`px-2 py-0.5 rounded-md transition-all ${
+                  aiProvider === 'custom'
+                    ? 'bg-cyan-600 text-white shadow-xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Custom
+              </button>
             </div>
 
             {/* Provider Status Details */}
-            {aiProvider === 'bai' ? (
+            {aiProvider === 'custom' ? (
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`inline-block w-2.5 h-2.5 rounded-full ${
+                    customBaseUrl.trim() && customModel.trim() ? 'bg-cyan-500 animate-pulse' : 'bg-amber-500'
+                  }`}
+                />
+                <span className="font-semibold text-slate-700">
+                  {customBaseUrl.trim() && customModel.trim() ? (
+                    <>
+                      <span className="text-cyan-700 font-bold">Custom API</span>: {customModel}
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSettingsTab('api');
+                        setSettingsOpen(true);
+                      }}
+                      className="text-cyan-700 font-bold hover:underline"
+                    >
+                      ⚠️ Chưa cấu hình Custom API (Bấm vào đây để cấu hình)
+                    </button>
+                  )}
+                </span>
+              </div>
+            ) : aiProvider === 'bai' ? (
               <div className="flex items-center gap-1.5">
                 <span
                   className={`inline-block w-2.5 h-2.5 rounded-full ${
@@ -4823,7 +5179,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 onClick={startScan}
                 disabled={isScanning}
                 className={`mt-4 w-full py-4 rounded-xl text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-50 transition-all ${
-                  aiProvider === 'bai'
+                  aiProvider === 'custom'
+                    ? 'bg-gradient-to-r from-cyan-600 via-teal-600 to-cyan-700 hover:opacity-95 shadow-cyan-600/25'
+                    : aiProvider === 'bai'
                     ? 'bg-gradient-to-r from-rose-600 via-red-600 to-pink-600 hover:opacity-95 shadow-rose-600/25'
                     : aiProvider === 'kira'
                     ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:opacity-95 shadow-amber-600/25'
@@ -4837,7 +5195,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     <span>
                       Đang trích xuất bằng {
-                        aiProvider === 'bai'
+                        aiProvider === 'custom'
+                          ? `Custom API (${customModel || 'Tùy chỉnh'})`
+                          : aiProvider === 'bai'
                           ? `B.AI (${BAI_MODELS.find((m) => m.id === baiModel)?.shortName || baiModel})`
                           : aiProvider === 'kira'
                           ? `Kira AI (${KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel})`
@@ -4851,7 +5211,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   <>
                     <IconSparkles className="w-5 h-5" />
                     <span>
-                      {aiProvider === 'bai'
+                      {aiProvider === 'custom'
+                        ? `Bắt Đầu Quét Bằng Custom API [${customModel || 'Tùy chỉnh'}]`
+                        : aiProvider === 'bai'
                         ? `Bắt Đầu Quét Bằng B.AI [${BAI_MODELS.find((m) => m.id === baiModel)?.shortName || baiModel}]`
                         : aiProvider === 'kira'
                         ? `Bắt Đầu Quét Bằng Kira AI [${KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel}]`
@@ -5619,7 +5981,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   onClick={() => startBatchPdfScan()}
                   disabled={selectedPdfPagesCount === 0}
                   className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-40 ${
-                    aiProvider === 'bai'
+                    aiProvider === 'custom'
+                      ? 'bg-gradient-to-r from-cyan-600 to-teal-600 hover:opacity-95'
+                      : aiProvider === 'bai'
                       ? 'bg-gradient-to-r from-rose-600 to-red-600 hover:opacity-95'
                       : aiProvider === 'kira'
                       ? 'bg-gradient-to-r from-amber-600 to-orange-600 hover:opacity-95'
@@ -5802,6 +6166,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     <option value="bai">B.AI</option>
                     <option value="kira">Kira AI</option>
                     <option value="openrouter">OpenRouter</option>
+                    <option value="custom">Tùy chỉnh (Custom API)</option>
                   </select>
                 </div>
 
@@ -6487,6 +6852,21 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     >
                       <span>🔥 B.AI</span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAiProvider('custom');
+                        localStorage.setItem('ai_provider', 'custom');
+                        showToast('Đã chuyển sang Tùy chỉnh (Custom API)');
+                      }}
+                      className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                        aiProvider === 'custom'
+                          ? 'bg-cyan-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                      }`}
+                    >
+                      <span>⚙️ Tùy chỉnh</span>
+                    </button>
                   </div>
 
                   {/* B.AI SECTION */}
@@ -6592,6 +6972,138 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                         </div>
                         <p className="text-[10px] text-rose-900 bg-rose-100/70 p-2 rounded-lg mt-1 leading-normal">
                           💡 <strong>Khuyên dùng:</strong> <code>DeepSeek-V4.1-Flash</code> là mô hình MoE 552B siêu tốc mặc định, hoặc <code>Qwen3.8-Flash</code> để đọc chữ viết tay tốt nhất.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* CUSTOM API SECTION */}
+                  {aiProvider === 'custom' && (
+                    <div className="space-y-4 animate-fade-in">
+                      <div className="p-3.5 bg-cyan-50 rounded-2xl border border-cyan-200 space-y-2">
+                        <div className="font-bold text-cyan-950 flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <IconSparkles className="w-4 h-4 text-cyan-600" />
+                            <span>Tùy Chỉnh API Bên Thứ 3 (OpenAI-Compatible)</span>
+                          </span>
+                          <span className="text-cyan-700 font-semibold text-[11px] px-2 py-0.5 rounded-full bg-cyan-100">
+                            CORS Safe Proxy
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-cyan-900 leading-relaxed">
+                          Tự do kết nối bất kỳ nhà cung cấp nào (Groq, Together AI, SiliconFlow, Novita, Ollama LAN, vLLM...) theo chuẩn OpenAI. Hệ thống sẽ tự xử lý ảnh và bóc tách dữ liệu phiếu kho.
+                        </p>
+                      </div>
+
+                      {/* Base URL Input */}
+                      <div className="space-y-1.5">
+                        <label className="font-bold text-slate-700 flex items-center justify-between text-xs">
+                          <span>Base URL API</span>
+                          <span className="text-[10px] text-slate-400 font-normal">Tự động gắn /chat/completions</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={customBaseUrl}
+                          onChange={(e) => {
+                            setCustomBaseUrl(e.target.value);
+                            localStorage.setItem('custom_base_url', e.target.value);
+                          }}
+                          placeholder="Ví dụ: https://api.together.xyz/v1 hoặc http://localhost:11434/v1"
+                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 font-mono text-xs outline-none bg-white"
+                        />
+                        {/* Quick Presets for Base URL */}
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                          <span className="text-[10px] font-semibold text-slate-500">Gợi ý nhanh:</span>
+                          {[
+                            { name: 'Together AI', url: 'https://api.together.xyz/v1' },
+                            { name: 'Groq', url: 'https://api.groq.com/openai/v1' },
+                            { name: 'SiliconFlow', url: 'https://api.siliconflow.cn/v1' },
+                            { name: 'DeepSeek', url: 'https://api.deepseek.com/v1' },
+                            { name: 'Ollama (Local)', url: 'http://localhost:11434/v1' },
+                          ].map((p) => (
+                            <button
+                              key={p.name}
+                              type="button"
+                              onClick={() => {
+                                setCustomBaseUrl(p.url);
+                                localStorage.setItem('custom_base_url', p.url);
+                                showToast(`Đã chọn Base URL ${p.name}`);
+                              }}
+                              className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-cyan-100 hover:text-cyan-800 text-[10px] text-slate-600 transition-all font-medium border border-slate-200/80"
+                            >
+                              {p.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* API Key Input */}
+                      <div className="space-y-1.5">
+                        <label className="font-bold text-slate-700 flex items-center justify-between text-xs">
+                          <span>API Key</span>
+                          <button
+                            type="button"
+                            onClick={testCustomConnection}
+                            disabled={customTesting || !customBaseUrl.trim()}
+                            className="text-cyan-600 hover:underline font-semibold text-[11px] disabled:opacity-50"
+                          >
+                            {customTesting ? 'Đang kiểm tra...' : '⚡ Kiểm Tra Kết Nối'}
+                          </button>
+                        </label>
+                        <input
+                          type="password"
+                          value={customApiKey}
+                          onChange={(e) => {
+                            setCustomApiKey(e.target.value);
+                            localStorage.setItem('custom_api_key', e.target.value);
+                          }}
+                          placeholder="Dán API Key (có thể bỏ trống nếu là Ollama / vLLM local)"
+                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 font-mono text-xs outline-none bg-white"
+                        />
+                        <p className="text-[11px] text-slate-400">Key được bảo mật trên trình duyệt và tự động đồng bộ qua mã Cloud Sync.</p>
+                      </div>
+
+                      {/* Model ID Input */}
+                      <div className="space-y-1.5">
+                        <label className="font-bold text-slate-700 flex items-center justify-between text-xs">
+                          <span>Tên Mô Hình (Model ID)</span>
+                          <span className="text-[10px] text-cyan-700 font-semibold">Ưu tiên model hỗ trợ Vision</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={customModel}
+                          onChange={(e) => {
+                            setCustomModel(e.target.value);
+                            localStorage.setItem('custom_model', e.target.value);
+                          }}
+                          placeholder="Ví dụ: meta-llama/Llama-3.2-11B-Vision-Instruct hoặc llama3.2-vision"
+                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 font-mono text-xs outline-none bg-white"
+                        />
+                        {/* Quick Presets for Model */}
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                          <span className="text-[10px] font-semibold text-slate-500">Mô hình mẫu:</span>
+                          {[
+                            { label: 'Llama 3.2 11B Vision', id: 'meta-llama/Llama-3.2-11B-Vision-Instruct' },
+                            { label: 'Groq Llama 3.2 Vision', id: 'llama-3.2-11b-vision-preview' },
+                            { label: 'Qwen 2.5 VL 72B', id: 'Qwen/Qwen2.5-VL-72B-Instruct' },
+                            { label: 'Ollama Vision', id: 'llama3.2-vision' },
+                          ].map((pm) => (
+                            <button
+                              key={pm.label}
+                              type="button"
+                              onClick={() => {
+                                setCustomModel(pm.id);
+                                localStorage.setItem('custom_model', pm.id);
+                                showToast(`Đã chọn model ${pm.label}`);
+                              }}
+                              className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-cyan-100 hover:text-cyan-800 text-[10px] text-slate-600 transition-all font-medium border border-slate-200/80"
+                            >
+                              {pm.label}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-cyan-900 bg-cyan-100/70 p-2 rounded-lg mt-1 leading-normal">
+                          💡 <strong>Lưu ý:</strong> Để đọc được ảnh phiếu xuất kho, hãy chọn mô hình hỗ trợ <strong>Vision / Multimodal</strong> (như Llama 3.2 Vision, Qwen 2.5 VL, Pixtral...).
                         </p>
                       </div>
                     </div>
