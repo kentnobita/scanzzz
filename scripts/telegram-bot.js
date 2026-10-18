@@ -81,11 +81,12 @@ let inMemoryBotConfig = null;
 const BOT_COMMANDS = [
   { command: 'astart', description: 'Khởi động bé Akko & xem hướng dẫn quét phiếu' },
   { command: 'ahelp', description: 'Xem danh sách phép thuật và cách dùng' },
-  { command: 'astatus', description: 'Xem trạng thái AI, Google Sheet & Topic' },
+  { command: 'astatus', description: 'Xem trạng thái AI (Gemini / Custom), Sheet & Topic' },
   { command: 'atopic', description: 'Khóa quét phiếu vào Topic này (/atopic all mở khóa)' },
-  { command: 'amodel', description: 'Đổi mô hình AI (Gemini, Qwen, Nex, Minimax...)' },
-  { command: 'aprovider', description: 'Đổi nhà cung cấp AI (Gemini, B.AI, Kira, OpenRouter)' },
-  { command: 'akey', description: 'Nạp API Key (Google, B.AI, Kira, OpenRouter)' },
+  { command: 'acustom', description: 'Cài đặt Custom API: Base URL, Key & Model' },
+  { command: 'amodel', description: 'Đổi mô hình cho Custom API (/amodel <Mã>)' },
+  { command: 'aprovider', description: 'Chọn AI: 1: Gemini 3.8 Flash • 2: Custom API' },
+  { command: 'akey', description: 'Nạp API Key (Google Gemini hoặc Custom API)' },
   { command: 'async', description: 'Đồng bộ cấu hình từ Web qua mã Cloud Sync' },
   { command: 'asheet', description: 'Cài đặt link Webhook Google Sheet' },
   { command: 'aserver', description: 'Cài đặt máy chủ Web Cloud Sync' }
@@ -223,19 +224,16 @@ function getBotConfig() {
   }
 
   const rawProv = (parsed && parsed.aiProvider) || defaultSync.aiProvider || process.env.AI_PROVIDER || 'gemini';
-  const effectiveProv = rawProv === 'apinex' ? 'gemini' : rawProv;
+  const effectiveProv = rawProv === 'custom' ? 'custom' : 'gemini';
 
   const finalCfg = {
     aiProvider: effectiveProv,
     geminiKey: (parsed && parsed.geminiKey) || defaultSync.apiKey || process.env.GEMINI_API_KEY || '',
     geminiBackupKeys: (parsed && Array.isArray(parsed.geminiBackupKeys)) ? parsed.geminiBackupKeys : (Array.isArray(defaultSync.backupKeys) ? defaultSync.backupKeys : []),
-    geminiModel: (parsed && parsed.geminiModel && parsed.geminiModel !== 'gemini-2.5-flash') ? parsed.geminiModel : ((defaultSync.geminiModel && defaultSync.geminiModel !== 'gemini-2.5-flash') ? defaultSync.geminiModel : (process.env.GEMINI_MODEL || 'gemini-3.6-flash')),
-    openRouterKey: (parsed && parsed.openRouterKey) || defaultSync.openRouterKey || process.env.OPENROUTER_API_KEY || '',
-    openRouterModel: (parsed && parsed.openRouterModel) || defaultSync.openRouterModel || process.env.OPENROUTER_MODEL || 'nex-agi/nex-n2.5-pro:free',
-    kiraKey: (parsed && parsed.kiraKey) || defaultSync.kiraKey || process.env.KIRA_API_KEY || '',
-    kiraModel: (parsed && parsed.kiraModel) || defaultSync.kiraModel || process.env.KIRA_MODEL || 'qwen3.8-27b-free',
-    baiKey: (parsed && parsed.baiKey) || defaultSync.baiKey || process.env.BAI_API_KEY || '',
-    baiModel: (parsed && parsed.baiModel) || defaultSync.baiModel || process.env.BAI_MODEL || 'DeepSeek-V4.1-Flash',
+    geminiModel: 'gemini-3.8-flash', // Duy nhất Gemini 3.8 Flash
+    customBaseUrl: (parsed && parsed.customBaseUrl) || defaultSync.customBaseUrl || process.env.CUSTOM_BASE_URL || '',
+    customApiKey: (parsed && parsed.customApiKey) || defaultSync.customApiKey || process.env.CUSTOM_API_KEY || '',
+    customModel: (parsed && parsed.customModel) || defaultSync.customModel || process.env.CUSTOM_MODEL || '',
     googleSheetUrl: (parsed && parsed.googleSheetUrl) || defaultSync.googleSheetUrl || process.env.GOOGLE_SHEET_URL || 'https://script.google.com/macros/s/AKfycbxvSkHl-Ebg-VDX88B-iF0BhiH6ujtJ9ZKk-MroWOlU2ky4K4IBG40zyt2qsMfBa0gE/exec',
     autoSyncSheet: (parsed && parsed.autoSyncSheet !== undefined) ? !!parsed.autoSyncSheet : (defaultSync.autoSyncSheet !== undefined ? !!defaultSync.autoSyncSheet : true),
     cloudSyncCode: (parsed && parsed.cloudSyncCode) || defaultSync.code || '',
@@ -439,6 +437,16 @@ function robustParseOcrJson(rawText, selectedColumns = DEFAULT_COLUMNS) {
   text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
   const toFormatted = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') return parsed;
+
+    // Chuẩn hóa nếu model trả về các trường khác như data, danhSach, chiTiet...
+    if (!parsed.items && !parsed.rows) {
+      const potentialArray = parsed.data || parsed.danhSach || parsed.chiTiet || parsed.products || parsed.hangHoa || (Array.isArray(parsed) ? parsed : null);
+      if (Array.isArray(potentialArray)) {
+        parsed.items = potentialArray;
+      }
+    }
+
     if (parsed && parsed.soPhieu) {
       let sp = String(parsed.soPhieu).trim();
       if (/^(?:phi|phiếu|so|số)$/i.test(sp)) sp = '';
@@ -495,7 +503,8 @@ function robustParseOcrJson(rawText, selectedColumns = DEFAULT_COLUMNS) {
 
   try {
     const p = JSON.parse(text);
-    if (p && (Array.isArray(p.rows) || Array.isArray(p.items))) return toFormatted(p);
+    if (Array.isArray(p)) return toFormatted({ items: p });
+    if (p && (Array.isArray(p.rows) || Array.isArray(p.items) || p.data || p.danhSach || p.chiTiet)) return toFormatted(p);
   } catch (e1) {}
 
   const firstBrace = text.indexOf('{');
@@ -504,7 +513,7 @@ function robustParseOcrJson(rawText, selectedColumns = DEFAULT_COLUMNS) {
     const candidate = text.substring(firstBrace, lastBrace + 1);
     try {
       const p = JSON.parse(candidate);
-      if (p && (Array.isArray(p.rows) || Array.isArray(p.items))) return toFormatted(p);
+      if (p && (Array.isArray(p.rows) || Array.isArray(p.items) || p.data || p.danhSach || p.chiTiet)) return toFormatted(p);
     } catch (e2) {}
 
     try {
@@ -512,7 +521,7 @@ function robustParseOcrJson(rawText, selectedColumns = DEFAULT_COLUMNS) {
         .replace(/[\u0000-\u001F]+/g, (match) => (match.includes('\n') ? ' ' : ''))
         .replace(/,\s*([\]}])/g, '$1');
       const p = JSON.parse(sanitized);
-      if (p && (Array.isArray(p.rows) || Array.isArray(p.items))) return toFormatted(p);
+      if (p && (Array.isArray(p.rows) || Array.isArray(p.items) || p.data || p.danhSach || p.chiTiet)) return toFormatted(p);
     } catch (e3) {}
   }
 
@@ -566,79 +575,65 @@ function robustParseOcrJson(rawText, selectedColumns = DEFAULT_COLUMNS) {
   return { soPhieu: detectedSoPhieu, items: [{ ten: cleanOcrCell(text, 'ten') }] };
 }
 
-async function scanWithOpenRouter(base64Data, mimeType, key, model, selectedColumns, fieldPrompts) {
-  const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
-  const rules = ['soPhieu', ...selectedColumns]
-    .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
-    .join('\n');
-
-  const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
-    'YÊU CẦU BẮT BUỘC:\n' +
-    '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON.\n' +
-    '- Định dạng trả về duy nhất là chuỗi JSON:\n' +
-    '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}\n\n' +
-    'Quy tắc trích xuất quan trọng:\n' +
-    '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
-    '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
-    '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
-    '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1", hoặc dòng trên là mã và dòng dưới là quy cách) nhưng chỉ có chung 1 bộ số lượng, 1 STT hoặc 1 mã OS/PO thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất (nối tên thành 1 chuỗi hoàn chỉnh). Tuyệt đối không tách thành 2 dòng riêng biệt nếu dòng kia không có số lượng thực tế.\n' +
-    'Hướng dẫn cột:\n' + rules + '\n\n' +
-    'ĐỊNH DẠNG TRẢ VỀ:\n' +
-    'Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
-    '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
-
-  const selectedModel = model || 'nex-agi/nex-n2.5-pro:free';
-  const reqBody = {
-    model: selectedModel,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'image_url', image_url: { url: 'data:' + mimeType + ';base64,' + base64Data } },
-          { type: 'text', text: promptText }
-        ]
-      }
-    ],
-    temperature: 0.1,
-    max_tokens: 3500,
+// Hàm fetch có cơ chế tự động thử lại (Retry) khi gặp chập chờn mạng (ECONNRESET, ETIMEDOUT, rớt gói tin)
+async function fetchWithRetry(url, options = {}, maxRetries = 2, delayMs = 1200) {
+  const mergedHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    ...(options.headers || {})
   };
+  const finalOptions = { ...options, headers: mergedHeaders };
 
-  if (selectedModel.includes('qwen3.8') || selectedModel.includes('qwen-3.8')) {
-    reqBody.include_reasoning = false;
-    reqBody.reasoning = { effort: 'low' };
-  } else if (selectedModel.includes('nex') || selectedModel.includes('thinking')) {
-    reqBody.include_reasoning = false;
-    reqBody.reasoning = { effort: 'none' };
+  let lastErr = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fetch(url, finalOptions);
+    } catch (err) {
+      lastErr = err;
+      const isNetworkErr = err.name === 'TypeError' ||
+        err.message?.includes('fetch failed') ||
+        err.code === 'ECONNRESET' ||
+        err.code === 'ETIMEDOUT' ||
+        err.cause?.code === 'ECONNRESET' ||
+        err.cause?.code === 'ETIMEDOUT';
+
+      if (isNetworkErr && attempt < maxRetries) {
+        console.warn(`[Network Retry] Kết nối tới ${url.slice(0, 50)} bị ngắt (${err.cause?.code || err.message}). Đang thử lại lần ${attempt + 1}/${maxRetries}...`);
+        await new Promise(r => setTimeout(r, delayMs * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
   }
-
-  if (!selectedModel.includes('qwen')) {
-    reqBody.response_format = { type: 'json_object' };
-  }
-
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + key.trim(),
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://scanzzz.vercel.app',
-      'X-Title': 'Scan Pro Max Telegram Bot'
-    },
-    body: JSON.stringify(reqBody)
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || ('OpenRouter Error: ' + res.status));
-  }
-
-  const data = await res.json();
-  const msg = data.choices?.[0]?.message;
-  let text = (msg?.content || '').trim();
-  if (!text && msg?.reasoning) text = msg.reasoning.trim();
-  if (!text) throw new Error('Không nhận được dữ liệu từ OpenRouter');
-
-  return robustParseOcrJson(text, selectedColumns);
+  throw lastErr;
 }
+
+// Kế thừa thuật toán tối ưu kích thước ảnh bằng mupdf: Nén JPEG 82% siêu nhẹ, giữ nguyên nét chữ viết tay
+async function ensureOptimizedImage(base64Data, mimeType = 'image/jpeg', maxDimension = 1600) {
+  if (!base64Data || base64Data.length < 350000) {
+    return { base64: base64Data, mime: mimeType };
+  }
+  try {
+    const mupdf = await getMupdf();
+    const rawBuf = Buffer.from(base64Data, 'base64');
+    const doc = mupdf.Document.openDocument(rawBuf, mimeType.startsWith('image/') ? mimeType : 'image/jpeg');
+    const page = doc.loadPage(0);
+    const bounds = page.getBounds();
+    const width = bounds[2] - bounds[0];
+    const height = bounds[3] - bounds[1];
+    const maxDim = Math.max(width, height);
+    const scale = maxDim > maxDimension ? (maxDimension / maxDim) : 0.9;
+    const pixmap = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB);
+    const jpgBuf = Buffer.from(pixmap.asJPEG(82));
+    if (jpgBuf.length < rawBuf.length) {
+      console.log(`[Bot Optimizer] Đã nén ảnh mupdf từ ${rawBuf.length}b -> ${jpgBuf.length}b (JPEG 82% siêu nhẹ)`);
+      return { base64: jpgBuf.toString('base64'), mime: 'image/jpeg' };
+    }
+  } catch (err) {
+    console.warn('[Bot Optimizer] Không thể tối ưu ảnh bằng mupdf, tiếp tục dùng ảnh gốc:', err.message);
+  }
+  return { base64: base64Data, mime: mimeType };
+}
+
 const RETRY_TASKS = new Map();
 
 async function deleteTelegramMessage(chatId, messageId) {
@@ -654,292 +649,37 @@ async function deleteTelegramMessage(chatId, messageId) {
 
 function getActiveProviderInfo(cfg) {
   const provider = (cfg.aiProvider || 'gemini').toLowerCase().trim();
-  if (provider === 'gemini') {
-    const keys = getGeminiKeys(cfg);
+  if (provider === 'custom') {
     return {
-      provider: 'gemini',
-      providerName: 'Google Gemini',
-      model: cfg.geminiModel || 'gemini-3.6-flash',
-      key: keys[0] || cfg.geminiKey,
-      allKeys: keys,
-      keyCount: keys.length,
-      nextKeyIndex: keys.length > 0 ? (botGeminiKeyIndex % keys.length) : 0,
-      keyHint: 'Google Gemini API Key (`AIzaSy...`)'
-    };
-  } else if (provider === 'bai') {
-    return {
-      provider: 'bai',
-      providerName: 'B.AI',
-      model: cfg.baiModel || 'DeepSeek-V4.1-Flash',
-      key: cfg.baiKey,
-      keyHint: 'B.AI API Key'
-    };
-  } else if (provider === 'kira') {
-    return {
-      provider: 'kira',
-      providerName: 'Kira AI',
-      model: cfg.kiraModel || 'qwen3.8-27b-free',
-      key: cfg.kiraKey,
-      keyHint: 'Kira AI API Key (`kira_...`)'
-    };
-  } else {
-    return {
-      provider: 'openrouter',
-      providerName: 'OpenRouter',
-      model: cfg.openRouterModel || 'nex-agi/nex-n2.5-pro:free',
-      key: cfg.openRouterKey,
-      keyHint: 'OpenRouter API Key (`sk-or-...`)'
+      provider: 'custom',
+      providerName: 'Custom API',
+      model: cfg.customModel || 'Chưa đặt Model',
+      key: cfg.customApiKey || '',
+      baseUrl: cfg.customBaseUrl || '',
+      keyHint: 'Custom API Key'
     };
   }
+
+  // Mặc định luôn là Google Gemini với duy nhất Gemini 3.8 Flash
+  const keys = getGeminiKeys(cfg);
+  return {
+    provider: 'gemini',
+    providerName: 'Google Gemini',
+    model: 'gemini-3.8-flash',
+    key: keys[0] || cfg.geminiKey,
+    allKeys: keys,
+    keyCount: keys.length,
+    nextKeyIndex: keys.length > 0 ? (botGeminiKeyIndex % keys.length) : 0,
+    keyHint: 'Google Gemini API Key (`AIzaSy...`)'
+  };
 }
 
-async function scanWithBai(base64Data, mimeType, key, model, selectedColumns, fieldPrompts) {
-  const effectiveModel = String(model || 'qwen3.8-flash').toLowerCase().trim();
+async function scanWithGemini(base64Data, mimeType, key, selectedColumns, fieldPrompts) {
+  // Tối ưu ảnh trước khi gửi
+  const opt = await ensureOptimizedImage(base64Data, mimeType);
+  const payloadBase64 = opt.base64;
+  const payloadMime = opt.mime;
 
-  const payloadBase64 = base64Data;
-  const payloadMime = mimeType || 'image/jpeg';
-
-  const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
-  const rules = ['soPhieu', ...selectedColumns]
-    .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
-    .join('\n');
-
-  const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (đọc chuẩn chữ in & chữ viết tay).\n' +
-    'YÊU CẦU BẮT BUỘC:\n' +
-    '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON.\n' +
-    '- Định dạng trả về duy nhất là chuỗi JSON:\n' +
-    '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}\n\n' +
-    'Quy tắc trích xuất quan trọng:\n' +
-    '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
-    '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
-    '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
-    '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp nhưng chỉ có chung 1 bộ số lượng thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất.\n' +
-    'Hướng dẫn cột:\n' + rules + '\n\n' +
-    'ĐỊNH DẠNG TRẢ VỀ: Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
-    '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
-
-  const reqPayload = {
-    model: effectiveModel,
-    messages: [
-      {
-        role: 'system',
-        content: 'You are an expert OCR assistant for Vietnamese warehouse delivery notes and invoices. You MUST output ONLY valid, raw JSON. Do NOT output any internal monologue, thinking process, preamble, or markdown code fences.'
-      },
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: promptText },
-          { type: 'image_url', image_url: { url: `data:${payloadMime};base64,${payloadBase64}` } }
-        ]
-      }
-    ],
-    temperature: 0.1,
-    max_tokens: 6000
-  };
-
-  // B.AI hỗ trợ JSON mode cho tất cả các model bao gồm cả Qwen, DeepSeek, GLM
-  reqPayload.response_format = { type: 'json_object' };
-
-  const sendRequest = async (payload) => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 55000);
-    try {
-      return await fetch('https://api.b.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${key.trim()}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal
-      });
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  };
-
-  let res;
-  let activePayload = { ...reqPayload };
-  const retryableStatuses = [429, 500, 502, 503, 504];
-
-  for (let attempt = 0; attempt <= 2; attempt++) {
-    try {
-      res = await sendRequest(activePayload);
-      if (res.ok) break;
-
-      if (retryableStatuses.includes(res.status) && attempt < 2) {
-        console.warn(`[Bot B.AI] Model ${activePayload.model} bị lỗi ${res.status}, thử lại lần ${attempt + 1}...`);
-        await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
-        // Nếu model chính lỗi và không phải qwen3.8-27b, thử fallback sang qwen3.8-27b
-        if (attempt === 1 && !activePayload.model.includes('qwen3.8-27b')) {
-          activePayload.model = 'qwen3.8-27b';
-          console.warn(`[Bot B.AI] Chuyển hướng dự phòng sang model qwen3.8-27b...`);
-        }
-        continue;
-      }
-      break;
-    } catch (reqErr) {
-      if (attempt < 2) {
-        console.warn(`[Bot B.AI] Lỗi mạng (${reqErr.message}), thử lại lần ${attempt + 1}...`);
-        await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
-        continue;
-      }
-      throw reqErr;
-    }
-  }
-
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    let errMsg = `B.AI (${effectiveModel}) Error: ${res.status}`;
-    if (errData.error?.message) errMsg += ` - ${errData.error.message}`;
-    throw new Error(errMsg);
-  }
-
-  const data = await res.json();
-  const msg = data.choices?.[0]?.message;
-  let text = (msg?.content || '').trim();
-  if (!text && msg?.reasoning_content) {
-    text = msg.reasoning_content.trim();
-  }
-  if (!text) throw new Error('Không nhận được dữ liệu từ B.AI');
-
-  // Lọc bỏ tag <think>...</think> nếu có
-  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-
-  return robustParseOcrJson(text, selectedColumns);
-}
-
-async function scanWithKira(base64Data, mimeType, key, model, selectedColumns, fieldPrompts) {
-  const effectiveModel = (model || 'qwen3.8-flash').trim().replace(/-free$/i, '');
-
-  // Kira AI payload limit: auto-compress with mupdf if larger than 90KB base64
-  let payloadBase64 = base64Data;
-  let payloadMime = mimeType;
-  if (base64Data && base64Data.length > 90000) {
-    try {
-      const mupdf = await getMupdf();
-      const rawBuf = Buffer.from(base64Data, 'base64');
-      const doc = mupdf.Document.openDocument(rawBuf, mimeType.startsWith('image/') ? mimeType : 'image/jpeg');
-      const page = doc.loadPage(0);
-      const bounds = page.getBounds();
-      const maxDim = Math.max(bounds[2] - bounds[0], bounds[3] - bounds[1]);
-      const scale = maxDim > 800 ? (800 / maxDim) : 0.7;
-      const pixmap = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB);
-      const pngBuf = Buffer.from(pixmap.asPNG());
-      if (pngBuf.length < rawBuf.length) {
-        payloadBase64 = pngBuf.toString('base64');
-        payloadMime = 'image/png';
-        console.log(`[Bot Kira AI] Đã tối ưu kích thước ảnh từ ${rawBuf.length}b -> ${pngBuf.length}b cho model ${effectiveModel}`);
-      }
-    } catch (compressErr) {
-      console.warn('[Bot Kira AI] Không thể nén ảnh bằng mupdf:', compressErr.message);
-    }
-  }
-
-  const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
-  const rules = ['soPhieu', ...selectedColumns]
-    .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
-    .join('\n');
-
-  const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
-    'Quy tắc trích xuất quan trọng:\n' +
-    '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
-    '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
-    '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
-    '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1", hoặc dòng trên là mã và dòng dưới là quy cách) nhưng chỉ có chung 1 bộ số lượng, 1 STT hoặc 1 mã OS/PO thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất (nối tên thành 1 chuỗi hoàn chỉnh). Tuyệt đối không tách thành 2 dòng riêng biệt nếu dòng kia không có số lượng thực tế.\n' +
-    'Hướng dẫn cột:\n' + rules + '\n\n' +
-    'ĐỊNH DẠNG TRẢ VỀ:\n' +
-    'Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
-    '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
-
-  const sendRequest = async () => {
-    const reqBody = {
-      model: effectiveModel,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: promptText },
-            { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } }
-          ]
-        }
-      ],
-      temperature: 0.1,
-      max_tokens: 3000
-    };
-    if (effectiveModel.startsWith('gpt-')) {
-      reqBody.response_format = { type: 'json_object' };
-    }
-
-    return await fetch('https://kiraai.vn/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + key.trim(),
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(reqBody)
-    });
-  };
-
-  let res = await sendRequest();
-
-  // If rate limit / 502 occurs on free tier, wait 2.5s and retry once with same model
-  if ((res.status === 502 || res.status === 500 || res.status === 429) && isFree) {
-    console.warn(`[Bot Kira AI] Model ${effectiveModel} phản hồi ${res.status}, chờ 2.5s rồi thử lại...`);
-    await new Promise(r => setTimeout(r, 2500));
-    res = await sendRequest();
-  }
-
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => '');
-    let errMsg = `Kira AI (${effectiveModel}) Error: ${res.status}`;
-    try {
-      const errJson = JSON.parse(errorText);
-      if (errJson.error?.message) errMsg = errJson.error.message;
-    } catch {
-      if (res.status === 502) {
-        errMsg = `Mô hình [${effectiveModel}] đang tạm thời quá tải hoặc ảnh gửi quá nhanh (502 Bad Gateway). Vui lòng bấm [Thử lại 🔄] sau vài giây hoặc đổi mô hình /model qwen3.8-27b-free.`;
-      }
-    }
-    throw new Error(errMsg);
-  }
-
-  const data = await res.json();
-  const text = data.choices?.[0]?.message?.content;
-  if (!text) throw new Error('Không nhận được dữ liệu từ Kira AI');
-
-  try {
-    const parsed = JSON.parse(text);
-    if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-      parsed.items = parsed.rows.map((row) => {
-        const obj = {};
-        if (Array.isArray(row)) {
-          selectedColumns.forEach((colKey, idx) => { obj[colKey] = row[idx] ?? ''; });
-        }
-        return obj;
-      });
-    }
-    return parsed;
-  } catch {
-    const m = text.match(/\{[\s\S]*\}/);
-    if (m) {
-      const parsed = JSON.parse(m[0]);
-      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-        parsed.items = parsed.rows.map((row) => {
-          const obj = {};
-          if (Array.isArray(row)) {
-            selectedColumns.forEach((colKey, idx) => { obj[colKey] = row[idx] ?? ''; });
-          }
-          return obj;
-        });
-      }
-      return parsed;
-    }
-    throw new Error('Dữ liệu Kira AI trả về không đúng định dạng JSON');
-  }
-}
-
-async function scanWithGemini(base64Data, mimeType, key, selectedColumns, fieldPrompts, modelName = 'gemini-3.6-flash') {
   const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
   const rules = ['soPhieu', ...selectedColumns]
     .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
@@ -951,6 +691,7 @@ async function scanWithGemini(base64Data, mimeType, key, selectedColumns, fieldP
     '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
     '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
     '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1", hoặc dòng trên là mã và dòng dưới là quy cách) nhưng chỉ có chung 1 bộ số lượng, 1 STT hoặc 1 mã OS/PO thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất (nối tên thành 1 chuỗi hoàn chỉnh). Tuyệt đối không tách thành 2 dòng riêng biệt nếu dòng kia không có số lượng thực tế.\n' +
+    '5. CHỮ VIẾT TAY SỐ 9: Cột O.S/PO thường có chữ số 9 viết tay đuôi cong rất dễ nhầm với chữ "g" hoặc "q" (ví dụ g-297, q-697 thực chất là 9-297, 9-697 -> ghép thành số 90297, 90697).\n' +
     'Hướng dẫn cột:\n' + rules + '\n\n' +
     'ĐỊNH DẠNG TRẢ VỀ:\n' +
     'Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
@@ -961,7 +702,7 @@ async function scanWithGemini(base64Data, mimeType, key, selectedColumns, fieldP
       {
         parts: [
           { text: promptText },
-          { inline_data: { mime_type: mimeType, data: base64Data } }
+          { inline_data: { mime_type: payloadMime, data: payloadBase64 } }
         ]
       }
     ],
@@ -973,7 +714,8 @@ async function scanWithGemini(base64Data, mimeType, key, selectedColumns, fieldP
     }
   };
 
-  const actualModel = (modelName || 'gemini-3.6-flash').trim();
+  // Duy nhất mô hình gemini-3.8-flash
+  const actualModel = 'gemini-3.8-flash';
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(actualModel)}:generateContent?key=${encodeURIComponent(key.trim())}`,
     {
@@ -995,77 +737,213 @@ async function scanWithGemini(base64Data, mimeType, key, selectedColumns, fieldP
   return robustParseOcrJson(text, selectedColumns);
 }
 
+async function scanWithCustom(base64Data, mimeType, key, baseUrl, model, selectedColumns, fieldPrompts) {
+  // Tối ưu ảnh trước khi gửi
+  const opt = await ensureOptimizedImage(base64Data, mimeType);
+  const payloadBase64 = opt.base64;
+  const payloadMime = opt.mime;
+
+  const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
+  const rules = ['soPhieu', ...selectedColumns]
+    .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
+    .join('\n');
+
+  const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (đọc chuẩn chữ in & chữ viết tay).\n' +
+    'YÊU CẦU BẮT BUỘC:\n' +
+    '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON.\n' +
+    '- Định dạng trả về duy nhất là chuỗi JSON:\n' +
+    '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}\n\n' +
+    'Quy tắc trích xuất quan trọng:\n' +
+    '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
+    '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
+    '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
+    '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1", hoặc dòng trên là mã và dòng dưới là quy cách) nhưng chỉ có chung 1 bộ số lượng, 1 STT hoặc 1 mã OS/PO thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất (nối tên thành 1 chuỗi hoàn chỉnh). Tuyệt đối không tách thành 2 dòng riêng biệt nếu dòng kia không có số lượng thực tế.\n' +
+    '5. CHỮ VIẾT TAY SỐ 9: Cột O.S/PO thường có chữ số 9 viết tay đuôi cong rất dễ nhầm với chữ "g" hoặc "q" (ví dụ g-297, q-697 thực chất là 9-297, 9-697 -> ghép thành số 90297, 90697).\n' +
+    'Hướng dẫn cột:\n' + rules + '\n\n' +
+    'ĐỊNH DẠNG TRẢ VỀ: Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
+    '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
+
+  let cleanBaseUrl = (baseUrl || '').trim().replace(/\/+$/, '');
+  if (!cleanBaseUrl) throw new Error('Chưa cấu hình Base URL cho Custom API! Gõ /acustom <BaseURL> [Key] [Model]');
+  const endpoint = cleanBaseUrl.endsWith('/chat/completions') ? cleanBaseUrl : `${cleanBaseUrl}/chat/completions`;
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (key && key.trim()) {
+    headers['Authorization'] = `Bearer ${key.trim()}`;
+  }
+
+  const effectiveModel = model || 'qwen2.5-vl-72b-instruct';
+  const reqBody = {
+    model: effectiveModel,
+    messages: [
+      {
+        role: 'system',
+        content: 'You are an automated OCR parser for Vietnamese warehouse receipts. Output ONLY the raw JSON object matching the requested schema. DO NOT output internal reasoning, conversational thinking, or explanations.'
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: promptText },
+          { type: 'image_url', image_url: { url: `data:${payloadMime};base64,${payloadBase64}` } }
+        ]
+      }
+    ],
+    temperature: 0.1,
+    max_tokens: 6000,
+    response_format: { type: 'json_object' }
+  };
+
+  // Kế thừa: Tắt reasoning cho các mô hình reasoning để không bị nuốt token
+  const lowerMod = effectiveModel.toLowerCase();
+  if (lowerMod.includes('qwen') || lowerMod.includes('nex') || lowerMod.includes('thinking') || lowerMod.includes('deepseek') || lowerMod.includes('kimi') || lowerMod.includes('glm')) {
+    reqBody.include_reasoning = false;
+    reqBody.reasoning = { effort: 'none' };
+  }
+
+  const executeCall = async (bodyPayload) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 65000);
+    try {
+      const res = await fetchWithRetry(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(bodyPayload),
+        signal: controller.signal
+      }, 2, 1500);
+      clearTimeout(timer);
+      return res;
+    } catch (e) {
+      clearTimeout(timer);
+      const isReset = e.cause?.code === 'ECONNRESET' || e.code === 'ECONNRESET' || e.message?.includes('fetch failed');
+      if (isReset) {
+        throw new Error(`Máy chủ Custom API (${cleanBaseUrl}) bị ngắt kết nối đột ngột (ECONNRESET). Senpai bấm thử lại hoặc kiểm tra đường truyền nha!`);
+      }
+      throw e;
+    }
+  };
+
+  let res = await executeCall(reqBody);
+
+  // Smart Fallback 1: Retry không gửi response_format nếu lỗi 400 hoặc 422
+  if (!res.ok && (res.status === 400 || res.status === 422) && reqBody.response_format) {
+    console.warn(`[Custom Bot] Provider trả về ${res.status}, tự động retry không gửi response_format...`);
+    const fallbackBody = { ...reqBody };
+    delete fallbackBody.response_format;
+    res = await executeCall(fallbackBody);
+  }
+
+  // Smart Fallback 2: Gộp system role vào user message nếu provider không hỗ trợ system message khi có vision payload
+  if (!res.ok && (res.status === 400 || res.status === 422)) {
+    console.warn(`[Custom Bot] Provider không hỗ trợ system message, tự động gộp vào user prompt...`);
+    const sysMsg = reqBody.messages.find(m => m.role === 'system')?.content || '';
+    const userMsgs = reqBody.messages.filter(m => m.role !== 'system');
+    const modifiedUserMsgs = userMsgs.map(m => {
+      if (m.role === 'user' && Array.isArray(m.content)) {
+        return {
+          ...m,
+          content: m.content.map(c => {
+            if (c.type === 'text') return { ...c, text: `${sysMsg}\n\n${c.text}` };
+            return c;
+          })
+        };
+      }
+      return m;
+    });
+    const fallbackNoSys = { ...reqBody, messages: modifiedUserMsgs };
+    delete fallbackNoSys.response_format;
+    res = await executeCall(fallbackNoSys);
+  }
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error?.message || errData.message || `Custom API Error: ${res.status}`);
+  }
+
+  const data = await res.json();
+  const msg = data.choices?.[0]?.message;
+  let text = (msg?.content || '').trim();
+
+  // Khử <think> tag triệt để từ reasoning models
+  if (text) text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  if (!text && msg?.reasoning_content) {
+    text = msg.reasoning_content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  }
+  if (!text && msg?.reasoning) {
+    text = msg.reasoning.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  }
+
+  if (!text) throw new Error('Không nhận được dữ liệu phản hồi từ Custom API');
+
+  return robustParseOcrJson(text, selectedColumns);
+}
+
 async function performOcr(cfg, base64Data, mimeType) {
   const provider = (cfg.aiProvider || 'gemini').toLowerCase().trim();
   const selectedColumns = cfg.selectedColumns || DEFAULT_COLUMNS;
   const fieldPrompts = cfg.fieldPrompts || DEFAULT_FIELD_PROMPTS;
 
-  if (provider === 'gemini') {
-    const allKeys = getGeminiKeys(cfg);
-    if (allKeys.length === 0) {
-      throw new Error('Chưa có Google Gemini API Key! Gõ /akey AIzaSy... hoặc đồng bộ /async <Mã>');
+  if (provider === 'custom') {
+    if (!cfg.customBaseUrl) {
+      throw new Error('Chưa cấu hình Base URL cho Custom API! Gõ /acustom <BaseURL> [Key] [Model] hoặc đồng bộ /async <Mã>');
     }
-    const model = cfg.geminiModel || 'gemini-3.6-flash';
-    const startIndex = allKeys.length > 0 ? (botGeminiKeyIndex % allKeys.length) : 0;
-    const orderedKeys = allKeys.length > 1
-      ? [...allKeys.slice(startIndex), ...allKeys.slice(0, startIndex)]
-      : allKeys;
+    if (!cfg.customModel) {
+      throw new Error('Chưa cấu hình mã Model cho Custom API! Gõ /amodel <TênModel> hoặc /acustom <BaseURL> [Key] [Model]');
+    }
+    const ocrRaw = await scanWithCustom(
+      base64Data,
+      mimeType,
+      cfg.customApiKey,
+      cfg.customBaseUrl,
+      cfg.customModel,
+      selectedColumns,
+      fieldPrompts
+    );
+    return { ocrRaw, modelUsed: `Custom API (${cfg.customModel})` };
+  }
 
-    let lastError = null;
-    let successfulKeyIndex = -1;
-    let ocrRaw = null;
+  // Mặc định luôn là Google Gemini với mô hình duy nhất Gemini 3.8 Flash
+  const allKeys = getGeminiKeys(cfg);
+  if (allKeys.length === 0) {
+    throw new Error('Chưa có Google Gemini API Key! Gõ /akey AIzaSy... hoặc đồng bộ /async <Mã>');
+  }
+  const model = 'gemini-3.8-flash';
+  const startIndex = allKeys.length > 0 ? (botGeminiKeyIndex % allKeys.length) : 0;
+  const orderedKeys = allKeys.length > 1
+    ? [...allKeys.slice(startIndex), ...allKeys.slice(0, startIndex)]
+    : allKeys;
 
-    for (let i = 0; i < orderedKeys.length; i++) {
-      const currentKey = orderedKeys[i];
-      const actualKeyIdx = allKeys.indexOf(currentKey);
-      try {
-        console.log(`[Gemini Bot] Đang quét phiếu bằng key #${actualKeyIdx + 1}/${allKeys.length} (${currentKey.slice(0, 8)}...${currentKey.slice(-4)}) - Model: ${model}`);
-        ocrRaw = await scanWithGemini(base64Data, mimeType, currentKey, selectedColumns, fieldPrompts, model);
-        successfulKeyIndex = actualKeyIdx;
-        break;
-      } catch (err) {
-        lastError = err;
-        console.warn(`[Gemini Bot] Lỗi với key #${actualKeyIdx + 1}/${allKeys.length}: ${err.message}`);
-        if (i < orderedKeys.length - 1) {
-          console.log(`[Gemini Bot] Chuyển sang key dự phòng tiếp theo trong dàn luân chuyển...`);
-          continue;
-        }
+  let lastError = null;
+  let successfulKeyIndex = -1;
+  let ocrRaw = null;
+
+  for (let i = 0; i < orderedKeys.length; i++) {
+    const currentKey = orderedKeys[i];
+    const actualKeyIdx = allKeys.indexOf(currentKey);
+    try {
+      console.log(`[Gemini Bot] Đang quét phiếu bằng key #${actualKeyIdx + 1}/${allKeys.length} (${currentKey.slice(0, 8)}...${currentKey.slice(-4)}) - Model: ${model}`);
+      ocrRaw = await scanWithGemini(base64Data, mimeType, currentKey, selectedColumns, fieldPrompts);
+      successfulKeyIndex = actualKeyIdx;
+      break;
+    } catch (err) {
+      lastError = err;
+      console.warn(`[Gemini Bot] Lỗi với key #${actualKeyIdx + 1}/${allKeys.length}: ${err.message}`);
+      if (i < orderedKeys.length - 1) {
+        console.log(`[Gemini Bot] Chuyển sang key dự phòng tiếp theo trong dàn luân chuyển...`);
+        continue;
       }
     }
-
-    if (!ocrRaw) {
-      throw lastError || new Error('Không thể kết nối đến Google Gemini với tất cả các key hiện có.');
-    }
-
-    // Sau khi xử lý xong 1 phiếu thành công, luân chuyển sang key kế tiếp cho phiếu sau
-    botGeminiKeyIndex = (successfulKeyIndex + 1) % allKeys.length;
-    const modelUsed = allKeys.length > 1
-      ? `Gemini (${model} • Key #${successfulKeyIndex + 1}/${allKeys.length})`
-      : `Gemini (${model})`;
-
-    return { ocrRaw, modelUsed };
-  } else if (provider === 'bai') {
-    if (!cfg.baiKey) {
-      throw new Error('Chưa có B.AI API Key! Gõ /key <Key> hoặc đồng bộ /sync <Mã>');
-    }
-    const model = String(cfg.baiModel || 'deepseek-v4.1-flash').toLowerCase().trim();
-    const ocrRaw = await scanWithBai(base64Data, mimeType, cfg.baiKey, model, selectedColumns, fieldPrompts);
-    return { ocrRaw, modelUsed: `B.AI (${model})` };
-  } else if (provider === 'kira') {
-    if (!cfg.kiraKey) {
-      throw new Error('Chưa có Kira AI API Key! Gõ /key kira_... hoặc đồng bộ /sync <Mã>');
-    }
-    const model = cfg.kiraModel || 'qwen3.8-27b-free';
-    const ocrRaw = await scanWithKira(base64Data, mimeType, cfg.kiraKey, model, selectedColumns, fieldPrompts);
-    return { ocrRaw, modelUsed: `Kira AI (${model})` };
-  } else {
-    if (!cfg.openRouterKey) {
-      throw new Error('Chưa có OpenRouter API Key! Gõ /key sk-or... hoặc đồng bộ /sync <Mã>');
-    }
-    const model = cfg.openRouterModel || 'nex-agi/nex-n2.5-pro:free';
-    const ocrRaw = await scanWithOpenRouter(base64Data, mimeType, cfg.openRouterKey, model, selectedColumns, fieldPrompts);
-    return { ocrRaw, modelUsed: `OpenRouter (${model})` };
   }
+
+  if (!ocrRaw) {
+    throw lastError || new Error('Không thể kết nối đến Google Gemini với tất cả các key hiện có.');
+  }
+
+  botGeminiKeyIndex = (successfulKeyIndex + 1) % allKeys.length;
+  const modelUsed = allKeys.length > 1
+    ? `Gemini (${model} • Key #${successfulKeyIndex + 1}/${allKeys.length})`
+    : `Gemini (${model})`;
+
+  return { ocrRaw, modelUsed };
 }
 
 function partitionItemsIntoSlipGroups(itemsList, defaultSoPhieu, defaultPageNum) {
@@ -1210,21 +1088,21 @@ async function syncToGoogleSheet(sheetUrl, soPhieu, items) {
 
 async function baseSendTelegram(method, body) {
   try {
-    const res = await fetch(`${TELEGRAM_API}/${method}`, {
+    const res = await fetchWithRetry(`${TELEGRAM_API}/${method}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
-    });
+    }, 2, 1000);
     const data = await res.json();
     if (!data.ok && body && body.parse_mode && data.description && data.description.includes("can't parse entities")) {
       console.warn(`[sendTelegram] Lỗi Markdown (${data.description}), Akko tự động chuyển sang gửi văn bản thuần...`);
       const fallbackBody = { ...body };
       delete fallbackBody.parse_mode;
-      const fallbackRes = await fetch(`${TELEGRAM_API}/${method}`, {
+      const fallbackRes = await fetchWithRetry(`${TELEGRAM_API}/${method}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(fallbackBody)
-      });
+      }, 2, 1000);
       return await fallbackRes.json();
     }
     if (!data.ok) {
@@ -1323,7 +1201,8 @@ async function processDocument(chatId, doc, existingWaitMsgId = null, originalUs
     if (!filePath) throw new Error('Không lấy được đường dẫn file từ Telegram');
 
     const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
-    const fileRes = await fetch(fileUrl);
+    const fileRes = await fetchWithRetry(fileUrl, {}, 3, 1000);
+    if (!fileRes.ok) throw new Error(`Không thể tải file từ Telegram (${fileRes.status}). Senpai thử gửi lại nha!`);
     const arrayBuffer = await fileRes.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
@@ -1655,7 +1534,8 @@ async function processPhoto(chatId, bestPhoto, existingWaitMsgId = null, origina
     if (!filePath) throw new Error('Không lấy được đường dẫn file từ Telegram');
 
     const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
-    const imgRes = await fetch(fileUrl);
+    const imgRes = await fetchWithRetry(fileUrl, {}, 3, 1000);
+    if (!imgRes.ok) throw new Error(`Không thể tải ảnh từ Telegram (${imgRes.status}). Senpai thử gửi lại nha!`);
     const arrayBuffer = await imgRes.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const base64Data = buffer.toString('base64');
@@ -1973,9 +1853,10 @@ async function handleMessage(msg) {
         '• `/atopic`: Khóa mục tiêu để Akko chỉ quét ảnh trong Topic này (dành cho Supergroup)\n' +
         '• `/atopic all`: Mở khóa để Akko quét ở tất cả các topic\n' +
         '• `/atopic status`: Xem topic hiện tại đang được gán quét phiếu\n' +
-        '• `/aprovider <gemini|bai|kira|openrouter>`: Đổi phép thuật AI (hoặc gõ số 1-4 nè)\n' +
-        '• `/amodel <Tên>`: Chọn mô hình AI mà Senpai thích\n' +
-        '• `/akey <Key>`: Nạp API key cho Akko (tự nhận diện Google `AIzaSy...`, Kira `kira_...`, OpenRouter `sk-or-...`, B.AI)\n' +
+        '• `/acustom <BaseURL> [Key] [Model]`: Cài đặt Custom API bên thứ ba (RadoxAI, OpenAI...)\n' +
+        '• `/aprovider <gemini|custom>`: Đổi nhà cung cấp AI (1: Gemini 3.8 Flash • 2: Custom API)\n' +
+        '• `/amodel <Tên>`: Đổi mô hình cho Custom API (Gemini cố định gemini-3.8-flash)\n' +
+        '• `/akey <Key>`: Nạp API key cho Akko (Google `AIzaSy...` hoặc Custom API key)\n' +
         '• `/astatus`: Xem Akko đang có những gì trong balo\n' +
         '• `/async <Mã>`: Kéo toàn bộ phép thuật từ Web về (Ví dụ: `/async KHO-01`)\n' +
         '• `/asheet <Link>`: Cập nhật link Google Sheet của Senpai\n\n' +
@@ -1995,9 +1876,7 @@ async function handleMessage(msg) {
       const nextTurn = (botGeminiKeyIndex % allGeminiKeys.length) + 1;
       maskedGeminiKey = `Dàn ${allGeminiKeys.length} keys luân chuyển 🎯 (Lượt tới: #${nextTurn})`;
     }
-    const maskedBaiKey = cfg.baiKey ? (cfg.baiKey.slice(0, 8) + '...' + cfg.baiKey.slice(-4)) : 'Chưa có';
-    const maskedKiraKey = cfg.kiraKey ? (cfg.kiraKey.slice(0, 8) + '...' + cfg.kiraKey.slice(-4)) : 'Chưa có';
-    const maskedOrKey = cfg.openRouterKey ? (cfg.openRouterKey.slice(0, 10) + '...' + cfg.openRouterKey.slice(-4)) : 'Chưa có';
+    const maskedCustomKey = cfg.customApiKey ? (cfg.customApiKey.slice(0, 8) + '...' + cfg.customApiKey.slice(-4)) : (cfg.customBaseUrl ? 'Không dùng key' : 'Chưa có');
 
     let topicStatusText = '';
     if (isGroup) {
@@ -2017,17 +1896,65 @@ async function handleMessage(msg) {
         `• Mô hình đang chạy: \`${info.model}\` ✨\n\n` +
         topicStatusText +
         `📋 *DANH SÁCH MÔ HÌNH AKKO ĐANG CÓ:*\n` +
-        `• Google Gemini: \`${cfg.geminiModel || 'gemini-3.6-flash'}\` (\`${maskedGeminiKey}\`)\n` +
-        `• B.AI: \`${cfg.baiModel || 'DeepSeek-V4.1-Flash'}\` (\`${maskedBaiKey}\`)\n` +
-        `• Kira AI: \`${cfg.kiraModel || 'qwen3.8-27b-free'}\` (\`${maskedKiraKey}\`)\n` +
-        `• OpenRouter: \`${cfg.openRouterModel || 'nex-agi/nex-n2.5-pro:free'}\` (\`${maskedOrKey}\`)\n\n` +
+        `• Google Gemini: \`gemini-3.8-flash\` (\`${maskedGeminiKey}\`)\n` +
+        `• Custom API: \`${cfg.customModel || 'Chưa đặt'}\` (Base URL: \`${cfg.customBaseUrl || 'Chưa có'}\` • \`${maskedCustomKey}\`)\n\n` +
         `📊 *GOOGLE SHEET:*\n` +
         `• Trạng thái: ${cfg.googleSheetUrl ? '✅ Đã kết nối sẵn sàng' : '❌ Chưa có link nè Senpai'}\n` +
         `• Tự động đẩy: *${cfg.autoSyncSheet ? 'BẬT' : 'TẮT'}*\n\n` +
         `☁️ *MÃ CLOUD SYNC:*\n` +
         `• Trạng thái: \`${maskSyncCode(cfg.cloudSyncCode)}\` 🔒\n\n` +
         '👉 Senpai gõ `/async <Mã>` để Akko cập nhật nhanh từ Web nha!\n' +
-        '👉 Gõ `/aprovider <1-4>` để đổi nhà cung cấp AI cái rụp nè~',
+        '👉 Gõ `/aprovider <1|2>` để chuyển đổi giữa Gemini 3.8 Flash và Custom API rụp rụp nè~',
+      parse_mode: 'Markdown'
+    });
+  }
+
+  // Lệnh cài đặt nhanh Custom API: /acustom <BaseURL> [API_Key] [Model]
+  if (matchCommand('custom')) {
+    const rawArgs = cleanText.replace(/^\/a?custom\s*/i, '').trim();
+    if (!rawArgs) {
+      const cfg = getBotConfig();
+      const maskedKey = cfg.customApiKey ? (cfg.customApiKey.slice(0, 8) + '...' + cfg.customApiKey.slice(-4)) : 'Chưa có key';
+      return sendTelegram('sendMessage', {
+        chat_id: chatId,
+        text: '🪄 *HƯỚNG DẪN CÀI ĐẶT CUSTOM API CHO BÉ AKKO:* 🌸✨\n\n' +
+          'Senpai có thể kết nối bất kỳ bên cung cấp AI nào (RadoxAI, OpenAI, Groq, OpenRouter...) theo cú pháp:\n' +
+          '👉 `/acustom <Base_URL> [API_Key] [Model]`\n\n' +
+          '• *Ví dụ cấu hình trọn gói:*\n' +
+          '`/acustom https://api.radoxai.com/v1 sk-xxxx qwen2.5-vl-72b-instruct`\n\n' +
+          '• *Hoặc chỉ cập nhật Base URL:*\n' +
+          '`/acustom https://api.radoxai.com/v1`\n\n' +
+          `📋 *Cấu hình Custom API hiện tại:*\n` +
+          `• Base URL: \`${cfg.customBaseUrl || 'Chưa cấu hình'}\`\n` +
+          `• API Key: \`${maskedKey}\`\n` +
+          `• Model: \`${cfg.customModel || 'Chưa cấu hình'}\`\n` +
+          `• Provider: ${cfg.aiProvider === 'custom' ? '🎯 Đang kích hoạt' : 'Đang ở chế độ khác'}\n\n` +
+          '💡 _Gõ `/aprovider custom` để chuyển sang dùng Custom API bất kỳ lúc nào nha!_',
+        parse_mode: 'Markdown'
+      });
+    }
+
+    const parts = rawArgs.split(/\s+/);
+    const baseUrl = parts[0].trim();
+    const apiKey = parts[1] ? parts[1].trim() : '';
+    const model = parts[2] ? parts.slice(2).join(' ').trim() : '';
+
+    const cfg = getBotConfig();
+    cfg.customBaseUrl = baseUrl;
+    if (apiKey) cfg.customApiKey = apiKey;
+    if (model) cfg.customModel = model;
+    cfg.aiProvider = 'custom';
+    saveBotConfig(cfg);
+
+    const maskedKey = cfg.customApiKey ? (cfg.customApiKey.slice(0, 8) + '...' + cfg.customApiKey.slice(-4)) : 'Không dùng key';
+    return sendTelegram('sendMessage', {
+      chat_id: chatId,
+      text: `🎉 *YATTA~! AKKO ĐÃ CÀI ĐẶT CUSTOM API THÀNH CÔNG!* 🌸✨\n\n` +
+        `• Base URL: \`${cfg.customBaseUrl}\`\n` +
+        `• API Key: \`${maskedKey}\`\n` +
+        `• Model: \`${cfg.customModel || 'Chưa đặt (Dùng /amodel <tên> để đặt)'}\`\n` +
+        `• Provider: *CUSTOM API* đã được kích hoạt làm mặc định! ⚡\n\n` +
+        `Bây giờ Senpai có thể gửi ảnh phiếu kho để Akko quét ngay lập tức rùi nha! (≧◡≦) ♡`,
       parse_mode: 'Markdown'
     });
   }
@@ -2271,26 +2198,25 @@ async function handleMessage(msg) {
         });
       }
 
-      // Cập nhật nhà cung cấp AI đồng bộ
+      // Cập nhật nhà cung cấp AI đồng bộ (chỉ nhận gemini hoặc custom)
       if (cloudData.aiProvider) {
         let p = String(cloudData.aiProvider).toLowerCase().trim();
-        if (p === 'google' || p === 'gg') p = 'gemini';
-        if (p === 'apx' || p === 'apinex') p = 'gemini';
-        if (p === 'kiraai') p = 'kira';
-        if (p === 'b.ai') p = 'bai';
-        if (p === 'or') p = 'openrouter';
-        cfg.aiProvider = p;
+        if (p === 'custom' || p === 'customapi') {
+          cfg.aiProvider = 'custom';
+        } else {
+          cfg.aiProvider = 'gemini';
+        }
       }
 
-      // Cập nhật model từng nhà cung cấp
-      if (cloudData.openRouterModel) cfg.openRouterModel = String(cloudData.openRouterModel).trim();
-      if (cloudData.kiraModel) cfg.kiraModel = String(cloudData.kiraModel).trim();
-      if (cloudData.baiModel) cfg.baiModel = String(cloudData.baiModel).trim();
-      if (cloudData.geminiModel) {
-        cfg.geminiModel = cloudData.geminiModel === 'gemini-2.5-flash' ? 'gemini-3.6-flash' : String(cloudData.geminiModel).trim();
-      }
+      // Cập nhật model và cấu hình Custom API
+      if (cloudData.customBaseUrl) cfg.customBaseUrl = String(cloudData.customBaseUrl).trim();
+      if (cloudData.customApiKey) cfg.customApiKey = String(cloudData.customApiKey).trim();
+      if (cloudData.customModel) cfg.customModel = String(cloudData.customModel).trim();
 
-      // Cập nhật toàn diện tất cả các API Keys
+      // Cố định duy nhất model Gemini 3.8 Flash
+      cfg.geminiModel = 'gemini-3.8-flash';
+
+      // Cập nhật API Keys Google Gemini
       const gKey = String(cloudData.geminiKey || cloudData.apiKey || '').trim();
       if (gKey) cfg.geminiKey = gKey;
 
@@ -2298,15 +2224,6 @@ async function handleMessage(msg) {
       if (Array.isArray(gBackups) && gBackups.length > 0) {
         cfg.geminiBackupKeys = gBackups.map(k => String(k).trim()).filter(Boolean);
       }
-
-      const orKey = String(cloudData.openRouterKey || '').trim();
-      if (orKey) cfg.openRouterKey = orKey;
-
-      const kKey = String(cloudData.kiraKey || '').trim();
-      if (kKey) cfg.kiraKey = kKey;
-
-      const bKey = String(cloudData.baiKey || '').trim();
-      if (bKey) cfg.baiKey = bKey;
 
       // Cập nhật cấu hình Google Sheet & Cột
       if (cloudData.googleSheetUrl !== undefined && cloudData.googleSheetUrl !== null) {
@@ -2328,16 +2245,19 @@ async function handleMessage(msg) {
       const info = getActiveProviderInfo(cfg);
       const allGKeys = getGeminiKeys(cfg);
       const geminiStatusStr = allGKeys.length > 1
-        ? `\`${cfg.geminiModel || 'gemini-3.6-flash'}\` (${allGKeys.length} keys luân chuyển 🎯)`
-        : `\`${cfg.geminiModel || 'gemini-3.6-flash'}\``;
+        ? `\`gemini-3.8-flash\` (${allGKeys.length} keys luân chuyển 🎯)`
+        : `\`gemini-3.8-flash\``;
 
       // Thống kê các key đã được nạp
       const loadedKeyNames = [];
       if (allGKeys.length > 0) loadedKeyNames.push(`Gemini (${allGKeys.length} keys)`);
-      if (cfg.baiKey) loadedKeyNames.push('B.AI');
-      if (cfg.kiraKey) loadedKeyNames.push('Kira AI');
-      if (cfg.openRouterKey) loadedKeyNames.push('OpenRouter');
+      if (cfg.customBaseUrl && cfg.customModel) loadedKeyNames.push(`Custom API (${cfg.customModel})`);
       const keySummaryText = loadedKeyNames.length > 0 ? loadedKeyNames.join(' • ') : 'Chưa có key';
+
+      let customDetails = '';
+      if (cfg.customBaseUrl) {
+        customDetails = `• Custom API Base URL: \`${cfg.customBaseUrl}\`\n• Custom API Model: \`${cfg.customModel || 'Chưa đặt'}\`\n`;
+      }
 
       return sendTelegram('sendMessage', {
         chat_id: chatId,
@@ -2347,9 +2267,7 @@ async function handleMessage(msg) {
           `• Mô hình AI đang chạy: \`${info.model}\`\n` +
           `• Ví API Keys đã nạp: \`${keySummaryText}\` 🔑\n` +
           `• Model Gemini: ${geminiStatusStr}\n` +
-          `• Model B.AI: \`${cfg.baiModel || 'DeepSeek-V4.1-Flash'}\`\n` +
-          `• Model Kira AI: \`${cfg.kiraModel || 'qwen3.8-27b-free'}\`\n` +
-          `• Model OpenRouter: \`${cfg.openRouterModel || 'nex-agi/nex-n2.5-pro:free'}\`\n` +
+          customDetails +
           `• Google Sheet: ${cfg.googleSheetUrl ? '✅ Đã kết nối' : '❌ Chưa có'}\n` +
           `• Số cột trích xuất: ${cfg.selectedColumns ? cfg.selectedColumns.length : 0} cột\n\n` +
           `Senpai cứ thả ảnh hoặc PDF vào, việc còn lại để bé Akko lo nha! (≧◡≦) ♡`,
@@ -2390,47 +2308,30 @@ async function handleMessage(msg) {
 
     if (prov === 'gemini' || prov === 'google' || prov === 'gg' || prov === '1') {
       cfg.aiProvider = 'gemini';
+      cfg.geminiModel = 'gemini-3.8-flash';
       saveBotConfig(cfg);
       const allGKeys = getGeminiKeys(cfg);
       const keyInfo = allGKeys.length > 1 ? ` • Dàn ${allGKeys.length} keys luân chuyển 🎯` : '';
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: `✅ Dạ Senpai! Akko đã chuyển sang dùng sức mạnh của *Google Gemini* (Mô hình: \`${cfg.geminiModel || 'gemini-3.6-flash'}\`${keyInfo}) rồi nè! ⚡`,
+        text: `✅ Dạ Senpai! Akko đã chuyển sang dùng sức mạnh của *Google Gemini* (Mô hình: \`gemini-3.8-flash\`${keyInfo}) rồi nè! ⚡`,
         parse_mode: 'Markdown'
       });
-    } else if (prov === 'bai' || prov === 'b.ai' || prov === '2') {
-      cfg.aiProvider = 'bai';
+    } else if (prov === 'custom' || prov === 'customapi' || prov === '2') {
+      cfg.aiProvider = 'custom';
       saveBotConfig(cfg);
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: `✅ Oki Senpai! Akko đã kết nối sang *B.AI* (Mô hình: \`${cfg.baiModel || 'DeepSeek-V4.1-Flash'}\`) rồi nè! 🔥`,
-        parse_mode: 'Markdown'
-      });
-    } else if (prov === 'kira' || prov === 'kiraai' || prov === '3') {
-      cfg.aiProvider = 'kira';
-      saveBotConfig(cfg);
-      return sendTelegram('sendMessage', {
-        chat_id: chatId,
-        text: `✅ Oki Senpai! Akko đã kết nối sang *Kira AI* (Mô hình: \`${cfg.kiraModel || 'qwen3.8-27b-free'}\`) rồi nè! 🌟`,
-        parse_mode: 'Markdown'
-      });
-    } else if (prov === 'openrouter' || prov === 'or' || prov === '4') {
-      cfg.aiProvider = 'openrouter';
-      saveBotConfig(cfg);
-      return sendTelegram('sendMessage', {
-        chat_id: chatId,
-        text: `✅ Rõ ạ! Akko đã chuyển sang mạng lưới *OpenRouter* (Mô hình: \`${cfg.openRouterModel || 'nex-agi/nex-n2.5-pro:free'}\`) nha Senpai! 🌐`,
+        text: `✅ Oki Senpai! Akko đã kích hoạt *Custom API* (Mô hình: \`${cfg.customModel || 'Chưa đặt'}\` • Base URL: \`${cfg.customBaseUrl || 'Chưa cấu hình'}\`) rồi nè! 🎯\n(Dùng \`/acustom <BaseURL> [Key] [Model]\` để cập nhật kết nối nha Senpai)`,
         parse_mode: 'Markdown'
       });
     } else {
       const info = getActiveProviderInfo(cfg);
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: '💡 Senpai muốn Akko dùng AI nào nè? Gõ `/aprovider <gemini|bai|kira|openrouter>` (hoặc gõ số 1-4 nha):\n' +
-          `• 1: Google Gemini (\`${cfg.geminiModel || 'gemini-3.6-flash'}\`)\n` +
-          `• 2: B.AI (\`${cfg.baiModel || 'DeepSeek-V4.1-Flash'}\`)\n` +
-          `• 3: Kira AI (\`${cfg.kiraModel || 'qwen3.8-27b-free'}\`)\n` +
-          `• 4: OpenRouter (\`${cfg.openRouterModel || 'nex-agi/nex-n2.5-pro:free'}\`)\n\n` +
+        text: '💡 Senpai muốn Akko dùng AI nào nè? Gõ `/aprovider <1|2>` (hoặc gõ `gemini` / `custom` nha):\n' +
+          `• 1: Google Gemini (\`gemini-3.8-flash\`)\n` +
+          `• 2: Custom API (\`${cfg.customModel || 'Chưa đặt'}\` • ${cfg.customBaseUrl ? 'Đã có URL' : 'Chưa có URL'})\n\n` +
           `🎯 Hiện tại Akko đang dùng: *${info.providerName}* (\`${info.model}\`)`,
         parse_mode: 'Markdown'
       });
@@ -2441,125 +2342,50 @@ async function handleMessage(msg) {
     const args = cleanText.split(/\s+/);
     const modelName = args.slice(1).join(' ').trim();
     if (!modelName) {
+      const cfg = getBotConfig();
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: '💡 *Senpai ơi, đây là danh sách các mô hình AI xịn xò mới nhất Akko gợi ý nè:* 🌸\n\n' +
-          '⚡ *Google Gemini trực tiếp (Mô hình chính & Pay-As-You-Go):*\n' +
-          '• `/amodel gemini-3.6-flash` (MÔ HÌNH CHÍNH • Siêu nhanh & Chuẩn xác cho mọi key)\n' +
-          '• `/amodel gemini-3.7-flash` (Tùy chọn • Pay-As-You-Go • Reasoning & Vision đỉnh cao)\n' +
-          '• `/amodel gemini-3.8-flash` (Tùy chọn • Pay-As-You-Go • Siêu tốc độ)\n\n' +
-          '🔥 *B.AI (b.ai):*\n' +
-          '• `/amodel Qwen3.8-Flash` (Khuyên dùng #1 • Alibaba Vision cực chuẩn)\n' +
-          '• `/amodel Qwen3.8-27B` (MỚI • Vision 27B siêu tốc 2.5s & chuẩn xác)\n' +
-          '• `/amodel GLM-5.3-Flash` (Zhipu AI Siêu nhanh 2.9s)\n' +
-          '• `/amodel DeepSeek-V4.1-Flash` (MoE 552B Siêu tốc)\n\n' +
-          '🌟 *Kira AI (kiraai.vn - Đa dạng Vision):*\n' +
-          '• `/amodel qwen3.8-flash` (Khuyên dùng • Cực nhanh 3-5s & Chuẩn xác)\n' +
-          '• `/amodel qwen3.8-27b` (Vision 27B đọc chữ viết tay rất tốt)\n' +
-          '• `/amodel qwen3.8-max` (Đỉnh cao chữ viết tay & bảng biểu)\n' +
-          '• `/amodel deepseek-v4.1-flash` (MỚI • MoE 552B Siêu tốc & Tiết kiệm)\n' +
-          '• `/amodel deepseek-v4-flash-vision-exp` (MỚI • Vision thử nghiệm)\n' +
-          '• `/amodel glm-5.3-flash` (Zhipu AI Đa phương thức)\n' +
-          '• `/amodel glm-5.3-flashx` (MỚI • Bản nâng cấp tốc độ)\n' +
-          '• `/amodel kira-3.5-flash-pdf` (Chuyên dụng đọc PDF & phiếu kho)\n' +
-          '• `/amodel mimo-v2.6-flash` (MỚI • Siêu tốc 2.5s)\n' +
-          '• `/amodel kimi-k3` (MỚI • Moonshot AI đọc tài liệu & PDF)\n' +
-          '• `/amodel gpt-5.4-nano` (MỚI • OpenAI Vision gọn nhẹ)\n' +
-          '• `/amodel minimax-m3` (MỚI • MiniMax Vision)\n' +
-          '• `/amodel ox-alpha` (MỚI • Đa phương thức & PDF)\n' +
-          '• `/amodel kira-auto` (Tự động điều phối mô hình)\n\n' +
-          '🌐 *OpenRouter (Tối ưu OCR Vision):*\n' +
-          '• `/amodel qwen/qwen3.8-27b:free` (MỚI • Qwen Vision 27B Miễn Phí)\n' +
-          '• `/amodel nex-agi/nex-n2.5-pro:free` (Khuyên dùng - Rất nhanh & chuẩn)\n' +
-          '• `/amodel nex-agi/nex-n2.5-mini:free` (Siêu nhẹ & tốc độ cao)\n' +
-          '• `/amodel inclusionai/ling-3.0-flash-vl:free` (MỚI • Vision 3.0)\n' +
-          '• `/amodel google/gemma-4-31b-it:free` (MỚI • Google Gemma 4 31B)\n' +
-          '• `/amodel google/gemini-2.5-flash` (Google Gemini Vision siêu ổn định)\n' +
-          '• `/amodel openai/gpt-4o-mini` (Bóc tách bảng chuẩn)\n' +
-          '• `/amodel qwen/qwen2.5-vl-72b-instruct` (Đỉnh cao chữ viết tay châu Á)\n' +
-          '• `/amodel openrouter/free` (MỚI • Auto Router)\n\n' +
-          '_(Senpai có thể gõ `/amodel <mã>` hoặc `/amodel <provider> <mã>` để Akko kích hoạt bất kỳ mã model nào nha)_',
+        text: '💡 *HƯỚNG DẪN CÀI ĐẶT MÔ HÌNH AI CHO BÉ AKKO:* 🌸✨\n\n' +
+          '⚡ *1. Google Gemini:*\n' +
+          '• Hệ thống đã được tinh gọn và **cố định duy nhất** mô hình: `gemini-3.8-flash` (tốc độ siêu tốc, khả năng đọc chữ viết tay đỉnh cao nhất).\n\n' +
+          '🎯 *2. Custom API (Nhà cung cấp bên thứ ba):*\n' +
+          `• Mô hình hiện tại: \`${cfg.customModel || 'Chưa đặt'}\`\n` +
+          '• Để đổi mô hình cho Custom API, Senpai chỉ cần gõ:\n' +
+          '  👉 `/amodel <tên_mô_hình>` (Ví dụ: `/amodel qwen-vl-max`, `/amodel gpt-4o-mini`...)\n' +
+          '• Hoặc cấu hình đầy đủ bằng lệnh:\n' +
+          '  👉 `/acustom <BaseURL> [Key] [Model]`',
         parse_mode: 'Markdown'
       });
     }
 
     const cfg = getBotConfig();
-    let targetProvider = null;
     let targetModel = modelName.trim();
 
-    // Hỗ trợ cú pháp rõ ràng: /amodel kira <model> hoặc /amodel bai <model>...
-    const parts = targetModel.split(/\s+/);
-    if (parts.length >= 2 && ['kira', 'bai', 'gemini', 'openrouter'].includes(parts[0].toLowerCase())) {
-      targetProvider = parts[0].toLowerCase();
-      targetModel = parts.slice(1).join(' ').trim();
+    // Hỗ trợ /amodel custom <model> hoặc /amodel gemini
+    if (targetModel.toLowerCase().startsWith('custom ') || targetModel.toLowerCase().startsWith('customapi ')) {
+      targetModel = targetModel.replace(/^custom(?:api)?\s+/i, '').trim();
     }
 
-    const lowerModel = targetModel.toLowerCase();
-    const cleanModel = targetModel.replace(/-free$/i, '').trim();
-
-    if (targetProvider === 'kira') {
-      cfg.aiProvider = 'kira';
-      cfg.kiraModel = cleanModel;
-    } else if (targetProvider === 'bai') {
-      cfg.aiProvider = 'bai';
-      cfg.baiModel = cleanModel;
-    } else if (targetProvider === 'gemini') {
+    if (targetModel.toLowerCase().includes('gemini')) {
       cfg.aiProvider = 'gemini';
-      cfg.geminiModel = targetModel;
-    } else if (targetProvider === 'openrouter') {
-      cfg.aiProvider = 'openrouter';
-      if (lowerModel === 'qwen3.8-27b:free' || lowerModel === 'qwen3.8-27b') {
-        cfg.openRouterModel = 'qwen/qwen3.8-27b:free';
-      } else {
-        cfg.openRouterModel = targetModel;
-      }
-    } else if (targetModel.includes('/') || targetModel.includes(':free') || lowerModel.startsWith('openrouter/')) {
-      cfg.aiProvider = 'openrouter';
-      if (lowerModel === 'qwen3.8-27b:free' || lowerModel === 'qwen3.8-27b') {
-        cfg.openRouterModel = 'qwen/qwen3.8-27b:free';
-      } else {
-        cfg.openRouterModel = targetModel;
-      }
-    } else if (
-      lowerModel.startsWith('gemini') ||
-      lowerModel.includes('gemini-3.7') ||
-      lowerModel.includes('gemini-3.8') ||
-      lowerModel.includes('gemini-3.6') ||
-      lowerModel === 'gemini-1.5-flash'
-    ) {
-      cfg.aiProvider = 'gemini';
-      cfg.geminiModel = targetModel;
-    } else if (
-      cleanModel.startsWith('kira_') ||
-      cleanModel.startsWith('kira-') ||
-      cleanModel.startsWith('kimi-') ||
-      cleanModel.startsWith('mimo-') ||
-      cleanModel.startsWith('ox-') ||
-      cleanModel.startsWith('minimax-') ||
-      cleanModel.startsWith('gpt-5.4') ||
-      cleanModel.startsWith('hy3') ||
-      cleanModel.startsWith('mercury-')
-    ) {
-      cfg.aiProvider = 'kira';
-      cfg.kiraModel = cleanModel;
-    } else {
-      // Áp dụng trực tiếp cho Provider hiện tại đang kích hoạt
-      if (cfg.aiProvider === 'gemini') {
-        cfg.geminiModel = targetModel;
-      } else if (cfg.aiProvider === 'bai') {
-        cfg.baiModel = cleanModel;
-      } else if (cfg.aiProvider === 'kira') {
-        cfg.kiraModel = cleanModel;
-      } else {
-        cfg.openRouterModel = targetModel;
-      }
+      cfg.geminiModel = 'gemini-3.8-flash';
+      saveBotConfig(cfg);
+      return sendTelegram('sendMessage', {
+        chat_id: chatId,
+        text: `✅ Tuân lệnh Senpai! Akko đã kích hoạt *Google Gemini* với mô hình chuẩn duy nhất: \`gemini-3.8-flash\` ⚡`,
+        parse_mode: 'Markdown'
+      });
     }
 
+    // Đổi model cho Custom API
+    cfg.customModel = targetModel;
+    cfg.aiProvider = 'custom';
     saveBotConfig(cfg);
+
     const info = getActiveProviderInfo(cfg);
     return sendTelegram('sendMessage', {
       chat_id: chatId,
-      text: `✅ Tuân lệnh Senpai! Akko đã đổi mô hình AI sang: \`${info.model}\`\n• Nhà cung cấp kích hoạt: *${info.providerName}* (≧◡≦) ♡`,
+      text: `✅ Tuân lệnh Senpai! Akko đã đổi mô hình Custom API sang: \`${info.model}\`\n• Nhà cung cấp kích hoạt: *${info.providerName}* (≧◡≦) ♡`,
       parse_mode: 'Markdown'
     });
   }
@@ -2571,14 +2397,12 @@ async function handleMessage(msg) {
         chat_id: chatId,
         text: '⚠️ *CÚ PHÁP NẠP API KEY CHO BÉ AKKO:* 🌸✨\n\n' +
           '• Cú pháp cơ bản: `/akey <API_Key>`\n' +
-          '• Google Key: bắt đầu bằng `AIzaSy...` (Akko sẽ tự chuyển sang Google Gemini)\n' +
-          '• Kira Key: bắt đầu bằng `kira_...` (Akko sẽ tự chuyển sang Kira AI)\n' +
-          '• OpenRouter Key: bắt đầu bằng `sk-or-` (Akko sẽ tự chuyển sang OpenRouter)\n' +
-          '• B.AI Key: khi đang chọn B.AI (`/aprovider bai`), dán key để Akko cất vào ví B.AI nha\n\n' +
+          '• Google Gemini Key: bắt đầu bằng `AIzaSy...` (Akko sẽ tự nạp vào Google Gemini)\n' +
+          '• Custom API Key: dán key cho nhà cung cấp riêng (hoặc dùng `/acustom <URL> <Key> [Model]`)\n\n' +
           '🎯 *TÍNH NĂNG LUÂN CHUYỂN DÀN KEY GEMINI (ROUND-ROBIN):*\n' +
           '• Senpai có thể dán cùng lúc *nhiều key Google Gemini* (mỗi dòng 1 key hoặc cách nhau dấu phẩy/khoảng trắng).\n' +
           '• Ví dụ dán 5 key: `/akey AIzaSy... AIzaSy... AIzaSy...`\n' +
-          '• Akko sẽ tự động nạp cả 5 key vào dàn luân chuyển, sau mỗi phiếu sẽ tự xoay sang key tiếp theo để không bị nghẽn hay dồn dập!',
+          '• Akko sẽ tự động nạp cả dàn keys luân chuyển, sau mỗi phiếu sẽ tự xoay sang key tiếp theo để không bị nghẽn hay dồn dập!',
         parse_mode: 'Markdown'
       });
     }
@@ -2594,6 +2418,7 @@ async function handleMessage(msg) {
       cfg.geminiKey = geminiCandidates[0];
       cfg.geminiBackupKeys = geminiCandidates.slice(1);
       cfg.aiProvider = 'gemini';
+      cfg.geminiModel = 'gemini-3.8-flash';
       saveBotConfig(cfg);
       botGeminiKeyIndex = 0;
 
@@ -2603,7 +2428,7 @@ async function handleMessage(msg) {
         text: `🎯 *YATTA~! AKKO ĐÃ NẠP DÀN ${geminiCandidates.length} GEMINI API KEY VÀO HỆ THỐNG LUÂN CHUYỂN!* 🌸✨\n\n` +
           `📋 *Danh sách ${geminiCandidates.length} keys trong dàn:*\n${maskedList}\n\n` +
           `🔄 *Cơ chế Round-Robin:* Mỗi khi quét xong 1 phiếu, Akko sẽ tự động đổi sang key kế tiếp để giảm yêu cầu dồn dập cho 1 key!\n` +
-          `⚡ Provider đã chuyển sang *GOOGLE GEMINI* (Mô hình: \`${cfg.geminiModel || 'gemini-3.6-flash'}\`) nha Senpai! (≧◡≦) ♡`,
+          `⚡ Provider đã chuyển sang *GOOGLE GEMINI* (Mô hình: \`gemini-3.8-flash\`) nha Senpai! (≧◡≦) ♡`,
         parse_mode: 'Markdown'
       });
     }
@@ -2622,6 +2447,7 @@ async function handleMessage(msg) {
             cfg.geminiBackupKeys.push(addKey);
           }
           cfg.aiProvider = 'gemini';
+          cfg.geminiModel = 'gemini-3.8-flash';
           saveBotConfig(cfg);
         }
         const total = getGeminiKeys(cfg).length;
@@ -2640,44 +2466,20 @@ async function handleMessage(msg) {
     if (newKey.startsWith('AIzaSy')) {
       cfg.geminiKey = newKey;
       cfg.aiProvider = 'gemini';
+      cfg.geminiModel = 'gemini-3.8-flash';
       saveBotConfig(cfg);
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: `✅ Yatta~! Akko đã cất Google Gemini API Key vào ví rùi nè: \`${masked}\`\n(Akko cũng tự động chuyển Provider sang *GOOGLE GEMINI* luôn rùi đó Senpai!) ✨\n\n💡 _Mẹo: Senpai có thể dán nhiều key cùng lúc để kích hoạt dàn xoay vòng Round-Robin nha!_`,
-        parse_mode: 'Markdown'
-      });
-    } else if (newKey.startsWith('kira_') || newKey.startsWith('kira')) {
-      cfg.kiraKey = newKey;
-      cfg.aiProvider = 'kira';
-      saveBotConfig(cfg);
-      return sendTelegram('sendMessage', {
-        chat_id: chatId,
-        text: `✅ Tuyệt vời! Akko đã nạp Kira AI API Key: \`${masked}\`\n(Đã tự động chuyển Provider sang *KIRA AI* nha Senpai!) 🌟`,
-        parse_mode: 'Markdown'
-      });
-    } else if (newKey.startsWith('sk-or-')) {
-      cfg.openRouterKey = newKey;
-      cfg.aiProvider = 'openrouter';
-      saveBotConfig(cfg);
-      return sendTelegram('sendMessage', {
-        chat_id: chatId,
-        text: `✅ Xong ngay! Akko đã nạp OpenRouter API Key: \`${masked}\`\n(Đã chuyển Provider sang *OPENROUTER* cho Senpai nè!) 🌐`,
+        text: `✅ Yatta~! Akko đã cất Google Gemini API Key vào ví rùi nè: \`${masked}\`\n(Akko cũng tự động chuyển Provider sang *GOOGLE GEMINI - gemini-3.8-flash* luôn rùi đó Senpai!) ✨\n\n💡 _Mẹo: Senpai có thể dán nhiều key cùng lúc để kích hoạt dàn xoay vòng Round-Robin nha!_`,
         parse_mode: 'Markdown'
       });
     } else {
-      if (cfg.aiProvider === 'gemini') {
-        cfg.geminiKey = newKey;
-      } else if (cfg.aiProvider === 'bai') {
-        cfg.baiKey = newKey;
-      } else if (cfg.aiProvider === 'kira') {
-        cfg.kiraKey = newKey;
-      } else {
-        cfg.openRouterKey = newKey;
-      }
+      cfg.customApiKey = newKey;
+      cfg.aiProvider = 'custom';
       saveBotConfig(cfg);
       return sendTelegram('sendMessage', {
         chat_id: chatId,
-        text: `✅ Akko đã cất API Key cho *${cfg.aiProvider.toUpperCase()}*: \`${masked}\` cẩn thận rồi nha Senpai! 🔒✨`,
+        text: `✅ Akko đã cất API Key cho *CUSTOM API*: \`${masked}\` cẩn thận rồi nha Senpai! 🔒✨`,
         parse_mode: 'Markdown'
       });
     }

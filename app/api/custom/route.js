@@ -147,16 +147,36 @@ export async function POST(req) {
     let res = await executeCall(requestBody);
 
     // Xử lý tự động tương thích (Smart Fallback):
-    // Một số nhà cung cấp không hỗ trợ `response_format: { type: "json_object" }` cho model Vision
-    // Nếu gặp lỗi 400/422 liên quan đến response_format, tự động bỏ trường này và thử lại
+    // 1. Fallback nếu provider báo lỗi 400/422 khi có response_format (nhiều provider/model Vision không hỗ trợ json_object)
     if (!res.ok && (res.status === 400 || res.status === 422) && requestBody.response_format) {
-      const errPeek = await res.clone().json().catch(() => ({}));
-      const errMsg = (errPeek.error?.message || '').toLowerCase();
-      if (errMsg.includes('response_format') || errMsg.includes('schema') || errMsg.includes('json_object')) {
-        console.warn(`[Custom API] Provider không hỗ trợ response_format, tự động retry không gửi response_format...`);
-        const fallbackBody = { ...requestBody };
-        delete fallbackBody.response_format;
-        res = await executeCall(fallbackBody);
+      console.warn(`[Custom API] Provider trả về ${res.status}, tự động retry không gửi response_format...`);
+      const fallbackBody = { ...requestBody };
+      delete fallbackBody.response_format;
+      res = await executeCall(fallbackBody);
+    }
+
+    // 2. Fallback nếu provider không chấp nhận role: "system" cùng với Vision payload
+    if (!res.ok && (res.status === 400 || res.status === 422) && Array.isArray(requestBody.messages)) {
+      const hasSystem = requestBody.messages.some(m => m.role === 'system');
+      if (hasSystem) {
+        console.warn(`[Custom API] Provider không hỗ trợ system message, tự động gộp vào user prompt...`);
+        const sysMsg = requestBody.messages.find(m => m.role === 'system')?.content || '';
+        const userMsgs = requestBody.messages.filter(m => m.role !== 'system');
+        const modifiedUserMsgs = userMsgs.map(m => {
+          if (m.role === 'user' && Array.isArray(m.content)) {
+            return {
+              ...m,
+              content: m.content.map(c => {
+                if (c.type === 'text') return { ...c, text: `${sysMsg}\n\n${c.text}` };
+                return c;
+              })
+            };
+          }
+          return m;
+        });
+        const fallbackNoSys = { ...requestBody, messages: modifiedUserMsgs };
+        delete fallbackNoSys.response_format;
+        res = await executeCall(fallbackNoSys);
       }
     }
 

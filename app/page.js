@@ -552,6 +552,10 @@ export default function Home() {
   // Drag and drop state
   const [isDragging, setIsDragging] = useState(false);
 
+  // Mobile & Smart Clipboard Paste Modal state
+  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
+  const pasteBoxRef = useRef(null);
+
   // Result state
   const [soPhieu, setSoPhieu] = useState("");
   const [tableItems, setTableItems] = useState([]);
@@ -676,18 +680,6 @@ export default function Home() {
     if (aiProvider === 'custom') {
       return short ? 'Custom API' : `Custom (${customModel || 'Tùy chỉnh'})`;
     }
-    if (aiProvider === 'bai') {
-      const bName = BAI_MODELS.find((m) => m.id === baiModel)?.shortName || baiModel;
-      return short ? 'B.AI' : `B.AI (${bName || 'DeepSeek V4.1'})`;
-    }
-    if (aiProvider === 'kira') {
-      const kName = KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel;
-      return short ? 'Kira AI' : `Kira (${kName || 'Qwen 3.8 Flash'})`;
-    }
-    if (aiProvider === 'openrouter') {
-      const orName = OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || openRouterModel;
-      return short ? 'OpenRouter' : `OpenRouter (${orName})`;
-    }
     const gName = GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || geminiModel;
     return short ? 'Gemini' : (geminiModel === 'gemini-3.6-flash' ? 'Gemini 3.6 Flash' : `Gemini (${gName})`);
   };
@@ -772,10 +764,10 @@ export default function Home() {
     setGeminiModel(savedGeminiModel);
 
     const savedProvider = localStorage.getItem('ai_provider') || 'gemini';
-    const effectiveProvider = savedProvider === 'apinex' ? 'gemini' : savedProvider;
+    const effectiveProvider = (savedProvider === 'custom') ? 'custom' : 'gemini';
     setAiProvider(effectiveProvider);
-    if (savedProvider === 'apinex') {
-      localStorage.setItem('ai_provider', 'gemini');
+    if (savedProvider !== effectiveProvider) {
+      localStorage.setItem('ai_provider', effectiveProvider);
     }
     localStorage.removeItem('apinex_api_key');
     localStorage.removeItem('apinex_model');
@@ -1526,25 +1518,98 @@ export default function Home() {
     handleMultipleFiles([file]);
   }, [handleMultipleFiles]);
 
+  // Mobile & Smart Clipboard Paste Logic
   const pasteFromClipboard = async () => {
-    try {
-      const items = await navigator.clipboard.read();
-      for (const item of items) {
-        const type = item.types.find((t) => t.startsWith('image/'));
-        if (type) {
-          const blob = await item.getType(type);
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            loadImageFromDataUrl(e.target.result);
-            showToast('📋 Đã dán ảnh từ clipboard', 'success');
-          };
-          reader.readAsDataURL(blob);
+    // 1. Thử đọc trực tiếp qua Clipboard API (hỗ trợ PC Chrome/Edge/Firefox và một số thiết bị Android)
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.read) {
+      try {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          const type = item.types.find((t) => t.startsWith('image/'));
+          if (type) {
+            const blob = await item.getType(type);
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              loadImageFromDataUrl(e.target.result);
+              showToast('📋 Đã dán ảnh từ clipboard!', 'success');
+            };
+            reader.readAsDataURL(blob);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Direct clipboard.read() not permitted, opening mobile paste helper:', err);
+      }
+    }
+
+    // 2. Thử đọc dạng text (data:image base64 hoặc URL ảnh)
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.readText) {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text && (text.startsWith('data:image/') || /^https?:\/\/.*\.(jpe?g|png|webp|gif)(\?.*)?$/i.test(text.trim()))) {
+          loadImageFromDataUrl(text.trim());
+          showToast('📋 Đã dán ảnh từ clipboard!', 'success');
           return;
         }
+      } catch (err) {
+        console.warn('Direct clipboard.readText() not permitted:', err);
       }
-      showToast('Clipboard không chứa ảnh', 'error');
-    } catch {
-      showToast('Không thể đọc clipboard. Hãy thử Ctrl+V', 'error');
+    }
+
+    // 3. Nếu trình duyệt chặn quyền đọc clipboard (đặc biệt là Safari iOS & Android), mở hộp thoại dán chuyên dụng
+    setIsPasteModalOpen(true);
+    setTimeout(() => {
+      pasteBoxRef.current?.focus();
+    }, 200);
+  };
+
+  const handleModalPaste = (e) => {
+    const items = e.clipboardData?.items;
+    let found = false;
+
+    if (items) {
+      for (const item of items) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+              loadImageFromDataUrl(ev.target.result);
+              setIsPasteModalOpen(false);
+              showToast('📋 Đã dán ảnh thành công!', 'success');
+            };
+            reader.readAsDataURL(file);
+            found = true;
+            return;
+          }
+        }
+      }
+    }
+
+    const html = e.clipboardData?.getData('text/html');
+    if (!found && html) {
+      const match = html.match(/<img[^>]+src="([^">]+)"/i);
+      if (match && match[1]) {
+        e.preventDefault();
+        loadImageFromDataUrl(match[1]);
+        setIsPasteModalOpen(false);
+        showToast('📋 Đã dán ảnh thành công!', 'success');
+        return;
+      }
+    }
+
+    const text = e.clipboardData?.getData('text');
+    if (!found && text && (text.startsWith('data:image/') || /^https?:\/\/.*\.(jpe?g|png|webp|gif)(\?.*)?$/i.test(text.trim()))) {
+      e.preventDefault();
+      loadImageFromDataUrl(text.trim());
+      setIsPasteModalOpen(false);
+      showToast('📋 Đã dán ảnh thành công!', 'success');
+      return;
+    }
+
+    if (!found) {
+      showToast('Nội dung vừa dán không phải là ảnh. Hãy chạm giữ và chọn "Dán" lại ảnh nhé!', 'error');
     }
   };
 
@@ -3158,7 +3223,7 @@ export default function Home() {
         },
       ],
       temperature: 0.1,
-      max_tokens: 4000,
+      max_tokens: 6000,
       response_format: { type: 'json_object' }
     };
 
@@ -3205,6 +3270,24 @@ export default function Home() {
       const m = cleanText.match(/\{[\s\S]*\}/);
       if (m) {
         try { parsed = JSON.parse(m[0]); } catch {}
+      } else {
+        const arrMatch = cleanText.match(/\[[\s\S]*\]/);
+        if (arrMatch) {
+          try {
+            const arrParsed = JSON.parse(arrMatch[0]);
+            if (Array.isArray(arrParsed)) parsed = { items: arrParsed };
+          } catch {}
+        }
+      }
+    }
+
+    // Chuẩn hóa nếu model trả về các trường khác
+    if (parsed) {
+      if (!parsed.items && !parsed.rows) {
+        const potentialArray = parsed.data || parsed.danhSach || parsed.chiTiet || parsed.products || parsed.hangHoa;
+        if (Array.isArray(potentialArray)) {
+          parsed.items = potentialArray;
+        }
       }
     }
 
@@ -3469,50 +3552,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         badgeColor: 'bg-cyan-100 text-cyan-800 border border-cyan-200',
       };
     }
-    if (provider === 'bai') {
-      const targetId = modelId || baiModel;
-      const mObj = BAI_MODELS.find((m) => m.id === targetId || m.name.toLowerCase() === String(targetId).toLowerCase());
-      const sName = mObj ? mObj.shortName : (targetId === 'qwen3.8-flash' ? 'Qwen 3.8 Flash' : targetId === 'qwen3.8-27b' ? 'Qwen 3.8 27B' : targetId === 'glm-5.3-flash' ? 'GLM 5.3 Flash' : 'DeepSeek V4.1');
-      return {
-        engine: 'bai',
-        model: targetId,
-        modelName: sName,
-        providerLabel: 'B.AI',
-        badgeText: `✨ B.AI (${sName})`,
-        badgeColor: 'bg-rose-100 text-rose-800 border border-rose-200',
-      };
-    }
-    if (provider === 'kira') {
-      const rawTarget = (modelId || kiraModel || 'qwen3.8-flash').trim();
-      const cleanId = rawTarget.replace(/-free$/i, '');
-      const mObj = KIRA_MODELS.find(
-        (m) =>
-          m.id.toLowerCase() === rawTarget.toLowerCase() ||
-          m.id.toLowerCase() === cleanId.toLowerCase()
-      );
-      const sName = mObj ? mObj.shortName : (cleanId.length > 24 ? cleanId.slice(0, 22) + '...' : cleanId);
-      return {
-        engine: 'kira',
-        model: rawTarget,
-        modelName: sName,
-        providerLabel: 'Kira AI',
-        badgeText: `✨ Kira AI (${sName})`,
-        badgeColor: mObj?.badgeColor || 'bg-amber-100 text-amber-800 border border-amber-200',
-      };
-    }
-    if (provider === 'openrouter') {
-      const targetId = modelId || openRouterModel;
-      const mObj = OPENROUTER_MODELS.find((m) => m.id === targetId);
-      const sName = mObj ? mObj.shortName : (targetId.split('/')[1]?.split(':')[0] || targetId);
-      return {
-        engine: 'openrouter',
-        model: targetId,
-        modelName: sName,
-        providerLabel: 'OpenRouter',
-        badgeText: `✨ OpenRouter (${sName})`,
-        badgeColor: 'bg-purple-100 text-purple-800 border border-purple-200',
-      };
-    }
     if (provider === 'gemini') {
       const targetId = modelId || geminiModel || 'gemini-3.6-flash';
       const mObj = GEMINI_MODELS.find((m) => m.id === targetId);
@@ -3581,56 +3620,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       throw lastErr;
     };
 
-    // 1. OPENROUTER PROVIDER
-    if (aiProvider === 'openrouter') {
-      const orKey = openRouterKey.trim();
-      if (!orKey) {
-        throw new Error('Chưa cấu hình API Key OpenRouter! Vui lòng vào Cài đặt ⚙️ -> Tab API -> Chọn OpenRouter và dán Key (sk-or-v1-...).');
-      }
-      setScanProgress({
-        active: true,
-        percent: 45,
-        text: `${progressPrefix} Đang gọi OpenRouter (${openRouterModel})...`,
-      });
-      const res = await retryableOcrCall(() => scanClientOpenRouterWithBase64(base64Data, mimeType, orKey, openRouterModel), openRouterModel);
-      const badgeInfo = getModelBadgeInfo('openrouter', openRouterModel);
-      return { data: res, engine: 'openrouter', model: openRouterModel, badgeInfo };
-    }
 
-
-    // 3. KIRA AI PROVIDER
-    if (aiProvider === 'kira') {
-      const kKey = kiraKey.trim();
-      if (!kKey) {
-        throw new Error('Chưa cấu hình API Key Kira AI! Vui lòng vào Cài đặt ⚙️ -> Tab API -> Chọn Kira AI và dán Key (bắt đầu bằng kira_...).');
-      }
-      const modelToUse = kiraModel.trim() || 'qwen3.8-max';
-      setScanProgress({
-        active: true,
-        percent: 45,
-        text: `${progressPrefix} Đang gọi Kira AI (${modelToUse})...`,
-      });
-      const res = await retryableOcrCall(() => scanClientKiraWithBase64(base64Data, mimeType, kKey, modelToUse), modelToUse);
-      const badgeInfo = getModelBadgeInfo('kira', modelToUse);
-      return { data: res, engine: 'kira', model: modelToUse, badgeInfo };
-    }
-
-    // 4. B.AI PROVIDER
-    if (aiProvider === 'bai') {
-      const bKey = baiKey.trim();
-      if (!bKey) {
-        throw new Error('Chưa cấu hình API Key B.AI! Vui lòng vào Cài đặt ⚙️ -> Tab API -> Chọn B.AI và dán Key.');
-      }
-      const modelToUse = (baiModel.trim() || 'deepseek-v4.1-flash').toLowerCase();
-      setScanProgress({
-        active: true,
-        percent: 45,
-        text: `${progressPrefix} Đang gọi B.AI (${modelToUse})...`,
-      });
-      const res = await retryableOcrCall(() => scanClientBaiWithBase64(base64Data, mimeType, bKey, modelToUse), modelToUse);
-      const badgeInfo = getModelBadgeInfo('bai', modelToUse);
-      return { data: res, engine: 'bai', model: modelToUse, badgeInfo };
-    }
 
     // 5. CUSTOM API PROVIDER (OpenAI-compatible)
     if (aiProvider === 'custom') {
@@ -4690,62 +4680,17 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               <button
                 type="button"
                 onClick={() => {
-                  setAiProvider('openrouter');
-                  localStorage.setItem('ai_provider', 'openrouter');
-                  showToast('Đang dùng chế độ OpenRouter');
-                }}
-                className={`px-2 py-0.5 rounded-md transition-all ${
-                  aiProvider === 'openrouter'
-                    ? 'bg-purple-600 text-white shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                OpenRouter
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAiProvider('kira');
-                  localStorage.setItem('ai_provider', 'kira');
-                  showToast('Đang dùng chế độ Kira AI (VN)');
-                }}
-                className={`px-2 py-0.5 rounded-md transition-all ${
-                  aiProvider === 'kira'
-                    ? 'bg-amber-600 text-white shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Kira AI
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAiProvider('bai');
-                  localStorage.setItem('ai_provider', 'bai');
-                  showToast('Đang dùng chế độ B.AI');
-                }}
-                className={`px-2 py-0.5 rounded-md transition-all ${
-                  aiProvider === 'bai'
-                    ? 'bg-rose-600 text-white shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                B.AI
-              </button>
-              <button
-                type="button"
-                onClick={() => {
                   setAiProvider('custom');
                   localStorage.setItem('ai_provider', 'custom');
                   showToast('Đang dùng chế độ Tùy chỉnh (Custom API)');
                 }}
-                className={`px-2 py-0.5 rounded-md transition-all ${
+                className={`px-2.5 py-0.5 rounded-md transition-all ${
                   aiProvider === 'custom'
                     ? 'bg-cyan-600 text-white shadow-xs font-bold'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Custom
+                Custom API
               </button>
             </div>
 
@@ -4772,86 +4717,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                       className="text-cyan-700 font-bold hover:underline"
                     >
                       ⚠️ Chưa cấu hình Custom API (Bấm vào đây để cấu hình)
-                    </button>
-                  )}
-                </span>
-              </div>
-            ) : aiProvider === 'bai' ? (
-              <div className="flex items-center gap-1.5">
-                <span
-                  className={`inline-block w-2.5 h-2.5 rounded-full ${
-                    baiKey.trim() ? 'bg-rose-500 animate-pulse' : 'bg-amber-500'
-                  }`}
-                />
-                <span className="font-semibold text-slate-700">
-                  {baiKey.trim() ? (
-                    <>
-                      <span className="text-rose-700 font-bold">B.AI</span>: {BAI_MODELS.find((m) => m.id === baiModel)?.shortName || baiModel}
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSettingsTab('api');
-                        setSettingsOpen(true);
-                      }}
-                      className="text-rose-700 font-bold hover:underline"
-                    >
-                      ⚠️ Chưa dán B.AI Key (Bấm vào đây để dán)
-                    </button>
-                  )}
-                </span>
-              </div>
-            ) : aiProvider === 'kira' ? (
-              <div className="flex items-center gap-1.5">
-                <span
-                  className={`inline-block w-2.5 h-2.5 rounded-full ${
-                    kiraKey.trim() ? 'bg-amber-500 animate-pulse' : 'bg-rose-500'
-                  }`}
-                />
-                <span className="font-semibold text-slate-700">
-                  {kiraKey.trim() ? (
-                    <>
-                      <span className="text-amber-700 font-bold">Kira AI</span>: {KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel}
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSettingsTab('api');
-                        setSettingsOpen(true);
-                      }}
-                      className="text-amber-700 font-bold hover:underline"
-                    >
-                      ⚠️ Chưa dán Kira AI Key (Bấm vào đây để dán)
-                    </button>
-                  )}
-                </span>
-              </div>
-            ) : aiProvider === 'openrouter' ? (
-              <div className="flex items-center gap-1.5">
-                <span
-                  className={`inline-block w-2.5 h-2.5 rounded-full ${
-                    openRouterKey.trim() ? 'bg-purple-500 animate-pulse' : 'bg-amber-500'
-                  }`}
-                />
-                <span className="font-semibold text-slate-700">
-                  {openRouterKey.trim() ? (
-                    <>
-                      <span className="text-purple-700 font-bold">OpenRouter</span>: {
-                        OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || openRouterModel
-                      }
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSettingsTab('api');
-                        setSettingsOpen(true);
-                      }}
-                      className="text-amber-700 font-bold hover:underline"
-                    >
-                      ⚠️ Chưa dán OpenRouter Key (Bấm vào đây để dán)
                     </button>
                   )}
                 </span>
@@ -4910,48 +4775,81 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               <span className="text-[11px] font-medium text-slate-400">PDF, JPG, PNG, WEBP</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-2 gap-3">
               {/* 1. Camera Scan */}
               <button
                 onClick={openCameraScanner}
-                className="flex items-center justify-center gap-2 py-3.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-bold text-xs shadow-sm active:scale-[0.98] transition-all"
+                className="group relative flex flex-col items-start p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-600 text-white shadow-md shadow-blue-600/20 active:scale-[0.98] transition-all overflow-hidden text-left"
               >
-                <IconCamera className="w-4 h-4" />
-                <span>Quét Camera</span>
+                <div className="flex items-center justify-between w-full mb-2">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white shadow-xs">
+                    <IconCamera className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white backdrop-blur-xs">
+                    Live
+                  </span>
+                </div>
+                <span className="font-bold text-xs sm:text-sm text-white leading-tight">Quét Camera</span>
+                <span className="text-[10px] sm:text-[11px] text-blue-100/80 mt-0.5">Chụp trực tiếp từ kho</span>
               </button>
 
               {/* 2. Pick Image */}
               <button
                 onClick={() => imageInputRef.current?.click()}
-                className="flex items-center justify-center gap-2 py-3.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs border border-slate-200/80 active:scale-[0.98] transition-all"
+                className="group relative flex flex-col items-start p-3.5 sm:p-4 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200/90 hover:border-blue-400 shadow-xs hover:shadow-sm active:scale-[0.98] transition-all text-left"
                 title="Chọn 1 hoặc nhiều ảnh phiếu cùng lúc (JPG, PNG, WEBP)"
               >
-                <IconUpload className="w-4 h-4 text-blue-600" />
-                <span>Chọn Ảnh / Nhiều Ảnh</span>
+                <div className="flex items-center justify-between w-full mb-2">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-50 group-hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors">
+                    <IconUpload className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </div>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600">
+                    Nhiều ảnh
+                  </span>
+                </div>
+                <span className="font-bold text-xs sm:text-sm text-slate-800 leading-tight">Chọn Ảnh</span>
+                <span className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5">JPG, PNG, WEBP</span>
               </button>
 
               {/* 3. Pick PDF */}
               <button
                 onClick={() => pdfInputRef.current?.click()}
                 disabled={isProcessingPdf}
-                className="flex items-center justify-center gap-2 py-3.5 px-3 rounded-xl bg-indigo-50/80 hover:bg-indigo-100 text-indigo-900 font-bold text-xs border border-indigo-200/80 active:scale-[0.98] transition-all disabled:opacity-50"
+                className="group relative flex flex-col items-start p-3.5 sm:p-4 rounded-2xl bg-indigo-50/50 hover:bg-indigo-50/80 text-indigo-950 border border-indigo-200/70 hover:border-indigo-400 shadow-xs hover:shadow-sm active:scale-[0.98] transition-all text-left disabled:opacity-50"
                 title="Chọn file tài liệu PDF 1 hoặc nhiều trang"
               >
-                {isProcessingPdf ? (
-                  <div className="w-4 h-4 border-2 border-indigo-700 border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <IconLayers className="w-4 h-4 text-indigo-600" />
-                )}
-                <span>Chọn File PDF</span>
+                <div className="flex items-center justify-between w-full mb-2">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                    {isProcessingPdf ? (
+                      <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <IconLayers className="w-4 h-4 sm:w-5 sm:h-5" />
+                    )}
+                  </div>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100/80 text-indigo-700">
+                    Đa trang
+                  </span>
+                </div>
+                <span className="font-bold text-xs sm:text-sm text-indigo-950 leading-tight">Chọn File PDF</span>
+                <span className="text-[10px] sm:text-[11px] text-indigo-600/75 mt-0.5">1 hoặc nhiều trang</span>
               </button>
 
               {/* 4. Paste Clipboard */}
               <button
                 onClick={pasteFromClipboard}
-                className="flex items-center justify-center gap-2 py-3.5 px-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs border border-slate-200/80 active:scale-[0.98] transition-all"
+                className="group relative flex flex-col items-start p-3.5 sm:p-4 rounded-2xl bg-cyan-50/50 hover:bg-cyan-50/80 text-cyan-950 border border-cyan-200/70 hover:border-cyan-400 shadow-xs hover:shadow-sm active:scale-[0.98] transition-all text-left"
+                title="Dán từ bộ nhớ tạm (Hỗ trợ cả Mobile & PC Ctrl+V)"
               >
-                <IconClipboard className="w-4 h-4 text-slate-600" />
-                <span>Dán Clipboard</span>
+                <div className="flex items-center justify-between w-full mb-2">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-cyan-100 text-cyan-700 flex items-center justify-center">
+                    <IconClipboard className="w-4 h-4 sm:w-5 sm:h-5" />
+                  </div>
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-100/90 text-cyan-800">
+                    Mobile OK
+                  </span>
+                </div>
+                <span className="font-bold text-xs sm:text-sm text-cyan-950 leading-tight">Dán Clipboard</span>
+                <span className="text-[10px] sm:text-[11px] text-cyan-700/80 mt-0.5">Dán nhanh từ bộ nhớ</span>
               </button>
             </div>
 
@@ -5181,12 +5079,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 className={`mt-4 w-full py-4 rounded-xl text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-50 transition-all ${
                   aiProvider === 'custom'
                     ? 'bg-gradient-to-r from-cyan-600 via-teal-600 to-cyan-700 hover:opacity-95 shadow-cyan-600/25'
-                    : aiProvider === 'bai'
-                    ? 'bg-gradient-to-r from-rose-600 via-red-600 to-pink-600 hover:opacity-95 shadow-rose-600/25'
-                    : aiProvider === 'kira'
-                    ? 'bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:opacity-95 shadow-amber-600/25'
-                    : aiProvider === 'openrouter'
-                    ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-700 hover:opacity-95 shadow-purple-600/25'
                     : 'bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-600 hover:opacity-95 shadow-blue-600/25'
                 }`}
               >
@@ -5197,12 +5089,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                       Đang trích xuất bằng {
                         aiProvider === 'custom'
                           ? `Custom API (${customModel || 'Tùy chỉnh'})`
-                          : aiProvider === 'bai'
-                          ? `B.AI (${BAI_MODELS.find((m) => m.id === baiModel)?.shortName || baiModel})`
-                          : aiProvider === 'kira'
-                          ? `Kira AI (${KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel})`
-                          : aiProvider === 'openrouter'
-                          ? `OpenRouter (${OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || 'AI'})`
                           : `Google Gemini (${GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || 'Gemini 3.6 Flash'})`
                       }...
                     </span>
@@ -5213,12 +5099,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     <span>
                       {aiProvider === 'custom'
                         ? `Bắt Đầu Quét Bằng Custom API [${customModel || 'Tùy chỉnh'}]`
-                        : aiProvider === 'bai'
-                        ? `Bắt Đầu Quét Bằng B.AI [${BAI_MODELS.find((m) => m.id === baiModel)?.shortName || baiModel}]`
-                        : aiProvider === 'kira'
-                        ? `Bắt Đầu Quét Bằng Kira AI [${KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel}]`
-                        : aiProvider === 'openrouter'
-                        ? `Bắt Đầu Quét Bằng OpenRouter [${OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || openRouterModel}]`
                         : `Bắt Đầu Quét Bằng Gemini [${GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || 'Gemini 3.6 Flash'}]`}
                     </span>
                   </>
@@ -5227,15 +5107,56 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             </section>
           ) : (
             /* Empty State Workspace */
-            <div className="bg-white/95 backdrop-blur-xs rounded-2xl p-10 sm:p-12 border border-dashed border-slate-300 text-center flex flex-col items-center justify-center gap-4 relative overflow-hidden group shadow-xs">
-              <div className="relative w-20 h-20 rounded-2xl overflow-hidden shadow-lg shadow-blue-500/15 border-2 border-blue-200 group-hover:scale-105 transition-transform duration-300 bg-blue-600 shrink-0">
-                <img src="/bg-aoko.png" alt="Aoko Scan" className="w-full h-full object-cover" />
+            <div className="bg-gradient-to-b from-white via-slate-50/70 to-blue-50/30 rounded-3xl p-8 sm:p-12 border-2 border-dashed border-slate-200/90 text-center flex flex-col items-center justify-center gap-5 relative overflow-hidden group shadow-xs">
+              <div className="relative">
+                <div className="w-20 h-20 rounded-2xl overflow-hidden shadow-xl shadow-blue-500/20 border-2 border-white ring-4 ring-blue-100 group-hover:scale-105 transition-transform duration-300 bg-gradient-to-tr from-blue-600 to-indigo-600 shrink-0">
+                  <img src="/bg-aoko.png" alt="Aoko Scan" className="w-full h-full object-cover" />
+                </div>
+                <span className="absolute -bottom-1 -right-1 px-2 py-0.5 rounded-full bg-emerald-500 text-white font-bold text-[9px] shadow-xs flex items-center gap-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                  AI OCR
+                </span>
               </div>
-              <div className="space-y-1">
-                <h3 className="text-base font-bold text-slate-800">Chưa có ảnh hoặc file PDF nào được chọn</h3>
-                <p className="text-xs text-slate-500 max-w-sm">
-                  Hãy nhấn <strong>Chọn File PDF</strong>, <strong>Chọn Ảnh</strong>, <strong>Quét Camera</strong>, kéo thả file PDF vào đây hoặc nhấn <strong>Ctrl+V</strong>.
+
+              <div className="space-y-1.5 max-w-md">
+                <h3 className="text-base sm:text-lg font-bold text-slate-800">
+                  Sẵn sàng trích xuất phiếu xuất kho
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Chọn ảnh phiếu, tài liệu PDF, chụp từ camera hoặc dán trực tiếp từ clipboard để bắt đầu số hóa tự động.
                 </p>
+              </div>
+
+              {/* 3 Quick Steps Indicator */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full max-w-lg mt-1 text-left">
+                <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 shadow-xs flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-lg bg-blue-100 text-blue-700 font-bold text-[11px] flex items-center justify-center shrink-0">1</span>
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-700">Nạp tài liệu</div>
+                    <div className="text-[10px] text-slate-400">Ảnh, PDF, Camera, Dán</div>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 shadow-xs flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-lg bg-indigo-100 text-indigo-700 font-bold text-[11px] flex items-center justify-center shrink-0">2</span>
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-700">AI trích xuất</div>
+                    <div className="text-[10px] text-slate-400">Đọc bảng & chữ viết tay</div>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-white border border-slate-200/80 shadow-xs flex items-start gap-2.5">
+                  <span className="w-5 h-5 rounded-lg bg-emerald-100 text-emerald-700 font-bold text-[11px] flex items-center justify-center shrink-0">3</span>
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-700">Đẩy dữ liệu</div>
+                    <div className="text-[10px] text-slate-400">Google Sheet / Excel</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Desktop hint */}
+              <div className="text-[11px] text-slate-400 font-medium">
+                Tip: Kéo thả nhiều file PDF/ảnh vào đây hoặc nhấn <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-300 font-mono text-[10px] text-slate-600 shadow-2xs">Ctrl + V</kbd>
               </div>
             </div>
           )}
@@ -5983,12 +5904,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-40 ${
                     aiProvider === 'custom'
                       ? 'bg-gradient-to-r from-cyan-600 to-teal-600 hover:opacity-95'
-                      : aiProvider === 'bai'
-                      ? 'bg-gradient-to-r from-rose-600 to-red-600 hover:opacity-95'
-                      : aiProvider === 'kira'
-                      ? 'bg-gradient-to-r from-amber-600 to-orange-600 hover:opacity-95'
-                      : aiProvider === 'openrouter'
-                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:opacity-95'
                       : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95'
                   }`}
                 >
@@ -6163,9 +6078,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     title="Đổi nhà cung cấp AI để thử quét lại"
                   >
                     <option value="gemini">Google Gemini</option>
-                    <option value="bai">B.AI</option>
-                    <option value="kira">Kira AI</option>
-                    <option value="openrouter">OpenRouter</option>
                     <option value="custom">Tùy chỉnh (Custom API)</option>
                   </select>
                 </div>
@@ -6797,7 +6709,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                       onClick={() => {
                         setAiProvider('gemini');
                         localStorage.setItem('ai_provider', 'gemini');
-                        showToast('Đã chuyển sang Google Gemini 3.6 Flash');
+                        showToast('Đã chuyển sang Google Gemini');
                       }}
                       className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
                         aiProvider === 'gemini'
@@ -6805,52 +6717,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                       }`}
                     >
-                      <span>🔵 Google Gemini 3.6 Flash</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAiProvider('openrouter');
-                        localStorage.setItem('ai_provider', 'openrouter');
-                        showToast('Đã chuyển sang OpenRouter AI');
-                      }}
-                      className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-                        aiProvider === 'openrouter'
-                          ? 'bg-purple-600 text-white shadow-sm'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                      }`}
-                    >
-                      <span>🟣 OpenRouter</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAiProvider('kira');
-                        localStorage.setItem('ai_provider', 'kira');
-                        showToast('Đã chuyển sang Kira AI (VN)');
-                      }}
-                      className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-                        aiProvider === 'kira'
-                          ? 'bg-amber-600 text-white shadow-sm'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                      }`}
-                    >
-                      <span>🌟 Kira AI</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAiProvider('bai');
-                        localStorage.setItem('ai_provider', 'bai');
-                        showToast('Đã chuyển sang B.AI');
-                      }}
-                      className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
-                        aiProvider === 'bai'
-                          ? 'bg-rose-600 text-white shadow-sm'
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                      }`}
-                    >
-                      <span>🔥 B.AI</span>
+                      <span>🔵 Google Gemini</span>
                     </button>
                     <button
                       type="button"
@@ -6865,117 +6732,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                       }`}
                     >
-                      <span>⚙️ Tùy chỉnh</span>
+                      <span>⚙️ Tùy Chỉnh (Custom API)</span>
                     </button>
                   </div>
-
-                  {/* B.AI SECTION */}
-                  {aiProvider === 'bai' && (
-                    <div className="space-y-4 animate-fade-in">
-                      <div className="p-3.5 bg-rose-50 rounded-2xl border border-rose-200 space-y-2">
-                        <div className="font-bold text-rose-950 flex items-center justify-between">
-                          <span className="flex items-center gap-1.5">
-                            <IconSparkles className="w-4 h-4 text-rose-600" />
-                            <span>Cấu Hình B.AI (b.ai)</span>
-                          </span>
-                          <a
-                            href="https://b.ai"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-rose-700 hover:underline flex items-center gap-1 font-semibold text-[11px]"
-                          >
-                            <span>Trang chủ b.ai</span>
-                            <IconExternalLink className="w-3 h-3" />
-                          </a>
-                        </div>
-                        <p className="text-[11px] text-rose-900 leading-relaxed">
-                          B.AI cung cấp các mô hình Vision hàng đầu. Phù hợp quét phiếu xuất kho, trích xuất bảng biểu & nhận diện chữ viết tay.
-                        </p>
-                      </div>
-
-                      {/* B.AI API Key Input */}
-                      <div className="space-y-1.5">
-                        <label className="font-bold text-slate-700 flex items-center justify-between text-xs">
-                          <span>API Key B.AI</span>
-                          <button
-                            type="button"
-                            onClick={testBaiConnection}
-                            disabled={baiTesting || !baiKey.trim()}
-                            className="text-rose-600 hover:underline font-semibold text-[11px] disabled:opacity-50"
-                          >
-                            {baiTesting ? 'Đang test...' : '⚡ Test Kết Nối'}
-                          </button>
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="password"
-                            value={baiKey}
-                            onChange={(e) => setBaiKey(e.target.value)}
-                            placeholder="Dán API Key B.AI tại đây"
-                            className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 focus:border-rose-500 focus:ring-2 focus:ring-rose-100 font-mono text-xs outline-none"
-                          />
-                        </div>
-                        <p className="text-[11px] text-slate-400">Key được lưu an toàn trên trình duyệt và tự động đồng bộ qua mã Cloud Sync.</p>
-                      </div>
-
-                      {/* B.AI Models Selector */}
-                      <div className="space-y-2">
-                        <label className="font-bold text-slate-700 block text-xs">Chọn Mô Hình B.AI Ưu Tiên</label>
-                        <div className="grid grid-cols-1 gap-2">
-                          {BAI_MODELS.map((m) => {
-                            const isSelected = baiModel === m.id;
-                            return (
-                              <button
-                                key={m.id}
-                                type="button"
-                                onClick={() => {
-                                  setBaiModel(m.id);
-                                  localStorage.setItem('bai_model', m.id);
-                                }}
-                                className={`p-3 rounded-xl border text-left transition-all flex items-start justify-between gap-3 ${
-                                  isSelected
-                                    ? 'border-rose-500 bg-rose-50/70 shadow-sm ring-1 ring-rose-500'
-                                    : 'border-slate-200 bg-white hover:bg-slate-50'
-                                }`}
-                              >
-                                <div className="space-y-1 flex-1">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-bold text-slate-900 text-xs">{m.name}</span>
-                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${m.badgeColor}`}>{m.badge}</span>
-                                  </div>
-                                  <p className="text-[11px] text-slate-500 leading-tight">{m.desc}</p>
-                                  <div className="font-mono text-[10px] text-rose-700 font-semibold">{m.id}</div>
-                                </div>
-                                {isSelected && (
-                                  <div className="text-right shrink-0">
-                                    <div className="text-[11px] text-rose-600 font-bold">✓ Đang chọn</div>
-                                  </div>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {/* Custom B.AI Model Input */}
-                        <div className="pt-1">
-                          <label className="text-[11px] font-semibold text-slate-600 block mb-1">Hoặc nhập mã model B.AI tùy chỉnh:</label>
-                          <input
-                            type="text"
-                            value={baiModel}
-                            onChange={(e) => {
-                              setBaiModel(e.target.value);
-                              localStorage.setItem('bai_model', e.target.value);
-                            }}
-                            placeholder="Ví dụ: DeepSeek-V4.1-Flash hoặc GLM-5.3-Flash"
-                            className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:border-rose-500 font-mono text-xs outline-none bg-slate-50"
-                          />
-                        </div>
-                        <p className="text-[10px] text-rose-900 bg-rose-100/70 p-2 rounded-lg mt-1 leading-normal">
-                          💡 <strong>Khuyên dùng:</strong> <code>DeepSeek-V4.1-Flash</code> là mô hình MoE 552B siêu tốc mặc định, hoặc <code>Qwen3.8-Flash</code> để đọc chữ viết tay tốt nhất.
-                        </p>
-                      </div>
-                    </div>
-                  )}
 
                   {/* CUSTOM API SECTION */}
                   {aiProvider === 'custom' && (
@@ -6991,7 +6750,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           </span>
                         </div>
                         <p className="text-[11px] text-cyan-900 leading-relaxed">
-                          Tự do kết nối bất kỳ nhà cung cấp nào (Groq, Together AI, SiliconFlow, Novita, Ollama LAN, vLLM...) theo chuẩn OpenAI. Hệ thống sẽ tự xử lý ảnh và bóc tách dữ liệu phiếu kho.
+                          Tự do kết nối bất kỳ nhà cung cấp nào (RadoxAI, Together AI, Groq, SiliconFlow, Novita, Ollama LAN, vLLM...) theo chuẩn OpenAI. Hệ thống tự động xử lý hình ảnh, khử reasoning, lọc dữ liệu và bóc tách bảng phiếu kho.
                         </p>
                       </div>
 
@@ -7008,17 +6767,19 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                             setCustomBaseUrl(e.target.value);
                             localStorage.setItem('custom_base_url', e.target.value);
                           }}
-                          placeholder="Ví dụ: https://api.together.xyz/v1 hoặc http://localhost:11434/v1"
+                          placeholder="Ví dụ: https://radoxai.com/v1 hoặc https://api.together.xyz/v1"
                           className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 font-mono text-xs outline-none bg-white"
                         />
                         {/* Quick Presets for Base URL */}
                         <div className="flex flex-wrap items-center gap-1.5 pt-1">
                           <span className="text-[10px] font-semibold text-slate-500">Gợi ý nhanh:</span>
                           {[
+                            { name: 'RadoxAI', url: 'https://radoxai.com/v1' },
                             { name: 'Together AI', url: 'https://api.together.xyz/v1' },
                             { name: 'Groq', url: 'https://api.groq.com/openai/v1' },
                             { name: 'SiliconFlow', url: 'https://api.siliconflow.cn/v1' },
                             { name: 'DeepSeek', url: 'https://api.deepseek.com/v1' },
+                            { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
                             { name: 'Ollama (Local)', url: 'http://localhost:11434/v1' },
                           ].map((p) => (
                             <button
@@ -7076,16 +6837,17 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                             setCustomModel(e.target.value);
                             localStorage.setItem('custom_model', e.target.value);
                           }}
-                          placeholder="Ví dụ: meta-llama/Llama-3.2-11B-Vision-Instruct hoặc llama3.2-vision"
+                          placeholder="Ví dụ: meta-llama/Llama-3.2-11B-Vision-Instruct hoặc Qwen/Qwen2.5-VL-72B-Instruct"
                           className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100 font-mono text-xs outline-none bg-white"
                         />
                         {/* Quick Presets for Model */}
                         <div className="flex flex-wrap items-center gap-1.5 pt-1">
                           <span className="text-[10px] font-semibold text-slate-500">Mô hình mẫu:</span>
                           {[
+                            { label: 'Qwen 2.5 VL 72B', id: 'Qwen/Qwen2.5-VL-72B-Instruct' },
                             { label: 'Llama 3.2 11B Vision', id: 'meta-llama/Llama-3.2-11B-Vision-Instruct' },
                             { label: 'Groq Llama 3.2 Vision', id: 'llama-3.2-11b-vision-preview' },
-                            { label: 'Qwen 2.5 VL 72B', id: 'Qwen/Qwen2.5-VL-72B-Instruct' },
+                            { label: 'DeepSeek Chat', id: 'deepseek-chat' },
                             { label: 'Ollama Vision', id: 'llama3.2-vision' },
                           ].map((pm) => (
                             <button
@@ -7103,155 +6865,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           ))}
                         </div>
                         <p className="text-[10px] text-cyan-900 bg-cyan-100/70 p-2 rounded-lg mt-1 leading-normal">
-                          💡 <strong>Lưu ý:</strong> Để đọc được ảnh phiếu xuất kho, hãy chọn mô hình hỗ trợ <strong>Vision / Multimodal</strong> (như Llama 3.2 Vision, Qwen 2.5 VL, Pixtral...).
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* KIRA AI SECTION */}
-                  {aiProvider === 'kira' && (
-                    <div className="space-y-4 animate-fade-in">
-                      <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200 space-y-2">
-                        <div className="font-bold text-amber-950 flex items-center justify-between">
-                          <span className="flex items-center gap-1.5">
-                            <IconSparkles className="w-4 h-4 text-amber-600" />
-                            <span>Cấu Hình Kira AI (kiraai.vn)</span>
-                          </span>
-                          <a
-                            href="https://kiraai.vn"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-amber-700 hover:underline flex items-center gap-1 font-semibold text-[11px]"
-                          >
-                            <span>Trang chủ kiraai.vn</span>
-                            <IconExternalLink className="w-3 h-3" />
-                          </a>
-                        </div>
-                        <p className="text-[11px] text-amber-900 leading-relaxed">
-                          Kira AI là nền tảng API tương thích chuẩn OpenAI tối ưu tại Việt Nam, cung cấp hạ tầng Vision tốc độ cao. <em>Lưu ý: Chỉ nhập các mô hình có hỗ trợ đọc ảnh (Vision) để quét phiếu.</em>
-                        </p>
-                      </div>
-
-                      {/* Kira AI API Key Input */}
-                      <div className="space-y-1.5">
-                        <label className="font-bold text-slate-700 flex items-center justify-between text-xs">
-                          <span>API Key Kira AI</span>
-                          <button
-                            type="button"
-                            onClick={testKiraConnection}
-                            disabled={kiraTesting || !kiraKey.trim()}
-                            className="text-amber-600 hover:underline font-semibold text-[11px] disabled:opacity-50"
-                          >
-                            {kiraTesting ? 'Đang test...' : '⚡ Test Kết Nối'}
-                          </button>
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="password"
-                            value={kiraKey}
-                            onChange={(e) => setKiraKey(e.target.value)}
-                            placeholder="Dán key kira_... tại đây"
-                            className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-100 font-mono text-xs outline-none"
-                          />
-                        </div>
-                        <p className="text-[11px] text-slate-400">Key của Kira thường có định dạng tiền tố <code className="text-amber-700 font-bold">kira_...</code></p>
-                      </div>
-
-                      {/* Kira AI Model Input */}
-                      <div className="space-y-1.5">
-                        <label className="font-bold text-slate-700 flex items-center justify-between text-xs">
-                          <span>Mã Mô Hình AI (Model ID)</span>
-                          <span className="text-[11px] text-amber-700 font-mono font-semibold truncate max-w-[200px]">
-                            {kiraModel || 'Chưa điền'}
-                          </span>
-                        </label>
-                        <input
-                          type="text"
-                          value={kiraModel}
-                          onChange={(e) => {
-                            setKiraModel(e.target.value);
-                            localStorage.setItem('kira_model', e.target.value);
-                          }}
-                          placeholder="Điền mã mô hình Kira AI (ví dụ: qwen3.8-flash, deepseek-v4.1-flash, kira-3.5-flash-pdf...)"
-                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-100 font-mono text-xs outline-none bg-white"
-                        />
-                        <p className="text-[11px] text-slate-400 leading-normal">
-                          Bạn có thể tự chủ động điền bất kỳ mã mô hình nào được hỗ trợ trên Kira AI (kiraai.vn) để sử dụng.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* OPENROUTER SECTION */}
-                  {aiProvider === 'openrouter' && (
-                    <div className="space-y-4 animate-fade-in">
-                      <div className="p-3.5 bg-purple-50 rounded-2xl border border-purple-200 space-y-2">
-                        <div className="font-bold text-purple-950 flex items-center justify-between">
-                          <span className="flex items-center gap-1.5">
-                            <IconSparkles className="w-4 h-4 text-purple-600" />
-                            <span>Cấu Hình OpenRouter AI</span>
-                          </span>
-                          <a
-                            href="https://openrouter.ai/keys"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-purple-600 hover:underline flex items-center gap-1 font-semibold text-[11px]"
-                          >
-                            <span>Lấy key OpenRouter</span>
-                            <IconExternalLink className="w-3 h-3" />
-                          </a>
-                        </div>
-                        <p className="text-[11px] text-purple-900 leading-relaxed">
-                          OpenRouter cho phép bạn dùng nhiều mô hình AI Vision mạnh mẽ để trích xuất dữ liệu phiếu kho song song với Gemini.
-                        </p>
-                      </div>
-
-                      {/* OpenRouter API Key Input */}
-                      <div className="space-y-1.5">
-                        <label className="font-bold text-slate-700 flex items-center justify-between text-xs">
-                          <span>API Key OpenRouter</span>
-                          <button
-                            type="button"
-                            onClick={testOpenRouterConnection}
-                            disabled={openRouterTesting || !openRouterKey.trim()}
-                            className="text-purple-600 hover:underline font-semibold text-[11px] disabled:opacity-50"
-                          >
-                            {openRouterTesting ? 'Đang test...' : '⚡ Test Kết Nối'}
-                          </button>
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="password"
-                            value={openRouterKey}
-                            onChange={(e) => setOpenRouterKey(e.target.value)}
-                            placeholder="Dán key sk-or-v1-... tại đây"
-                            className="flex-1 px-3 py-2.5 rounded-xl border border-slate-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 font-mono text-xs outline-none"
-                          />
-                        </div>
-                        <p className="text-[11px] text-slate-400">Key được lưu an toàn trên máy và tự động đồng bộ sang điện thoại qua Cloud Sync.</p>
-                      </div>
-
-                      {/* OpenRouter Model Input */}
-                      <div className="space-y-1.5">
-                        <label className="font-bold text-slate-700 flex items-center justify-between text-xs">
-                          <span>Mã Mô Hình AI (Model ID)</span>
-                          <span className="text-[11px] text-purple-700 font-mono font-semibold truncate max-w-[200px]">
-                            {openRouterModel || 'Chưa điền'}
-                          </span>
-                        </label>
-                        <input
-                          type="text"
-                          value={openRouterModel}
-                          onChange={(e) => {
-                            setOpenRouterModel(e.target.value);
-                            localStorage.setItem('openrouter_model', e.target.value);
-                          }}
-                          placeholder="Điền mã mô hình OpenRouter (ví dụ: qwen/qwen3.8-27b:free, google/gemini-2.5-flash...)"
-                          className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:border-purple-500 focus:ring-2 focus:ring-purple-100 font-mono text-xs outline-none bg-white"
-                        />
-                        <p className="text-[11px] text-slate-400 leading-normal">
-                          Bạn có thể tự chủ động điền bất kỳ mã mô hình Vision nào có trên OpenRouter (openrouter.ai/models) để sử dụng.
+                          💡 <strong>Lưu ý:</strong> Để đọc được ảnh phiếu xuất kho, hãy chọn mô hình hỗ trợ <strong>Vision / Multimodal</strong> (như Qwen 2.5 VL, Llama 3.2 Vision, Pixtral...).
                         </p>
                       </div>
                     </div>
@@ -7980,6 +7594,71 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs active:scale-95 transition-all"
               >
                 Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Paste Modal Dialog */}
+      {isPasteModalOpen && (
+        <div className="fixed inset-0 z-[650] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 text-slate-800 dark:text-slate-100 shadow-2xl relative">
+            <button
+              onClick={() => setIsPasteModalOpen(false)}
+              className="absolute top-4 right-4 p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              <IconClose className="w-5 h-5" />
+            </button>
+
+            <div className="text-center space-y-2 mb-5">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-white shadow-lg shadow-cyan-500/25 mx-auto">
+                <IconClipboard className="w-7 h-7" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Dán Ảnh Từ Bộ Nhớ Tạm</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed px-2">
+                Trình duyệt di động yêu cầu tương tác chạm trực tiếp để bảo vệ quyền riêng tư.
+              </p>
+            </div>
+
+            {/* Editable Paste Area for Mobile Native Menu */}
+            <div
+              ref={pasteBoxRef}
+              contentEditable
+              suppressContentEditableWarning
+              onPaste={handleModalPaste}
+              tabIndex={0}
+              className="w-full min-h-[140px] rounded-2xl border-2 border-dashed border-cyan-400 dark:border-cyan-500/60 bg-gradient-to-b from-cyan-50/60 to-blue-50/30 dark:from-cyan-950/20 dark:to-blue-950/10 hover:border-cyan-500 focus:border-cyan-600 focus:outline-none focus:ring-4 focus:ring-cyan-500/20 p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all select-none"
+            >
+              <span className="text-2xl mb-1.5 animate-bounce">📋</span>
+              <span className="text-sm font-bold text-cyan-900 dark:text-cyan-200">
+                Chạm hoặc Nhấn giữ vào ô này
+              </span>
+              <span className="text-xs text-cyan-700/80 dark:text-cyan-300/70 mt-1">
+                sau đó chọn <strong className="underline decoration-cyan-500">"Dán" (Paste)</strong> từ menu hiện lên
+              </span>
+            </div>
+
+            {/* Fallback Option */}
+            <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800/80 flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPasteModalOpen(false);
+                  imageInputRef.current?.click();
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs flex items-center justify-center gap-2 transition-colors"
+              >
+                <IconUpload className="w-4 h-4 text-blue-600" />
+                <span>Hoặc chọn ảnh trực tiếp từ thiết bị</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsPasteModalOpen(false)}
+                className="w-full py-2 px-4 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-medium text-xs transition-colors"
+              >
+                Hủy bỏ
               </button>
             </div>
           </div>
