@@ -1,9 +1,8 @@
 name: Build Android APK
 
 on:
-  # Tạm thời dừng tự động tạo APK khi push theo yêu cầu
-  # push:
-  #   branches: [ main ]
+  push:
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -45,30 +44,29 @@ jobs:
       - name: Prepare APK Output
         run: |
           mkdir -p build-output
-          cp android/app/build/outputs/apk/debug/app-debug.apk build-output/ScanPhieuKho-v38.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk build-output/ScanPhieuKho-v39.apk
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ScanPhieuKho-Android-APK
-          path: build-output/ScanPhieuKho-v38.apk
+          path: build-output/ScanPhieuKho-v39.apk
           retention-days: 30
 
       - name: Create GitHub Release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v38.0.0
-          name: "Scan Phiếu Pro Max Android APK (v38.0.0)"
+          tag_name: v39.0.0
+          name: "Scan Phiếu Kho Android APK - V2 UI (v39.0.0)"
           body: |
-            ## 📱 Ứng Dụng Scan Phiếu Kho Android (.APK)
-            - **Phiên bản**: v38.0.0
-            - **Tối ưu tốc độ AI**: Google Gemini 3.6 Flash tự động nén ảnh trên canvas, giảm 70% input token và tăng tốc upload gấp 10 lần.
-            - **Bộ giải mã JSON siêu cấp**: Tự động vá lỗi thiếu ngoặc `]}`, unescaped quotes và regex fallback - triệt tiêu hoàn toàn lỗi gộp dòng.
-            - **Đồng bộ Google Sheet**: Tự động chèn dòng trống phân cách hoàn hảo giữa các phiếu/trang khi quét hàng loạt.
-            - **OpenRouter Mới**: Tích hợp thêm 2 model siêu chuẩn & miễn phí `Nex-N2.5-Pro (Free)` và `Nex-N2.5-Mini (Free)`.
+            ## 📱 Ứng Dụng Scan Phiếu Kho Android (.APK) - Phiên bản V2
+            - **Phiên bản**: v39.0.0
+            - **Áp dụng Giao diện V2**: Mặc định khởi động vào Giao diện V2 tối giản (chuẩn thiết kế phẳng, viền 1px mỏng, typography sắc nét).
+            - **Chuyển đổi giao diện linh hoạt**: Hỗ trợ nút chuyển đổi qua lại giữa Giao diện V2 mới và Giao diện V1 gốc trực tiếp ngay trên thanh tiêu đề ứng dụng.
+            - **Đa mô hình AI**: Hỗ trợ Google Gemini 3.6/3.7/3.8 Flash và Custom API OpenAI-Compatible.
             
-            👉 Tải file cài đặt: `ScanPhieuKho-v38.apk`
-          files: build-output/ScanPhieuKho-v38.apk
+            👉 Tải file cài đặt: `ScanPhieuKho-v39.apk`
+          files: build-output/ScanPhieuKho-v39.apk
           draft: false
           prerelease: false
         env:

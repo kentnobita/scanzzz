@@ -746,6 +746,11 @@ export default function Home() {
 
   // Sync state with localStorage on mount & check URL for ?sync=CODE
   useEffect(() => {
+    if (typeof window !== 'undefined' && localStorage.getItem('preferred_ui_version') === 'v2') {
+      window.location.replace('/v2');
+      return;
+    }
+
     const key = localStorage.getItem('gemini_api_key') || '';
     setApiKey(key);
 
@@ -4547,8 +4552,16 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">Scan Pro Max</h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                  v38.0.0
+                  v39.0.0
                 </span>
+                <a
+                  href="/v2"
+                  onClick={() => localStorage.setItem('preferred_ui_version', 'v2')}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 hover:bg-emerald-500/30 transition-all shadow-sm"
+                  title="Chuyển sang giao diện V2 (Mới & Tối giản)"
+                >
+                  <span>✨ Giao diện V2</span>
+                </a>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">Trích xuất số phiếu & danh mục hàng hóa bằng AI</p>
             </div>
@@ -7339,13 +7352,13 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
                     <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
                       <a
-                        href="https://github.com/kentnobita/scanzzz/releases/latest/download/ScanPhieuKho-v38.apk"
+                        href="https://github.com/kentnobita/scanzzz/releases/latest/download/ScanPhieuKho-v39.apk"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="w-full sm:w-auto px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all active:scale-95"
                       >
                         <IconUpload className="w-4 h-4 rotate-180" />
-                        <span>📥 Tải File Cài Đặt Android (ScanPhieuKho-v38.apk)</span>
+                        <span>📥 Tải File Cài Đặt Android (ScanPhieuKho-v39.apk)</span>
                       </a>
 
                       <a

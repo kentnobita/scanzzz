@@ -4551,10 +4551,11 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 </span>
                 <a
                   href="/"
-                  className="hidden sm:inline-flex items-center gap-1 text-[11px] font-medium text-zinc-500 hover:text-zinc-900 hover:underline ml-1"
-                  title="Chuyển về giao diện gốc"
+                  onClick={() => localStorage.setItem('preferred_ui_version', 'v1')}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-600 hover:text-zinc-900 px-2 py-0.5 rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors shadow-2xs"
+                  title="Chuyển về giao diện V1 (Bản gốc)"
                 >
-                  ← Bản gốc (/)
+                  <span>⇄ V1 Gốc</span>
                 </a>
               </div>
               <p className="text-[11px] text-zinc-500 hidden sm:block font-normal">Trích xuất số phiếu &amp; danh mục hàng hóa bằng AI</p>
@@ -7308,7 +7309,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
                     <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
                       <a
-                        href="https://github.com/kentnobita/scanzzz/releases/latest/download/ScanPhieuKho-v38.apk"
+                        href="https://github.com/kentnobita/scanzzz/releases/latest/download/ScanPhieuKho-v39.apk"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="w-full sm:w-auto h-9 px-3.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-white font-medium text-xs flex items-center justify-center gap-1.5 transition-colors"
