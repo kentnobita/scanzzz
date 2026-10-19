@@ -587,6 +587,10 @@ export default function Home() {
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [customApiKey, setCustomApiKey] = useState("");
   const [customModel, setCustomModel] = useState("");
+  const [customApis, setCustomApis] = useState([]); // List of custom API configs: [{ id, name, baseUrl, apiKey, model }]
+  const [activeCustomApiId, setActiveCustomApiId] = useState("");
+  const [editingCustomApi, setEditingCustomApi] = useState(null); // null or profile object being edited
+  const [isCustomFormOpen, setIsCustomFormOpen] = useState(false);
   const [customTesting, setCustomTesting] = useState(false);
   const [rateLimitedKeys, setRateLimitedKeys] = useState(new Set()); 
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
@@ -792,12 +796,49 @@ export default function Home() {
     const savedBaiModel = (localStorage.getItem('bai_model') || 'deepseek-v4.1-flash').toLowerCase();
     setBaiModel(savedBaiModel);
 
+    let savedCustomApis = [];
+    try {
+      savedCustomApis = JSON.parse(localStorage.getItem('custom_apis') || '[]');
+      if (!Array.isArray(savedCustomApis)) savedCustomApis = [];
+    } catch {
+      savedCustomApis = [];
+    }
+
     const savedCustomUrl = localStorage.getItem('custom_base_url') || '';
-    setCustomBaseUrl(savedCustomUrl);
     const savedCustomKey = localStorage.getItem('custom_api_key') || '';
-    setCustomApiKey(savedCustomKey);
     const savedCustomModel = localStorage.getItem('custom_model') || '';
-    setCustomModel(savedCustomModel);
+
+    // Tự động chuyển đổi cấu hình đơn cũ thành danh sách profile
+    if (savedCustomApis.length === 0 && (savedCustomUrl || savedCustomModel)) {
+      savedCustomApis = [{
+        id: 'custom_default',
+        name: 'Custom API Mặc Định',
+        baseUrl: savedCustomUrl,
+        apiKey: savedCustomKey,
+        model: savedCustomModel,
+      }];
+      localStorage.setItem('custom_apis', JSON.stringify(savedCustomApis));
+    }
+
+    let savedActiveId = localStorage.getItem('active_custom_api_id') || '';
+    if (!savedActiveId || !savedCustomApis.some(a => a.id === savedActiveId)) {
+      savedActiveId = savedCustomApis[0]?.id || '';
+      if (savedActiveId) localStorage.setItem('active_custom_api_id', savedActiveId);
+    }
+
+    setCustomApis(savedCustomApis);
+    setActiveCustomApiId(savedActiveId);
+
+    const activeProfile = savedCustomApis.find(a => a.id === savedActiveId) || savedCustomApis[0];
+    if (activeProfile) {
+      setCustomBaseUrl(activeProfile.baseUrl || '');
+      setCustomApiKey(activeProfile.apiKey || '');
+      setCustomModel(activeProfile.model || '');
+    } else {
+      setCustomBaseUrl(savedCustomUrl);
+      setCustomApiKey(savedCustomKey);
+      setCustomModel(savedCustomModel);
+    }
 
     const sheetUrl = localStorage.getItem('google_sheet_webhook_url') || '';
     setGoogleSheetUrl(sheetUrl);
@@ -1025,6 +1066,8 @@ export default function Home() {
         customBaseUrl: customBaseUrl.trim(),
         customApiKey: customApiKey.trim(),
         customModel: customModel.trim(),
+        customApis: Array.isArray(customApis) ? customApis : [],
+        activeCustomApiId: activeCustomApiId || '',
         googleSheetUrl: googleSheetUrl.trim(),
         autoSyncSheet,
         selectedColumns,
@@ -1140,17 +1183,37 @@ export default function Home() {
         setBaiModel(data.baiModel);
         localStorage.setItem('bai_model', data.baiModel);
       }
-      if (data.customBaseUrl !== undefined) {
-        setCustomBaseUrl(data.customBaseUrl);
-        localStorage.setItem('custom_base_url', data.customBaseUrl);
-      }
-      if (data.customApiKey !== undefined) {
-        setCustomApiKey(data.customApiKey);
-        localStorage.setItem('custom_api_key', data.customApiKey);
-      }
-      if (data.customModel !== undefined) {
-        setCustomModel(data.customModel);
-        localStorage.setItem('custom_model', data.customModel);
+      if (Array.isArray(data.customApis) && data.customApis.length > 0) {
+        setCustomApis(data.customApis);
+        localStorage.setItem('custom_apis', JSON.stringify(data.customApis));
+        const actId = data.activeCustomApiId && data.customApis.some(a => a.id === data.activeCustomApiId)
+          ? data.activeCustomApiId
+          : data.customApis[0].id;
+        setActiveCustomApiId(actId);
+        localStorage.setItem('active_custom_api_id', actId);
+
+        const curAct = data.customApis.find(a => a.id === actId) || data.customApis[0];
+        if (curAct) {
+          setCustomBaseUrl(curAct.baseUrl || '');
+          setCustomApiKey(curAct.apiKey || '');
+          setCustomModel(curAct.model || '');
+          localStorage.setItem('custom_base_url', curAct.baseUrl || '');
+          localStorage.setItem('custom_api_key', curAct.apiKey || '');
+          localStorage.setItem('custom_model', curAct.model || '');
+        }
+      } else {
+        if (data.customBaseUrl !== undefined) {
+          setCustomBaseUrl(data.customBaseUrl);
+          localStorage.setItem('custom_base_url', data.customBaseUrl);
+        }
+        if (data.customApiKey !== undefined) {
+          setCustomApiKey(data.customApiKey);
+          localStorage.setItem('custom_api_key', data.customApiKey);
+        }
+        if (data.customModel !== undefined) {
+          setCustomModel(data.customModel);
+          localStorage.setItem('custom_model', data.customModel);
+        }
       }
       if (data.googleSheetUrl !== undefined) {
         setGoogleSheetUrl(data.googleSheetUrl);
@@ -3118,11 +3181,11 @@ export default function Home() {
     throw new Error('B.AI chưa trích xuất được bảng hàng hóa. Vui lòng bấm Quét Lại hoặc chọn mô hình DeepSeek-V4.1-Flash / Qwen3.8-Flash.');
   };
 
-  // Test Custom API Connection
-  const testCustomConnection = async () => {
-    const baseUrl = customBaseUrl.trim();
-    const key = customApiKey.trim();
-    const model = customModel.trim();
+  // Test Custom API Connection (supports profile or active state)
+  const testCustomConnection = async (targetBaseUrl, targetKey, targetModel) => {
+    const baseUrl = (targetBaseUrl !== undefined ? targetBaseUrl : customBaseUrl || '').trim();
+    const key = (targetKey !== undefined ? targetKey : customApiKey || '').trim();
+    const model = (targetModel !== undefined ? targetModel : customModel || '').trim();
     if (!baseUrl) {
       showToast('Vui lòng nhập Base URL trước khi kiểm tra kết nối', 'error');
       return;
@@ -3144,6 +3207,107 @@ export default function Home() {
     } finally {
       setCustomTesting(false);
     }
+  };
+
+  // Chọn Custom API Profile hoạt động
+  const selectActiveCustomApi = (profileId) => {
+    const target = customApis.find((p) => p.id === profileId);
+    if (!target) return;
+    setActiveCustomApiId(profileId);
+    localStorage.setItem('active_custom_api_id', profileId);
+
+    setCustomBaseUrl(target.baseUrl || '');
+    setCustomApiKey(target.apiKey || '');
+    setCustomModel(target.model || '');
+    localStorage.setItem('custom_base_url', target.baseUrl || '');
+    localStorage.setItem('custom_api_key', target.apiKey || '');
+    localStorage.setItem('custom_model', target.model || '');
+    showToast(`Đã kích hoạt profile "${target.name || target.model || 'Custom API'}"`);
+  };
+
+  // Lưu hoặc cập nhật một Custom API Profile
+  const saveCustomApiProfile = (profile) => {
+    if (!profile.baseUrl?.trim()) {
+      showToast('Vui lòng nhập Base URL', 'error');
+      return false;
+    }
+    if (!profile.model?.trim()) {
+      showToast('Vui lòng nhập Tên Mô Hình (Model ID)', 'error');
+      return false;
+    }
+
+    const trimmed = {
+      id: profile.id || `custom_${Date.now()}`,
+      name: (profile.name || '').trim() || (profile.model || 'Custom API').trim(),
+      baseUrl: (profile.baseUrl || '').trim(),
+      apiKey: (profile.apiKey || '').trim(),
+      model: (profile.model || '').trim(),
+    };
+
+    let updatedList;
+    const exists = customApis.some((p) => p.id === trimmed.id);
+    if (exists) {
+      updatedList = customApis.map((p) => (p.id === trimmed.id ? trimmed : p));
+    } else {
+      updatedList = [...customApis, trimmed];
+    }
+
+    setCustomApis(updatedList);
+    localStorage.setItem('custom_apis', JSON.stringify(updatedList));
+
+    // Nếu sửa đúng profile đang active hoặc danh sách mới chỉ có 1 profile thì đồng bộ state chính
+    if (activeCustomApiId === trimmed.id || updatedList.length === 1) {
+      setActiveCustomApiId(trimmed.id);
+      localStorage.setItem('active_custom_api_id', trimmed.id);
+      setCustomBaseUrl(trimmed.baseUrl);
+      setCustomApiKey(trimmed.apiKey);
+      setCustomModel(trimmed.model);
+      localStorage.setItem('custom_base_url', trimmed.baseUrl);
+      localStorage.setItem('custom_api_key', trimmed.apiKey);
+      localStorage.setItem('custom_model', trimmed.model);
+    }
+
+    showToast(`✅ Đã lưu cấu hình "${trimmed.name}"!`, 'success');
+    setIsCustomFormOpen(false);
+    setEditingCustomApi(null);
+    return true;
+  };
+
+  // Xóa Custom API Profile
+  const deleteCustomApiProfile = (profileId) => {
+    const target = customApis.find((p) => p.id === profileId);
+    if (!target) return;
+    if (!window.confirm(`Bạn có chắc muốn xóa cấu hình Custom API "${target.name || target.model}"?`)) {
+      return;
+    }
+
+    const remaining = customApis.filter((p) => p.id !== profileId);
+    setCustomApis(remaining);
+    localStorage.setItem('custom_apis', JSON.stringify(remaining));
+
+    if (activeCustomApiId === profileId) {
+      const nextActive = remaining[0] || null;
+      if (nextActive) {
+        setActiveCustomApiId(nextActive.id);
+        localStorage.setItem('active_custom_api_id', nextActive.id);
+        setCustomBaseUrl(nextActive.baseUrl || '');
+        setCustomApiKey(nextActive.apiKey || '');
+        setCustomModel(nextActive.model || '');
+        localStorage.setItem('custom_base_url', nextActive.baseUrl || '');
+        localStorage.setItem('custom_api_key', nextActive.apiKey || '');
+        localStorage.setItem('custom_model', nextActive.model || '');
+      } else {
+        setActiveCustomApiId('');
+        localStorage.removeItem('active_custom_api_id');
+        setCustomBaseUrl('');
+        setCustomApiKey('');
+        setCustomModel('');
+        localStorage.removeItem('custom_base_url');
+        localStorage.removeItem('custom_api_key');
+        localStorage.removeItem('custom_model');
+      }
+    }
+    showToast(`Đã xóa cấu hình "${target.name || 'Custom API'}"`);
   };
 
   // Custom OpenAI-Compatible Provider OCR
@@ -4549,14 +4713,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold uppercase bg-zinc-100 text-zinc-700 border border-zinc-200">
                   v2
                 </span>
-                <a
-                  href="/"
-                  onClick={() => localStorage.setItem('preferred_ui_version', 'v1')}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-600 hover:text-zinc-900 px-2 py-0.5 rounded-md border border-zinc-200 bg-white hover:bg-zinc-50 transition-colors shadow-2xs"
-                  title="Chuyển về giao diện V1 (Bản gốc)"
-                >
-                  <span>⇄ V1 Gốc</span>
-                </a>
               </div>
               <p className="text-[11px] text-zinc-500 hidden sm:block font-normal">Trích xuất số phiếu &amp; danh mục hàng hóa bằng AI</p>
             </div>
@@ -4564,14 +4720,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
           {/* Action Buttons */}
           <div className="flex items-center gap-1.5 sm:gap-2">
-            {/* Quick Switch to Root for Mobile */}
-            <a
-              href="/"
-              className="sm:hidden px-2 py-1 rounded-lg text-[11px] font-medium text-zinc-600 bg-zinc-100 border border-zinc-200 hover:bg-zinc-200"
-              title="Về bản gốc"
-            >
-              ← Bản cũ
-            </a>
 
             {/* Cloud Sync Button */}
             <button
@@ -6706,138 +6854,313 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     </button>
                   </div>
 
-                  {/* CUSTOM API SECTION */}
+                  {/* CUSTOM API SECTION (MULTI-PROFILE) */}
                   {aiProvider === 'custom' && (
                     <div className="space-y-3.5 animate-fade-in">
                       <div className="p-3 bg-zinc-50 rounded-xl border border-zinc-200 space-y-1">
                         <div className="font-semibold text-zinc-900 flex items-center justify-between text-xs">
                           <span className="flex items-center gap-1.5">
                             <IconSparkles className="w-3.5 h-3.5 text-zinc-700" />
-                            <span>Tùy Chỉnh API Bên Thứ 3 (OpenAI-Compatible)</span>
+                            <span>Quản Lý Nhiều Custom API (OpenAI-Compatible)</span>
                           </span>
                           <span className="text-zinc-600 font-mono text-[10px] px-1.5 py-0.2 rounded bg-zinc-200/70">
-                            CORS Safe Proxy
+                            {customApis.length} Profile
                           </span>
                         </div>
                         <p className="text-[11px] text-zinc-500 leading-relaxed">
-                          Tự do kết nối bất kỳ nhà cung cấp nào (RadoxAI, Together AI, Groq, SiliconFlow, Novita, Ollama LAN, vLLM...) theo chuẩn OpenAI. Hệ thống tự động khử reasoning, lọc dữ liệu và bóc tách bảng phiếu kho.
+                          Lưu trữ và chuyển đổi nhanh giữa nhiều nhà cung cấp API (Groq, Together AI, RadoxAI, SiliconFlow, Ollama LAN, vLLM...). Hệ thống tự động khử reasoning, lọc dữ liệu và bóc tách bảng phiếu kho.
                         </p>
                       </div>
 
-                      {/* Base URL Input */}
-                      <div className="space-y-1.5">
-                        <label className="font-semibold text-zinc-900 flex items-center justify-between text-xs">
-                          <span>Base URL API</span>
-                          <span className="text-[10px] text-zinc-400 font-mono font-normal">Tự động gắn /chat/completions</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={customBaseUrl}
-                          onChange={(e) => {
-                            setCustomBaseUrl(e.target.value);
-                            localStorage.setItem('custom_base_url', e.target.value);
-                          }}
-                          placeholder="Ví dụ: https://radoxai.com/v1 hoặc https://api.together.xyz/v1"
-                          className="w-full px-3 py-2 rounded-lg border border-zinc-200 focus:border-zinc-900 font-mono text-xs outline-none bg-white transition-colors"
-                        />
-                        {/* Quick Presets for Base URL */}
-                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                          <span className="text-[10px] font-medium text-zinc-400">Gợi ý:</span>
-                          {[
-                            { name: 'RadoxAI', url: 'https://radoxai.com/v1' },
-                            { name: 'Together AI', url: 'https://api.together.xyz/v1' },
-                            { name: 'Groq', url: 'https://api.groq.com/openai/v1' },
-                            { name: 'SiliconFlow', url: 'https://api.siliconflow.cn/v1' },
-                            { name: 'DeepSeek', url: 'https://api.deepseek.com/v1' },
-                            { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
-                            { name: 'Ollama (Local)', url: 'http://localhost:11434/v1' },
-                          ].map((p) => (
+                      {/* DANH SÁCH CÁC CUSTOM API PROFILES */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-zinc-900">Danh Sách Cấu Hình ({customApis.length})</span>
+                          {!isCustomFormOpen && (
                             <button
-                              key={p.name}
                               type="button"
                               onClick={() => {
-                                setCustomBaseUrl(p.url);
-                                localStorage.setItem('custom_base_url', p.url);
-                                showToast(`Đã chọn Base URL ${p.name}`);
+                                setEditingCustomApi({
+                                  id: '',
+                                  name: '',
+                                  baseUrl: 'https://',
+                                  apiKey: '',
+                                  model: '',
+                                });
+                                setIsCustomFormOpen(true);
                               }}
-                              className="px-2 py-0.5 rounded-md bg-zinc-100 hover:bg-zinc-200 text-[10px] text-zinc-700 transition-colors font-mono border border-zinc-200/80"
+                              className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-zinc-900 hover:bg-zinc-800 text-white transition-colors flex items-center gap-1 shadow-2xs"
                             >
-                              {p.name}
+                              <span>+ Thêm Custom API</span>
                             </button>
-                          ))}
+                          )}
+                        </div>
+
+                        {customApis.length === 0 && !isCustomFormOpen && (
+                          <div className="p-4 text-center border border-dashed border-zinc-300 rounded-xl bg-zinc-50/50 space-y-2">
+                            <p className="text-xs text-zinc-500">Chưa có cấu hình Custom API nào được lưu.</p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCustomApi({
+                                  id: '',
+                                  name: 'RadoxAI Vision',
+                                  baseUrl: 'https://radoxai.com/v1',
+                                  apiKey: '',
+                                  model: 'Qwen/Qwen2.5-VL-72B-Instruct',
+                                });
+                                setIsCustomFormOpen(true);
+                              }}
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-900 text-white hover:bg-zinc-800"
+                            >
+                              Tạo Cấu Hình Đầu Tiên
+                            </button>
+                          </div>
+                        )}
+
+                        <div className="grid gap-2">
+                          {customApis.map((p) => {
+                            const isActive = p.id === activeCustomApiId;
+                            return (
+                              <div
+                                key={p.id}
+                                className={`p-3 rounded-xl border transition-all ${
+                                  isActive
+                                    ? 'bg-zinc-50 border-zinc-900 shadow-2xs'
+                                    : 'bg-white border-zinc-200 hover:border-zinc-300'
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-semibold text-xs text-zinc-900 truncate">
+                                        {p.name || 'Custom API'}
+                                      </span>
+                                      {isActive ? (
+                                        <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-zinc-900 text-white flex items-center gap-1">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                          <span>Đang Dùng</span>
+                                        </span>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => selectActiveCustomApi(p.id)}
+                                          className="px-2 py-0.5 rounded text-[10px] font-medium bg-zinc-100 hover:bg-zinc-200 text-zinc-700 transition-colors border border-zinc-200"
+                                        >
+                                          Kích hoạt
+                                        </button>
+                                      )}
+                                    </div>
+                                    <div className="mt-1 flex items-center gap-2 flex-wrap text-[11px]">
+                                      <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-zinc-100 text-zinc-800 border border-zinc-200/60 font-semibold truncate max-w-[200px]">
+                                        {p.model}
+                                      </span>
+                                      <span className="font-mono text-[10px] text-zinc-400 truncate max-w-[240px]">
+                                        {p.baseUrl}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Hành động */}
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => testCustomConnection(p.baseUrl, p.apiKey, p.model)}
+                                      disabled={customTesting}
+                                      className="px-2 py-1 rounded-md text-[11px] font-medium text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition-colors"
+                                      title="Kiểm tra kết nối API này"
+                                    >
+                                      Test
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingCustomApi({ ...p });
+                                        setIsCustomFormOpen(true);
+                                      }}
+                                      className="px-2 py-1 rounded-md text-[11px] font-medium text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition-colors"
+                                      title="Sửa cấu hình"
+                                    >
+                                      Sửa
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteCustomApiProfile(p.id)}
+                                      className="px-2 py-1 rounded-md text-[11px] font-medium text-red-600 hover:text-red-700 hover:bg-red-50 transition-colors"
+                                      title="Xóa cấu hình"
+                                    >
+                                      Xóa
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
 
-                      {/* API Key Input */}
-                      <div className="space-y-1.5">
-                        <label className="font-semibold text-zinc-900 flex items-center justify-between text-xs">
-                          <span>API Key</span>
-                          <button
-                            type="button"
-                            onClick={testCustomConnection}
-                            disabled={customTesting || !customBaseUrl.trim()}
-                            className="text-zinc-700 hover:text-zinc-900 hover:underline font-medium text-xs disabled:opacity-50"
-                          >
-                            {customTesting ? 'Đang kiểm tra...' : 'Kiểm tra kết nối'}
-                          </button>
-                        </label>
-                        <input
-                          type="password"
-                          value={customApiKey}
-                          onChange={(e) => {
-                            setCustomApiKey(e.target.value);
-                            localStorage.setItem('custom_api_key', e.target.value);
-                          }}
-                          placeholder="Dán API Key (có thể bỏ trống nếu là Ollama / vLLM local)"
-                          className="w-full px-3 py-2 rounded-lg border border-zinc-200 focus:border-zinc-900 font-mono text-xs outline-none bg-white transition-colors"
-                        />
-                        <p className="text-[11px] text-zinc-400 font-mono">Key bảo mật trên trình duyệt và tự động đồng bộ qua Cloud.</p>
-                      </div>
-
-                      {/* Model ID Input */}
-                      <div className="space-y-1.5">
-                        <label className="font-semibold text-zinc-900 flex items-center justify-between text-xs">
-                          <span>Tên Mô Hình (Model ID)</span>
-                          <span className="text-[10px] text-zinc-500 font-mono">Ưu tiên model Vision</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={customModel}
-                          onChange={(e) => {
-                            setCustomModel(e.target.value);
-                            localStorage.setItem('custom_model', e.target.value);
-                          }}
-                          placeholder="Ví dụ: meta-llama/Llama-3.2-11B-Vision-Instruct hoặc Qwen/Qwen2.5-VL-72B-Instruct"
-                          className="w-full px-3 py-2 rounded-lg border border-zinc-200 focus:border-zinc-900 font-mono text-xs outline-none bg-white transition-colors"
-                        />
-                        {/* Quick Presets for Model */}
-                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                          <span className="text-[10px] font-medium text-zinc-400">Mô hình mẫu:</span>
-                          {[
-                            { label: 'Qwen 2.5 VL 72B', id: 'Qwen/Qwen2.5-VL-72B-Instruct' },
-                            { label: 'Llama 3.2 11B Vision', id: 'meta-llama/Llama-3.2-11B-Vision-Instruct' },
-                            { label: 'Groq Llama 3.2 Vision', id: 'llama-3.2-11b-vision-preview' },
-                            { label: 'DeepSeek Chat', id: 'deepseek-chat' },
-                            { label: 'Ollama Vision', id: 'llama3.2-vision' },
-                          ].map((pm) => (
+                      {/* FORM THÊM / CHỈNH SỬA CUSTOM API PROFILE */}
+                      {isCustomFormOpen && editingCustomApi && (
+                        <div className="p-3.5 bg-zinc-50 rounded-xl border border-zinc-900 space-y-3 animate-fade-in shadow-2xs">
+                          <div className="flex items-center justify-between pb-1 border-b border-zinc-200">
+                            <span className="text-xs font-bold text-zinc-900 flex items-center gap-1.5">
+                              <IconSparkles className="w-3.5 h-3.5 text-zinc-700" />
+                              <span>{editingCustomApi.id ? 'Chỉnh Sửa Cấu Hình Custom API' : 'Thêm Cấu Hình Custom API Mới'}</span>
+                            </span>
                             <button
-                              key={pm.label}
                               type="button"
                               onClick={() => {
-                                setCustomModel(pm.id);
-                                localStorage.setItem('custom_model', pm.id);
-                                showToast(`Đã chọn model ${pm.label}`);
+                                setIsCustomFormOpen(false);
+                                setEditingCustomApi(null);
                               }}
-                              className="px-2 py-0.5 rounded-md bg-zinc-100 hover:bg-zinc-200 text-[10px] text-zinc-700 transition-colors font-mono border border-zinc-200/80"
+                              className="text-zinc-400 hover:text-zinc-700 text-xs font-semibold px-1"
                             >
-                              {pm.label}
+                              ✕ Đóng
                             </button>
-                          ))}
+                          </div>
+
+                          {/* Tên gợi nhớ */}
+                          <div className="space-y-1">
+                            <label className="font-semibold text-zinc-900 text-xs block">
+                              Tên Gợi Nhớ (Profile Name)
+                            </label>
+                            <input
+                              type="text"
+                              value={editingCustomApi.name || ''}
+                              onChange={(e) => setEditingCustomApi({ ...editingCustomApi, name: e.target.value })}
+                              placeholder="Ví dụ: RadoxAI Qwen Vision, Together Llama 3.2, Ollama Mạng LAN..."
+                              className="w-full px-3 py-1.5 rounded-lg border border-zinc-300 focus:border-zinc-900 font-sans text-xs outline-none bg-white transition-colors"
+                            />
+                          </div>
+
+                          {/* Base URL Input */}
+                          <div className="space-y-1">
+                            <label className="font-semibold text-zinc-900 flex items-center justify-between text-xs">
+                              <span>Base URL API</span>
+                              <span className="text-[10px] text-zinc-400 font-mono font-normal">Tự động gắn /chat/completions</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={editingCustomApi.baseUrl || ''}
+                              onChange={(e) => setEditingCustomApi({ ...editingCustomApi, baseUrl: e.target.value })}
+                              placeholder="Ví dụ: https://radoxai.com/v1 hoặc https://api.together.xyz/v1"
+                              className="w-full px-3 py-1.5 rounded-lg border border-zinc-300 focus:border-zinc-900 font-mono text-xs outline-none bg-white transition-colors"
+                            />
+                            {/* Quick Presets for Base URL */}
+                            <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                              <span className="text-[10px] font-medium text-zinc-400">Gợi ý:</span>
+                              {[
+                                { name: 'RadoxAI', url: 'https://radoxai.com/v1' },
+                                { name: 'Together AI', url: 'https://api.together.xyz/v1' },
+                                { name: 'Groq', url: 'https://api.groq.com/openai/v1' },
+                                { name: 'SiliconFlow', url: 'https://api.siliconflow.cn/v1' },
+                                { name: 'DeepSeek', url: 'https://api.deepseek.com/v1' },
+                                { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
+                                { name: 'Ollama (Local)', url: 'http://localhost:11434/v1' },
+                              ].map((pr) => (
+                                <button
+                                  key={pr.name}
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingCustomApi({
+                                      ...editingCustomApi,
+                                      baseUrl: pr.url,
+                                      name: editingCustomApi.name || pr.name,
+                                    });
+                                  }}
+                                  className="px-2 py-0.5 rounded bg-zinc-200/70 hover:bg-zinc-200 text-[10px] text-zinc-700 transition-colors font-mono"
+                                >
+                                  {pr.name}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* API Key Input */}
+                          <div className="space-y-1">
+                            <label className="font-semibold text-zinc-900 flex items-center justify-between text-xs">
+                              <span>API Key</span>
+                              <span className="text-[10px] text-zinc-400 font-mono">Bỏ trống nếu là Ollama / vLLM local</span>
+                            </label>
+                            <input
+                              type="password"
+                              value={editingCustomApi.apiKey || ''}
+                              onChange={(e) => setEditingCustomApi({ ...editingCustomApi, apiKey: e.target.value })}
+                              placeholder="Dán API Key của nhà cung cấp"
+                              className="w-full px-3 py-1.5 rounded-lg border border-zinc-300 focus:border-zinc-900 font-mono text-xs outline-none bg-white transition-colors"
+                            />
+                          </div>
+
+                          {/* Model ID Input */}
+                          <div className="space-y-1">
+                            <label className="font-semibold text-zinc-900 flex items-center justify-between text-xs">
+                              <span>Tên Mô Hình (Model ID)</span>
+                              <span className="text-[10px] text-zinc-500 font-mono">Ưu tiên model Vision</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={editingCustomApi.model || ''}
+                              onChange={(e) => setEditingCustomApi({ ...editingCustomApi, model: e.target.value })}
+                              placeholder="Ví dụ: meta-llama/Llama-3.2-11B-Vision-Instruct hoặc Qwen/Qwen2.5-VL-72B-Instruct"
+                              className="w-full px-3 py-1.5 rounded-lg border border-zinc-300 focus:border-zinc-900 font-mono text-xs outline-none bg-white transition-colors"
+                            />
+                            {/* Quick Presets for Model */}
+                            <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                              <span className="text-[10px] font-medium text-zinc-400">Mẫu:</span>
+                              {[
+                                { label: 'Qwen 2.5 VL 72B', id: 'Qwen/Qwen2.5-VL-72B-Instruct' },
+                                { label: 'Llama 3.2 11B Vision', id: 'meta-llama/Llama-3.2-11B-Vision-Instruct' },
+                                { label: 'Groq Llama 3.2 Vision', id: 'llama-3.2-11b-vision-preview' },
+                                { label: 'DeepSeek Chat', id: 'deepseek-chat' },
+                                { label: 'Ollama Vision', id: 'llama3.2-vision' },
+                              ].map((pm) => (
+                                <button
+                                  key={pm.label}
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingCustomApi({ ...editingCustomApi, model: pm.id });
+                                  }}
+                                  className="px-2 py-0.5 rounded bg-zinc-200/70 hover:bg-zinc-200 text-[10px] text-zinc-700 transition-colors font-mono"
+                                >
+                                  {pm.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Footer Buttons in Form */}
+                          <div className="pt-2 flex items-center justify-between gap-2 border-t border-zinc-200">
+                            <button
+                              type="button"
+                              onClick={() => testCustomConnection(editingCustomApi.baseUrl, editingCustomApi.apiKey, editingCustomApi.model)}
+                              disabled={customTesting || !editingCustomApi.baseUrl?.trim()}
+                              className="px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-700 bg-white border border-zinc-300 hover:bg-zinc-100 transition-colors disabled:opacity-50"
+                            >
+                              {customTesting ? 'Đang test...' : 'Kiểm tra kết nối'}
+                            </button>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsCustomFormOpen(false);
+                                  setEditingCustomApi(null);
+                                }}
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium text-zinc-600 hover:bg-zinc-200/60 transition-colors"
+                              >
+                                Hủy
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => saveCustomApiProfile(editingCustomApi)}
+                                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-zinc-900 hover:bg-zinc-800 text-white transition-colors shadow-2xs"
+                              >
+                                Lưu Cấu Hình
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                        <p className="text-[11px] text-zinc-600 bg-zinc-50 border border-zinc-200 p-2.5 rounded-lg mt-1 leading-relaxed">
-                          💡 <strong>Lưu ý:</strong> Để đọc được ảnh phiếu xuất kho, hãy chọn mô hình hỗ trợ <strong>Vision / Multimodal</strong> (như Qwen 2.5 VL, Llama 3.2 Vision, Pixtral...).
-                        </p>
-                      </div>
+                      )}
                     </div>
                   )}
 
@@ -7213,34 +7536,106 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
               {/* TAB 6: VIEW MODE */}
               {settingsTab === 'view' && (
-                <div className="space-y-3">
-                  <p className="text-zinc-500 text-xs leading-relaxed">Chọn chế độ bố cục giao diện hiển thị phù hợp với thiết bị của bạn:</p>
-                  <div className="grid gap-2">
-                    {[
-                      ['auto', 'Tự Động (Khuyến nghị)', 'Tự động co giãn 2 cột trên máy tính và 1 cột trên điện thoại'],
-                      ['mobile', 'Chế Độ Mobile Cố Định', 'Giao diện dạng thẻ 1 cột tối ưu cho thao tác một tay'],
-                      ['desktop', 'Chế Độ Desktop Cố Định', 'Bố cục 2 cột chia đôi màn hình mở rộng'],
-                    ].map(([val, title, desc]) => (
-                      <label
-                        key={val}
-                        className={`p-2.5 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
-                          viewMode === val ? 'bg-zinc-50 border-zinc-900' : 'bg-white border-zinc-200 hover:bg-zinc-50/50'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="viewModeOption"
-                          value={val}
-                          checked={viewMode === val}
-                          onChange={(e) => setViewMode(e.target.value)}
-                          className="mt-0.5 w-4 h-4 text-zinc-900 accent-zinc-900"
-                        />
+                <div className="space-y-4">
+                  <div>
+                    <label className="font-semibold text-xs text-zinc-900 block mb-1">
+                      Bố Cục Hiển Thị
+                    </label>
+                    <p className="text-zinc-500 text-[11px] leading-relaxed mb-2.5">
+                      Chọn chế độ bố cục giao diện hiển thị phù hợp với thiết bị của bạn:
+                    </p>
+                    <div className="grid gap-2">
+                      {[
+                        ['auto', 'Tự Động (Khuyến nghị)', 'Tự động co giãn 2 cột trên máy tính và 1 cột trên điện thoại'],
+                        ['mobile', 'Chế Độ Mobile Cố Định', 'Giao diện dạng thẻ 1 cột tối ưu cho thao tác một tay'],
+                        ['desktop', 'Chế Độ Desktop Cố Định', 'Bố cục 2 cột chia đôi màn hình mở rộng'],
+                      ].map(([val, title, desc]) => (
+                        <label
+                          key={val}
+                          className={`p-2.5 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                            viewMode === val ? 'bg-zinc-50 border-zinc-900' : 'bg-white border-zinc-200 hover:bg-zinc-50/50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="viewModeOption"
+                            value={val}
+                            checked={viewMode === val}
+                            onChange={(e) => setViewMode(e.target.value)}
+                            className="mt-0.5 w-4 h-4 text-zinc-900 accent-zinc-900"
+                          />
+                          <div>
+                            <div className="font-semibold text-xs text-zinc-900">{title}</div>
+                            <div className="text-[11px] text-zinc-500 leading-tight mt-0.5">{desc}</div>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* PHIÊN BẢN GIAO DIỆN (UI VERSION) */}
+                  <div className="pt-3 border-t border-zinc-200 space-y-2.5">
+                    <div>
+                      <div className="font-semibold text-xs text-zinc-900 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <IconLayers className="w-3.5 h-3.5 text-zinc-700" />
+                          <span>Phiên Bản Giao Diện Hệ Thống (UI Version)</span>
+                        </span>
+                        <span className="text-[10px] text-zinc-400 font-mono">Chuyển đổi UI</span>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 leading-relaxed mt-0.5">
+                        Lựa chọn phong cách giao diện phù hợp với sở thích và thiết bị của bạn:
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {/* V2 (Đang kích hoạt) */}
+                      <div className="p-3 rounded-xl border border-zinc-900 bg-zinc-50/70 flex flex-col justify-between">
                         <div>
-                          <div className="font-semibold text-xs text-zinc-900">{title}</div>
-                          <div className="text-[11px] text-zinc-500 leading-tight mt-0.5">{desc}</div>
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-xs text-zinc-900 flex items-center gap-1.5">
+                              <span>Giao Diện V2</span>
+                              <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-semibold bg-zinc-900 text-white">Mới</span>
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-zinc-500 mt-1 leading-snug">
+                            Thiết kế phẳng tối giản chuẩn Designer, viền 1px tinh tế, tập trung tối đa vào tốc độ và dữ liệu.
+                          </p>
                         </div>
-                      </label>
-                    ))}
+                        <div className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold text-zinc-900">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                          <span>Đang sử dụng</span>
+                        </div>
+                      </div>
+
+                      {/* V1 (Bản gốc) */}
+                      <div className="p-3 rounded-xl border border-zinc-200 bg-white hover:border-zinc-300 transition-all flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-xs text-zinc-800 flex items-center gap-1.5">
+                              <span>Giao Diện V1</span>
+                              <span className="px-1.5 py-0.2 rounded text-[10px] font-mono text-zinc-500 bg-zinc-100">Bản Gốc</span>
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-zinc-500 mt-1 leading-snug">
+                            Bản giao diện truyền thống với các hiệu ứng nổi, màu sắc gradient và bố cục kinh điển.
+                          </p>
+                        </div>
+                        <div className="mt-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              localStorage.setItem('preferred_ui_version', 'v1');
+                              window.location.href = '/';
+                            }}
+                            className="w-full py-1.5 px-3 rounded-lg text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-300 transition-colors flex items-center justify-center gap-1.5 shadow-2xs"
+                          >
+                            <span>Chuyển sang Giao Diện V1</span>
+                            <span>→</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
