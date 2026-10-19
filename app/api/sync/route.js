@@ -222,6 +222,18 @@ export async function POST(request) {
       customBaseUrl: String(body.customBaseUrl || '').trim(),
       customApiKey: String(body.customApiKey || '').trim(),
       customModel: String(body.customModel || '').trim(),
+      customApis: Array.isArray(body.customApis) && body.customApis.length > 0
+        ? body.customApis
+        : ((body.customBaseUrl || body.customModel)
+            ? [{
+                id: 'custom_default',
+                name: 'Custom API Mặc Định',
+                baseUrl: String(body.customBaseUrl || '').trim(),
+                apiKey: String(body.customApiKey || '').trim(),
+                model: String(body.customModel || '').trim(),
+              }]
+            : []),
+      activeCustomApiId: String(body.activeCustomApiId || (body.customApis?.[0]?.id) || 'custom_default').trim(),
 
       // Google Sheet & Bảng biểu
       googleSheetUrl: String(body.googleSheetUrl || '').trim(),

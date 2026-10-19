@@ -1039,7 +1039,7 @@ export default function Home() {
   };
 
   // Cloud Sync Functions: API & Google Sheets Configuration
-  const pushToCloud = async (overrideCode = null, silent = false) => {
+  const pushToCloud = async (overrideCode = null, silent = false, overrideCustomApis = null, overrideActiveCustomApiId = null) => {
     const code = (overrideCode || cloudSyncCode || syncCodeInput).trim().toUpperCase();
     if (!code || code.length < 3) {
       showToast('Vui lòng nhập Mã Đồng Bộ ít nhất 3 ký tự (Ví dụ: KHO-01)', 'error');
@@ -1048,6 +1048,13 @@ export default function Home() {
 
     setIsCloudSyncing(true);
     if (!silent) showToast(`☁️ Đang đồng bộ cấu hình API & Sheet lên Cloud [${code}]...`);
+
+    const effectiveCustomApis = Array.isArray(overrideCustomApis) ? overrideCustomApis : (Array.isArray(customApis) ? customApis : []);
+    const effectiveActiveId = overrideActiveCustomApiId !== null ? overrideActiveCustomApiId : (activeCustomApiId || '');
+    const curActiveProfile = effectiveCustomApis.find(a => a.id === effectiveActiveId) || effectiveCustomApis[0];
+    const cBaseUrl = (curActiveProfile?.baseUrl || customBaseUrl || '').trim();
+    const cApiKey = (curActiveProfile?.apiKey || customApiKey || '').trim();
+    const cModel = (curActiveProfile?.model || customModel || '').trim();
 
     try {
       const payload = {
@@ -1063,11 +1070,11 @@ export default function Home() {
         kiraModel: kiraModel.trim(),
         baiKey: baiKey.trim(),
         baiModel: baiModel.trim(),
-        customBaseUrl: customBaseUrl.trim(),
-        customApiKey: customApiKey.trim(),
-        customModel: customModel.trim(),
-        customApis: Array.isArray(customApis) ? customApis : [],
-        activeCustomApiId: activeCustomApiId || '',
+        customBaseUrl: cBaseUrl,
+        customApiKey: cApiKey,
+        customModel: cModel,
+        customApis: effectiveCustomApis,
+        activeCustomApiId: effectiveActiveId,
         googleSheetUrl: googleSheetUrl.trim(),
         autoSyncSheet,
         selectedColumns,
@@ -1201,19 +1208,25 @@ export default function Home() {
           localStorage.setItem('custom_api_key', curAct.apiKey || '');
           localStorage.setItem('custom_model', curAct.model || '');
         }
-      } else {
-        if (data.customBaseUrl !== undefined) {
-          setCustomBaseUrl(data.customBaseUrl);
-          localStorage.setItem('custom_base_url', data.customBaseUrl);
-        }
-        if (data.customApiKey !== undefined) {
-          setCustomApiKey(data.customApiKey);
-          localStorage.setItem('custom_api_key', data.customApiKey);
-        }
-        if (data.customModel !== undefined) {
-          setCustomModel(data.customModel);
-          localStorage.setItem('custom_model', data.customModel);
-        }
+      } else if (data.customBaseUrl || data.customModel) {
+        const fallbackList = [{
+          id: 'custom_default',
+          name: 'Custom API Mặc Định',
+          baseUrl: data.customBaseUrl || '',
+          apiKey: data.customApiKey || '',
+          model: data.customModel || '',
+        }];
+        setCustomApis(fallbackList);
+        localStorage.setItem('custom_apis', JSON.stringify(fallbackList));
+        setActiveCustomApiId('custom_default');
+        localStorage.setItem('active_custom_api_id', 'custom_default');
+
+        setCustomBaseUrl(data.customBaseUrl || '');
+        setCustomApiKey(data.customApiKey || '');
+        setCustomModel(data.customModel || '');
+        localStorage.setItem('custom_base_url', data.customBaseUrl || '');
+        localStorage.setItem('custom_api_key', data.customApiKey || '');
+        localStorage.setItem('custom_model', data.customModel || '');
       }
       if (data.googleSheetUrl !== undefined) {
         setGoogleSheetUrl(data.googleSheetUrl);
@@ -3223,6 +3236,10 @@ export default function Home() {
     localStorage.setItem('custom_api_key', target.apiKey || '');
     localStorage.setItem('custom_model', target.model || '');
     showToast(`Đã kích hoạt profile "${target.name || target.model || 'Custom API'}"`);
+
+    if (cloudSyncCode) {
+      pushToCloud(cloudSyncCode, true, customApis, profileId);
+    }
   };
 
   // Lưu hoặc cập nhật một Custom API Profile
@@ -3255,8 +3272,10 @@ export default function Home() {
     setCustomApis(updatedList);
     localStorage.setItem('custom_apis', JSON.stringify(updatedList));
 
+    let newActiveId = activeCustomApiId;
     // Nếu sửa đúng profile đang active hoặc danh sách mới chỉ có 1 profile thì đồng bộ state chính
     if (activeCustomApiId === trimmed.id || updatedList.length === 1) {
+      newActiveId = trimmed.id;
       setActiveCustomApiId(trimmed.id);
       localStorage.setItem('active_custom_api_id', trimmed.id);
       setCustomBaseUrl(trimmed.baseUrl);
@@ -3270,6 +3289,10 @@ export default function Home() {
     showToast(`✅ Đã lưu cấu hình "${trimmed.name}"!`, 'success');
     setIsCustomFormOpen(false);
     setEditingCustomApi(null);
+
+    if (cloudSyncCode) {
+      pushToCloud(cloudSyncCode, true, updatedList, newActiveId);
+    }
     return true;
   };
 
@@ -3285,9 +3308,11 @@ export default function Home() {
     setCustomApis(remaining);
     localStorage.setItem('custom_apis', JSON.stringify(remaining));
 
+    let nextActiveId = activeCustomApiId;
     if (activeCustomApiId === profileId) {
       const nextActive = remaining[0] || null;
       if (nextActive) {
+        nextActiveId = nextActive.id;
         setActiveCustomApiId(nextActive.id);
         localStorage.setItem('active_custom_api_id', nextActive.id);
         setCustomBaseUrl(nextActive.baseUrl || '');
@@ -3297,6 +3322,7 @@ export default function Home() {
         localStorage.setItem('custom_api_key', nextActive.apiKey || '');
         localStorage.setItem('custom_model', nextActive.model || '');
       } else {
+        nextActiveId = '';
         setActiveCustomApiId('');
         localStorage.removeItem('active_custom_api_id');
         setCustomBaseUrl('');
@@ -3308,6 +3334,10 @@ export default function Home() {
       }
     }
     showToast(`Đã xóa cấu hình "${target.name || 'Custom API'}"`);
+
+    if (cloudSyncCode) {
+      pushToCloud(cloudSyncCode, true, remaining, nextActiveId);
+    }
   };
 
   // Custom OpenAI-Compatible Provider OCR
@@ -4661,6 +4691,11 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     localStorage.setItem('kira_model', kiraModel.trim());
     localStorage.setItem('bai_api_key', baiKey.trim());
     localStorage.setItem('bai_model', baiModel.trim());
+    localStorage.setItem('custom_base_url', customBaseUrl.trim());
+    localStorage.setItem('custom_api_key', customApiKey.trim());
+    localStorage.setItem('custom_model', customModel.trim());
+    localStorage.setItem('custom_apis', JSON.stringify(customApis));
+    localStorage.setItem('active_custom_api_id', activeCustomApiId);
     localStorage.setItem('google_sheet_webhook_url', googleSheetUrl.trim());
     localStorage.setItem('google_sheet_auto_sync', String(autoSyncSheet));
     localStorage.setItem('auto_cloud_sync_on_launch', String(autoCloudSyncOnLaunch));
