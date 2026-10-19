@@ -3358,8 +3358,10 @@ export default function Home() {
       .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
       .join('\n');
 
-    const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (đọc chuẩn chữ in & chữ viết tay).\n' +
+    const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (đọc chuẩn chữ in & chữ viết tay từ hình ảnh đính kèm).\n' +
       'YÊU CẦU BẮT BUỘC:\n' +
+      '- CHỈ ĐỌC DỮ LIỆU TỪ HÌNH ẢNH THỰC TẾ ĐÍNH KÈM. TUYỆT ĐỐI KHÔNG TỰ BỊA DỮ LIỆU TỪ CÁC VÍ DỤ TRONG HƯỚNG DẪN.\n' +
+      '- NẾU KHÔNG CÓ HÌNH ẢNH, ẢNH BỊ LỖI HOẶC KHÔNG THỂ ĐỌC ĐƯỢC PHIẾU, TRẢ VỀ DUY NHẤT: {"error":"NO_IMAGE","soPhieu":"","rows":[]}\n' +
       '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON.\n' +
       '- Định dạng trả về duy nhất là chuỗi JSON:\n' +
       '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}\n\n' +
@@ -3367,8 +3369,8 @@ export default function Home() {
       '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
       '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
       '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
-      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1") nhưng chỉ có chung 1 bộ số lượng thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất.\n' +
-      '5. CHỮ VIẾT TAY SỐ 9: Cột O.S/PO thường có chữ số 9 viết tay đuôi cong rất dễ nhầm với chữ "g" hoặc "q" (ví dụ g-297, q-697 thực chất là 9-297, 9-697 -> ghép thành số 90297, 90697).\n' +
+      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (dòng trên ghi tên loại sản phẩm, dòng dưới ghi kích thước/quy cách mã) nhưng chỉ có chung 1 bộ số lượng thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất.\n' +
+      '5. CHỮ VIẾT TAY SỐ 9: Cột O.S/PO thường có chữ số 9 viết tay đuôi cong rất dễ nhầm với chữ "g" hoặc "q" (ví dụ vế tháng 9 viết tay g-297 thực chất là 9-297 -> ghép thành 90297).\n' +
       'Hướng dẫn cột:\n' + rules + '\n\n' +
       'ĐỊNH DẠNG TRẢ VỀ: Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
       '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
@@ -3380,13 +3382,13 @@ export default function Home() {
       messages: [
         {
           role: 'system',
-          content: 'You are an automated OCR parser for Vietnamese warehouse receipts. Output ONLY the raw JSON object matching the requested schema. DO NOT output internal reasoning, conversational thinking, or explanations.'
+          content: 'You are an automated OCR parser for Vietnamese warehouse receipts. Output ONLY the raw JSON object extracted from the provided image. DO NOT invent or copy example data. Output JSON directly.'
         },
         {
           role: 'user',
           content: [
             { type: 'text', text: promptText },
-            { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } },
+            { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64, detail: 'high' } },
           ],
         },
       ],
@@ -3449,6 +3451,11 @@ export default function Home() {
       }
     }
 
+    // Nếu model báo không có ảnh hoặc lỗi ảnh
+    if (parsed?.error === 'NO_IMAGE') {
+      throw new Error(`Mô hình [${effectiveModel}] không nhận diện được hình ảnh hoặc nhà cung cấp API đã lược bỏ ảnh (chỉ hỗ trợ Text). Vui lòng chọn mô hình Vision thực sự.`);
+    }
+
     // Chuẩn hóa nếu model trả về các trường khác
     if (parsed) {
       if (!parsed.items && !parsed.rows) {
@@ -3489,6 +3496,16 @@ export default function Home() {
           return cleaned;
         });
       }
+
+      // Phát hiện mô hình "mù ảnh" bịa đặt dữ liệu từ ví dụ prompt (Hallucination)
+      const isHallucinatedExample = parsed.items && parsed.items.some(it => 
+        (it.ten && it.ten.includes('PE SHOE BOX') && it.ten.includes('MK-A-1')) ||
+        (it.soOSPO === '90297' && it.ten && it.ten.includes('PE SHOE BOX'))
+      );
+      if (isHallucinatedExample) {
+        throw new Error(`⚠️ Mô hình [${effectiveModel}] không đọc được ảnh (chỉ hỗ trợ Text hoặc proxy APIMix đã cắt bỏ dữ liệu ảnh). Mô hình đang tự sao chép dữ liệu ví dụ trong prompt! Vui lòng chọn mô hình Vision thực sự (như Qwen 2.5 VL, Llama 3.2 Vision, Gemini).`);
+      }
+
       return parsed;
     }
 
