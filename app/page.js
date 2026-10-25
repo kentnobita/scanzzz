@@ -548,6 +548,10 @@ export default function Home() {
   const [showTesseractWarning, setShowTesseractWarning] = useState(false);
   const [engineBadge, setEngineBadge] = useState("");
   const [scannedModelInfo, setScannedModelInfo] = useState(null);
+  const [scanDurationMs, setScanDurationMs] = useState(null);
+  const [lastScanError, setLastScanError] = useState(null);
+  const [expandedBatchErrors, setExpandedBatchErrors] = useState({});
+  const [expandedCardErrors, setExpandedCardErrors] = useState({});
 
   // Drag and drop state
   const [isDragging, setIsDragging] = useState(false);
@@ -592,6 +596,8 @@ export default function Home() {
   const [editingCustomApi, setEditingCustomApi] = useState(null);
   const [isCustomFormOpen, setIsCustomFormOpen] = useState(false);
   const [customTesting, setCustomTesting] = useState(false);
+  const [testedCustomModels, setTestedCustomModels] = useState([]);
+  const [lastTestedModel, setLastTestedModel] = useState(null);
   const [rateLimitedKeys, setRateLimitedKeys] = useState(new Set()); 
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
 
@@ -608,9 +614,17 @@ export default function Home() {
     pageStatuses: [],
     isCompleted: false,
     hasError: false,
+    isPaused: false,
     retryingPageNum: null,
   });
   const batchTargetPagesRef = useRef([]);
+  const batchAccumulatedItemsRef = useRef([]);
+  const batchPerPageResultsRef = useRef([]);
+  const batchFirstSoPhieuRef = useRef('');
+  const batchAbortControllerRef = useRef(null);
+  const batchIsPausedRef = useRef(false);
+  const batchStartTimeRef = useRef(null);
+  const singleScanAbortControllerRef = useRef(null);
 
   const [selectedColumns, setSelectedColumns] = useState(DEFAULT_COLUMNS);
   const [fieldPrompts, setFieldPrompts] = useState(DEFAULT_FIELD_PROMPTS);
@@ -738,6 +752,13 @@ export default function Home() {
   const maskApiKey = (key) => {
     const val = String(key || '');
     return val.length < 12 ? 'API đã cấu hình' : `${val.slice(0, 6)}••••${val.slice(-4)}`;
+  };
+
+  const formatDuration = (ms) => {
+    if (ms === null || ms === undefined || isNaN(ms)) return '';
+    if (ms < 1000) return `${Math.round(ms)}ms`;
+    const sec = (ms / 1000).toFixed(1);
+    return `${sec}s`;
   };
 
   const formatDate = (val) => {
@@ -3216,6 +3237,17 @@ export default function Home() {
         body: JSON.stringify({ action: 'test', baseUrl, key, model }),
       });
       const data = await res.json().catch(() => ({}));
+
+      if (Array.isArray(data.models) && data.models.length > 0) {
+        setTestedCustomModels(data.models);
+      }
+      if (data.testedModel) {
+        setLastTestedModel(data.testedModel);
+        if (editingCustomApi && !editingCustomApi.model?.trim()) {
+          setEditingCustomApi((prev) => ({ ...prev, model: data.testedModel }));
+        }
+      }
+
       if (!res.ok) {
         throw new Error(data.error?.message || ('Lỗi máy chủ ' + res.status));
       }
@@ -3293,6 +3325,8 @@ export default function Home() {
     showToast(`✅ Đã lưu cấu hình "${trimmed.name}"!`, 'success');
     setIsCustomFormOpen(false);
     setEditingCustomApi(null);
+    setTestedCustomModels([]);
+    setLastTestedModel(null);
 
     if (cloudSyncCode) {
       pushToCloud(cloudSyncCode, true, updatedList, newActiveId);
@@ -3345,7 +3379,7 @@ export default function Home() {
   };
 
   // Custom OpenAI-Compatible Provider OCR
-  const scanClientCustomWithBase64 = async (base64Data, mimeType, baseUrl, key, model) => {
+  const scanClientCustomWithBase64 = async (base64Data, mimeType, baseUrl, key, model, signal = null) => {
     const effectiveBaseUrl = (baseUrl || '').trim();
     const effectiveModel = (model || '').trim();
 
@@ -3433,6 +3467,7 @@ export default function Home() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(reqPayload),
+      signal,
     });
 
     if (!res.ok) {
@@ -3603,7 +3638,7 @@ export default function Home() {
   };
 
   // Direct Gemini OCR with Google Generative AI (Optimized Compact 2D Matrix Output & Fast Vision)
-  const scanClientGeminiWithBase64 = async (base64Data, mimeType, key) => {
+  const scanClientGeminiWithBase64 = async (base64Data, mimeType, key, signal = null) => {
     // 1. Tự động nén ảnh thông minh trước khi gửi (maxDim = 1500px, JPEG 0.85)
     // Tăng tốc upload gấp 10 lần và giảm token hình ảnh của Google Gemini từ ~3.100 xuống ~516 tokens
     let payloadBase64 = base64Data;
@@ -3682,7 +3717,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     const effectiveGeminiModel = geminiModel || 'gemini-3.6-flash';
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(effectiveGeminiModel)}:generateContent?key=${encodeURIComponent(key)}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal }
     );
 
     if (!res.ok) {
@@ -3791,7 +3826,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
   };
 
   // OCR Single Image Helper with Failover (Google Gemini 3.6 Flash & OpenRouter)
-  const executeOcrOnImage = async (base64Data, mimeType, progressPrefix = '') => {
+  const executeOcrOnImage = async (base64Data, mimeType, progressPrefix = '', signal = null) => {
     // Cơ chế chống ngắt kết nối khi đổi tab hoặc tắt màn hình điện thoại
     const retryableOcrCall = async (fn, modelDesc = '') => {
       let lastErr = null;
@@ -3799,12 +3834,20 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
+          if (signal?.aborted) {
+            const abortErr = new Error('Thao tác quét đã dừng theo yêu cầu');
+            abortErr.name = 'AbortError';
+            throw abortErr;
+          }
           if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
             await new Promise((r) => setTimeout(r, 600));
           }
           return await fn();
         } catch (err) {
           lastErr = err;
+          if (err?.name === 'AbortError' || signal?.aborted) {
+            throw err;
+          }
           const msg = String(err?.message || '').toLowerCase();
           const isNetworkInterrupted =
             msg.includes('failed to fetch') ||
@@ -3853,7 +3896,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         percent: 45,
         text: `${progressPrefix} Đang gọi Custom API (${cModel})...`,
       });
-      const res = await retryableOcrCall(() => scanClientCustomWithBase64(base64Data, mimeType, cBaseUrl, cKey, cModel), cModel);
+      const res = await retryableOcrCall(() => scanClientCustomWithBase64(base64Data, mimeType, cBaseUrl, cKey, cModel, signal), cModel);
       const badgeInfo = getModelBadgeInfo('custom', cModel);
       return { data: res, engine: 'custom', model: cModel, badgeInfo };
     }
@@ -3884,7 +3927,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         const originalIndex = allKeys.indexOf(key);
 
         try {
-          const res = await retryableOcrCall(() => scanClientGeminiWithBase64(base64Data, mimeType, key), effectiveGeminiModel);
+          const res = await retryableOcrCall(() => scanClientGeminiWithBase64(base64Data, mimeType, key, signal), effectiveGeminiModel);
           setRateLimitedKeys((prev) => {
             const next = new Set(prev);
             next.delete(key);
@@ -3943,12 +3986,30 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     return { data: res, engine: 'tesseract', model: 'tesseract', badgeInfo };
   };
 
+  // Ngừng quét đơn lẻ
+  const stopSingleScan = () => {
+    if (singleScanAbortControllerRef.current) {
+      try {
+        singleScanAbortControllerRef.current.abort();
+      } catch (e) {}
+    }
+    setIsScanning(false);
+    releaseScreenWakeLock();
+    stopBackgroundAudioKeepAlive();
+    setScanProgress({ active: false, percent: 0, text: '' });
+    showToast('⏹️ Đã ngừng quét phiếu', 'info');
+  };
+
   // Main Single Image Scan Dispatcher
   const startScan = async () => {
     if (isScanning || !currentImageBase64) return;
     setIsScanning(true);
+    setScanDurationMs(null);
+    setLastScanError(null);
     setScanProgress({ active: true, percent: 10, text: 'Đang chuẩn bị mô hình AI...' });
     setShowTesseractWarning(false);
+    const startTime = performance.now();
+    singleScanAbortControllerRef.current = new AbortController();
 
     // Kích hoạt chống tắt màn hình và giữ kết nối nền khi chuyển app
     requestScreenWakeLock();
@@ -3962,10 +4023,17 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     });
 
     try {
-      const { data: resultData, engine, badgeInfo } = await executeOcrOnImage(currentImageBase64, currentImageMimeType);
+      const { data: resultData, engine, badgeInfo } = await executeOcrOnImage(
+        currentImageBase64,
+        currentImageMimeType,
+        '',
+        singleScanAbortControllerRef.current.signal
+      );
+      const durationMs = Math.round(performance.now() - startTime);
+      setScanDurationMs(durationMs);
       setEngineBadge(engine);
       if (badgeInfo) setScannedModelInfo(badgeInfo);
-      setScanProgress({ active: true, percent: 100, text: '✅ Trích xuất thành công!' });
+      setScanProgress({ active: true, percent: 100, text: `✅ Trích xuất thành công (${formatDuration(durationMs)})!` });
 
       const normalizedItems = parseOcrResultToItems(resultData, null, resultData.soPhieu || '');
 
@@ -3977,6 +4045,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
           previewUrl: previewSrc,
           status: 'done',
           itemCount: normalizedItems.length,
+          durationMs,
         },
       ];
 
@@ -3988,7 +4057,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       setActiveResultTab('separate');
       setResultVisible(true);
 
-      saveHistoryRecord(nextId, resultData.soPhieu || '', normalizedItems, singlePageResult, true, badgeInfo);
+      saveHistoryRecord(nextId, resultData.soPhieu || '', normalizedItems, singlePageResult, true, badgeInfo, durationMs);
 
       // Ghi nhận sự kiện quét thành công vào bộ đếm toàn hệ thống
       await logScanEvent({
@@ -4009,7 +4078,13 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         resultRef.current?.scrollIntoView({ behavior: 'smooth' });
       }, 200);
     } catch (e) {
+      if (e?.name === 'AbortError' || singleScanAbortControllerRef.current?.signal?.aborted) {
+        return;
+      }
       console.error(e);
+      const failDurationMs = Math.round(performance.now() - startTime);
+      setScanDurationMs(failDurationMs);
+      setLastScanError({ message: e.message, durationMs: failDurationMs });
       // Ghi nhận lỗi quét vào bộ đếm toàn hệ thống
       const errModelInfo = getModelBadgeInfo(aiProvider);
       await logScanEvent({
@@ -4021,8 +4096,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       });
       updateAnalyticsData(analyticsPeriod, analyticsSelectedModel, true);
 
-      showToast('❌ Lỗi: ' + e.message, 'error');
-      setScanProgress({ active: true, percent: 0, text: 'Lỗi xảy ra, vui lòng thử lại' });
+      showToast(`❌ Lỗi sau ${formatDuration(failDurationMs)}: ` + e.message, 'error');
+      setScanProgress({ active: true, percent: 0, text: `Lỗi xảy ra sau ${formatDuration(failDurationMs)}, vui lòng thử lại` });
     } finally {
       setIsScanning(false);
       releaseScreenWakeLock();
@@ -4031,76 +4106,116 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     }
   };
 
-  // Batch Multi-Page PDF Scan
-  const startBatchPdfScan = async (customPagesList = null) => {
-    const targetPages = customPagesList || pdfPages.filter((p) => p.selected);
-    if (!targetPages.length || isScanning) {
-      showToast('Vui lòng chọn ít nhất 1 trang để quét', 'error');
-      return;
+  // Ngừng quét nhiều phiếu (Batch Scan)
+  const stopBatchScan = () => {
+    batchIsPausedRef.current = true;
+    if (batchAbortControllerRef.current) {
+      try {
+        batchAbortControllerRef.current.abort();
+      } catch (e) {}
     }
-    batchTargetPagesRef.current = targetPages;
-    setPdfModalOpen(false);
-    setIsScanning(true);
-    setShowTesseractWarning(false);
+    setIsScanning(false);
+    releaseScreenWakeLock();
+    stopBackgroundAudioKeepAlive();
+    setScanProgress((prev) => ({ ...prev, active: false }));
 
-    // Kích hoạt chống tắt màn hình và giữ kết nối nền khi chuyển app
-    requestScreenWakeLock();
-    startBackgroundAudioKeepAlive();
-    saveActiveScanSession({
-      pdfPages: targetPages,
-      isScanning: true,
+    // Tự động lưu các phiếu đã hoàn thành
+    const completedPages = (batchPerPageResultsRef.current || []).filter((pr) => pr.status === 'done');
+    const currentItems = batchAccumulatedItemsRef.current || [];
+    const completedCount = completedPages.length;
+
+    if (currentItems.length > 0 || completedCount > 0) {
+      const nextId = currentHistoryId || ('h_' + Date.now());
+      if (!currentHistoryId) setCurrentHistoryId(nextId);
+      setSoPhieu(batchFirstSoPhieuRef.current || '');
+      setTableItems(currentItems);
+      setPageResults([...batchPerPageResultsRef.current]);
+      setActiveResultTab('separate');
+      setResultVisible(true);
+
+      const usedModelInfo = getModelBadgeInfo(aiProvider, aiProvider === 'custom' ? customModel : geminiModel);
+      const elapsedMs = batchStartTimeRef.current ? Math.round(performance.now() - batchStartTimeRef.current) : null;
+      saveHistoryRecord(
+        nextId,
+        batchFirstSoPhieuRef.current || '',
+        currentItems,
+        [...batchPerPageResultsRef.current],
+        true,
+        usedModelInfo,
+        elapsedMs
+      );
+
+      if (autoSyncSheet && googleSheetUrl) {
+        syncToGoogleSheet(currentItems, batchFirstSoPhieuRef.current || '', 1, false);
+      }
+
+      showToast(`⏹️ Đã ngừng quét! Tự động lưu ${currentItems.length} dòng từ ${completedCount} phiếu đã quét được.`, 'warning');
+    } else {
+      showToast('⏹️ Đã ngừng quét. Chưa có phiếu nào hoàn tất để lưu.', 'info');
+    }
+
+    // Modal giữ nguyên hiển thị, chuyển sang isPaused
+    setBatchProgressModal((prev) => {
+      const nextStatuses = prev.pageStatuses.map((ps) => {
+        if (ps.status === 'running') {
+          return { ...ps, status: 'stopped', detail: 'Đã tạm dừng theo yêu cầu' };
+        }
+        return ps;
+      });
+      return {
+        ...prev,
+        active: true,
+        isPaused: true,
+        isCompleted: false,
+        pageStatuses: nextStatuses,
+      };
     });
+  };
 
-    const total = targetPages.length;
-    const initialStatuses = targetPages.map((p) => ({
-      pageNum: p.pageNum,
-      status: 'pending',
-      detail: 'Chờ xử lý...',
-      lines: 0,
-      soPhieu: '',
-    }));
-
-    setBatchProgressModal({
-      active: true,
-      total,
-      current: 0,
-      percent: 0,
-      pageStatuses: initialStatuses,
-      isCompleted: false,
-      hasError: false,
-      retryingPageNum: null,
-    });
-
-    let accumulatedItems = [];
-    let detectedFirstSoPhieu = '';
-    let perPageResults = [];
-    let usedEngine = 'gemini';
+  // Quét vòng lặp xử lý các trang batch
+  const processBatchPagesLoop = async (pagesToScan, isResume = false) => {
+    const total = batchTargetPagesRef.current.length;
+    let usedEngine = aiProvider;
     let usedBadgeInfo = null;
 
     try {
-      for (let i = 0; i < total; i++) {
-        const page = targetPages[i];
+      for (let idx = 0; idx < pagesToScan.length; idx++) {
+        if (batchIsPausedRef.current) {
+          break;
+        }
+
+        const page = pagesToScan[idx];
         const pageNum = page.pageNum;
+        const pageStartTime = performance.now();
+        batchAbortControllerRef.current = new AbortController();
 
         setBatchProgressModal((prev) => {
-          const nextStatuses = [...prev.pageStatuses];
-          nextStatuses[i] = { ...nextStatuses[i], status: 'running', detail: 'Đang gửi AI nhận diện...' };
+          const nextStatuses = prev.pageStatuses.map((ps) =>
+            ps.pageNum === pageNum ? { ...ps, status: 'running', detail: 'Đang gửi AI nhận diện...' } : ps
+          );
+          const doneCount = nextStatuses.filter((ps) => ps.status === 'done').length;
           return {
             ...prev,
-            current: i + 1,
-            percent: Math.round((i / total) * 100),
+            current: doneCount + 1,
+            percent: Math.round((doneCount / total) * 100),
             pageStatuses: nextStatuses,
           };
         });
 
         setScanProgress({
           active: true,
-          percent: Math.round((i / total) * 100),
-          text: `📄 Đang quét trang ${pageNum} (${i + 1}/${total})...`,
+          percent: Math.round((batchPerPageResultsRef.current.filter((p) => p.status === 'done').length / total) * 100),
+          text: `📄 Đang quét trang ${pageNum} (${batchPerPageResultsRef.current.filter((p) => p.status === 'done').length + 1}/${total})...`,
         });
 
         try {
-          const { data: pageResult, engine, badgeInfo } = await executeOcrOnImage(page.base64, 'image/jpeg', `[Trang ${pageNum}]`);
+          const { data: pageResult, engine, badgeInfo } = await executeOcrOnImage(
+            page.base64,
+            'image/jpeg',
+            `[Trang ${pageNum}]`,
+            batchAbortControllerRef.current.signal
+          );
+          const pageDurationMs = Math.round(performance.now() - pageStartTime);
           usedEngine = engine;
           if (badgeInfo) usedBadgeInfo = badgeInfo;
 
@@ -4111,11 +4226,11 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             effectiveSoPhieu = normalized[0].soPhieu;
           }
 
-          if (effectiveSoPhieu && !detectedFirstSoPhieu) {
-            detectedFirstSoPhieu = effectiveSoPhieu;
+          if (effectiveSoPhieu && !batchFirstSoPhieuRef.current) {
+            batchFirstSoPhieuRef.current = effectiveSoPhieu;
           }
 
-          accumulatedItems = [...accumulatedItems, ...normalized];
+          batchAccumulatedItemsRef.current = [...batchAccumulatedItemsRef.current, ...normalized];
 
           // Ghi nhận trang thành công vào bộ đếm toàn hệ thống
           await logScanEvent({
@@ -4134,27 +4249,56 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             previewUrl: page.fullUrl,
             status: 'done',
             itemCount: normalized.length,
+            durationMs: pageDurationMs,
           };
-          perPageResults.push(singleResult);
+
+          const existIdx = batchPerPageResultsRef.current.findIndex((pr) => pr.pageNum === pageNum);
+          if (existIdx >= 0) {
+            batchPerPageResultsRef.current[existIdx] = singleResult;
+          } else {
+            batchPerPageResultsRef.current.push(singleResult);
+          }
+
+          // Cập nhật kết quả bảng bên ngoài theo thời gian thực
+          setTableItems([...batchAccumulatedItemsRef.current]);
+          setPageResults([...batchPerPageResultsRef.current]);
 
           setBatchProgressModal((prev) => {
-            const nextStatuses = [...prev.pageStatuses];
-            nextStatuses[i] = {
-              ...nextStatuses[i],
-              status: 'done',
-              detail: `Hoàn tất • ${normalized.length} dòng hàng`,
-              lines: normalized.length,
-              soPhieu: effectiveSoPhieu,
-            };
+            const nextStatuses = prev.pageStatuses.map((ps) =>
+              ps.pageNum === pageNum
+                ? {
+                    ...ps,
+                    status: 'done',
+                    detail: `Hoàn tất • ${normalized.length} dòng (${formatDuration(pageDurationMs)})`,
+                    rawError: '',
+                    lines: normalized.length,
+                    soPhieu: effectiveSoPhieu,
+                    durationMs: pageDurationMs,
+                  }
+                : ps
+            );
+            const doneCount = nextStatuses.filter((ps) => ps.status === 'done').length;
             return {
               ...prev,
-              percent: Math.round(((i + 1) / total) * 100),
+              current: doneCount,
+              percent: Math.round((doneCount / total) * 100),
               pageStatuses: nextStatuses,
             };
           });
         } catch (pageErr) {
+          if (batchIsPausedRef.current || pageErr?.name === 'AbortError' || batchAbortControllerRef.current?.signal?.aborted) {
+            // Đã bấm ngừng
+            setBatchProgressModal((prev) => {
+              const nextStatuses = prev.pageStatuses.map((ps) =>
+                ps.pageNum === pageNum ? { ...ps, status: 'stopped', detail: 'Đã tạm dừng theo yêu cầu' } : ps
+              );
+              return { ...prev, pageStatuses: nextStatuses };
+            });
+            break;
+          }
+
           console.error(`Error on page ${pageNum}:`, pageErr);
-          // Ghi nhận lỗi trang vào bộ đếm toàn hệ thống
+          const pageFailMs = Math.round(performance.now() - pageStartTime);
           const pageErrInfo = getModelBadgeInfo(aiProvider);
           await logScanEvent({
             engine: pageErrInfo.engine,
@@ -4165,8 +4309,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
           });
           updateAnalyticsData(analyticsPeriod, analyticsSelectedModel, true);
 
-          // Ghi nhận trang lỗi vào perPageResults để giao diện phân trang hiển thị và có nút Quét Lại
-          perPageResults.push({
+          const errResult = {
             pageNum,
             soPhieu: '',
             items: [],
@@ -4174,82 +4317,185 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             status: 'error',
             error: pageErr.message,
             itemCount: 0,
-          });
+            durationMs: pageFailMs,
+          };
+          const errIdx = batchPerPageResultsRef.current.findIndex((pr) => pr.pageNum === pageNum);
+          if (errIdx >= 0) {
+            batchPerPageResultsRef.current[errIdx] = errResult;
+          } else {
+            batchPerPageResultsRef.current.push(errResult);
+          }
 
           setBatchProgressModal((prev) => {
-            const nextStatuses = [...prev.pageStatuses];
-            nextStatuses[i] = {
-              ...nextStatuses[i],
-              status: 'error',
-              detail: `Lỗi: ${pageErr.message}`,
-              lines: 0,
-              soPhieu: '',
-            };
+            const nextStatuses = prev.pageStatuses.map((ps) =>
+              ps.pageNum === pageNum
+                ? {
+                    ...ps,
+                    status: 'error',
+                    detail: `Lỗi sau ${formatDuration(pageFailMs)}: ${pageErr.message}`,
+                    rawError: pageErr.message,
+                    lines: 0,
+                    soPhieu: '',
+                    durationMs: pageFailMs,
+                  }
+                : ps
+            );
             return {
               ...prev,
-              percent: Math.round(((i + 1) / total) * 100),
               pageStatuses: nextStatuses,
             };
           });
         }
       }
 
-      setEngineBadge(usedEngine);
-      if (usedBadgeInfo) setScannedModelInfo(usedBadgeInfo);
-      setScanProgress({ active: true, percent: 100, text: `✅ Đã quét xong ${total} trang!` });
+      if (!batchIsPausedRef.current) {
+        const totalBatchMs = Math.round(performance.now() - batchStartTimeRef.current);
+        setScanDurationMs(totalBatchMs);
+        setEngineBadge(usedEngine);
+        if (usedBadgeInfo) setScannedModelInfo(usedBadgeInfo);
+        setScanProgress({ active: true, percent: 100, text: `✅ Đã quét xong (${formatDuration(totalBatchMs)})!` });
 
-      if (targetPages[0]) {
-        loadImageFromDataUrl(targetPages[0].fullUrl);
-      }
+        const firstP = batchTargetPagesRef.current[0];
+        if (firstP) {
+          loadImageFromDataUrl(firstP.fullUrl);
+        }
 
-      const nextId = 'h_' + Date.now();
-      setCurrentHistoryId(nextId);
-      setSoPhieu(detectedFirstSoPhieu || '');
-      setTableItems(accumulatedItems);
-      setPageResults(perPageResults);
-      setActiveResultTab('separate');
-      setResultVisible(true);
+        const nextId = currentHistoryId || ('h_' + Date.now());
+        setCurrentHistoryId(nextId);
+        setSoPhieu(batchFirstSoPhieuRef.current || '');
+        setTableItems(batchAccumulatedItemsRef.current);
+        setPageResults(batchPerPageResultsRef.current);
+        setActiveResultTab('separate');
+        setResultVisible(true);
 
-      saveHistoryRecord(nextId, detectedFirstSoPhieu || '', accumulatedItems, perPageResults, true, usedBadgeInfo);
+        saveHistoryRecord(nextId, batchFirstSoPhieuRef.current || '', batchAccumulatedItemsRef.current, batchPerPageResultsRef.current, true, usedBadgeInfo, totalBatchMs);
 
-      const failedCount = perPageResults.filter((pr) => pr.status === 'error').length;
-      if (failedCount > 0) {
-        showToast(`⚠️ Hoàn tất ${total - failedCount}/${total} trang (${failedCount} trang bị lỗi). Giao diện quét được giữ nguyên để Senpai bấm Quét Lại nha!`, 'warning');
-      } else {
-        showToast(`✨ Đã trích xuất thành công ${accumulatedItems.length} dòng từ ${total} trang`, 'success');
-      }
+        const failedCount = batchPerPageResultsRef.current.filter((pr) => pr.status === 'error').length;
+        if (failedCount > 0) {
+          showToast(`⚠️ Hoàn tất ${total - failedCount}/${total} trang (${failedCount} trang lỗi sau ${formatDuration(totalBatchMs)}). Bảng quét được giữ nguyên để bạn quét lại hoặc đổi mô hình!`, 'warning');
+        } else {
+          showToast(`✨ Đã trích xuất thành công ${batchAccumulatedItemsRef.current.length} dòng từ ${total} trang (${formatDuration(totalBatchMs)})`, 'success');
+        }
 
-      if (autoSyncSheet && googleSheetUrl && accumulatedItems.length > 0) {
+        if (autoSyncSheet && googleSheetUrl && batchAccumulatedItemsRef.current.length > 0) {
+          setTimeout(() => {
+            syncToGoogleSheet(batchAccumulatedItemsRef.current, batchFirstSoPhieuRef.current || '', 1, false);
+          }, 500);
+        }
+
         setTimeout(() => {
-          syncToGoogleSheet(accumulatedItems, detectedFirstSoPhieu || '', 1, false);
-        }, 500);
+          resultRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 250);
       }
-
-      setTimeout(() => {
-        resultRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, 250);
     } catch (e) {
       console.error(e);
-      showToast('❌ Lỗi quét PDF: ' + e.message, 'error');
+      const totalFailMs = Math.round(performance.now() - batchStartTimeRef.current);
+      setScanDurationMs(totalFailMs);
+      showToast(`❌ Lỗi quét PDF sau ${formatDuration(totalFailMs)}: ` + e.message, 'error');
     } finally {
       setIsScanning(false);
       releaseScreenWakeLock();
       stopBackgroundAudioKeepAlive();
       setScanProgress((prev) => ({ ...prev, active: false }));
 
-      // NẾU CÓ BẤT KỲ TRANG NÀO BỊ LỖI -> GIỮ NGUYÊN GIAO DIỆN QUÉT để người dùng xem và bấm Quét lại!
-      // Chỉ tự động đóng modal nếu 100% các trang đều thành công.
-      setBatchProgressModal((prev) => {
-        const hasError = prev.pageStatuses.some((ps) => ps.status === 'error');
-        if (!hasError) {
-          setTimeout(() => {
-            setBatchProgressModal((p) => ({ ...p, active: false, isCompleted: true }));
-          }, 1200);
-          return { ...prev, isCompleted: true, hasError: false };
-        }
-        return { ...prev, isCompleted: true, hasError: true };
-      });
+      if (!batchIsPausedRef.current) {
+        setBatchProgressModal((prev) => {
+          const hasError = prev.pageStatuses.some((ps) => ps.status === 'error');
+          if (!hasError) {
+            setTimeout(() => {
+              setBatchProgressModal((p) => ({ ...p, active: false, isCompleted: true }));
+            }, 1200);
+            return { ...prev, isCompleted: true, hasError: false };
+          }
+          return { ...prev, isCompleted: true, hasError: true };
+        });
+      }
     }
+  };
+
+  // Khởi động Batch Multi-Page PDF Scan
+  const startBatchPdfScan = async (customPagesList = null) => {
+    const targetPages = customPagesList || pdfPages.filter((p) => p.selected);
+    if (!targetPages.length || isScanning) {
+      showToast('Vui lòng chọn ít nhất 1 trang để quét', 'error');
+      return;
+    }
+    batchStartTimeRef.current = performance.now();
+    setScanDurationMs(null);
+    batchTargetPagesRef.current = targetPages;
+    batchAccumulatedItemsRef.current = [];
+    batchPerPageResultsRef.current = [];
+    batchFirstSoPhieuRef.current = '';
+    batchIsPausedRef.current = false;
+
+    setPdfModalOpen(false);
+    setIsScanning(true);
+    setShowTesseractWarning(false);
+
+    requestScreenWakeLock();
+    startBackgroundAudioKeepAlive();
+    saveActiveScanSession({
+      pdfPages: targetPages,
+      isScanning: true,
+    });
+
+    const total = targetPages.length;
+    const initialStatuses = targetPages.map((p) => ({
+      pageNum: p.pageNum,
+      status: 'pending',
+      detail: 'Chờ xử lý...',
+      rawError: '',
+      lines: 0,
+      soPhieu: '',
+      durationMs: null,
+    }));
+
+    setBatchProgressModal({
+      active: true,
+      total,
+      current: 0,
+      percent: 0,
+      pageStatuses: initialStatuses,
+      isCompleted: false,
+      hasError: false,
+      isPaused: false,
+      retryingPageNum: null,
+    });
+
+    await processBatchPagesLoop(targetPages, false);
+  };
+
+  // Tiếp tục quét những phiếu chưa được quét
+  const resumeBatchScan = async () => {
+    if (isScanning) return;
+    const allPages = batchTargetPagesRef.current || [];
+    const currentStatuses = batchProgressModal.pageStatuses || [];
+
+    // Lấy các trang chưa hoàn tất (pending, stopped, error)
+    const remainingPages = allPages.filter((p) => {
+      const st = currentStatuses.find((s) => s.pageNum === p.pageNum);
+      return !st || st.status !== 'done';
+    });
+
+    if (!remainingPages.length) {
+      showToast('Tất cả các phiếu đều đã quét hoàn tất!', 'success');
+      return;
+    }
+
+    batchIsPausedRef.current = false;
+    setIsScanning(true);
+    requestScreenWakeLock();
+    startBackgroundAudioKeepAlive();
+
+    setBatchProgressModal((prev) => ({
+      ...prev,
+      active: true,
+      isPaused: false,
+      isCompleted: false,
+    }));
+
+    showToast(`▶️ Đang tiếp tục quét ${remainingPages.length} phiếu còn lại...`, 'info');
+    await processBatchPagesLoop(remainingPages, true);
   };
 
   // Quét lại 1 trang cụ thể bị lỗi trong danh sách nhiều ảnh / PDF
@@ -4262,6 +4508,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       showToast(`Không tìm thấy dữ liệu ảnh của Trang ${targetPageNum}`, 'error');
       return;
     }
+    const retryStartTime = performance.now();
 
     setBatchProgressModal((prev) => {
       const nextStatuses = prev.pageStatuses.map((ps) =>
@@ -4277,6 +4524,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
     try {
       const { data: pageResult, engine, badgeInfo } = await executeOcrOnImage(page.base64, 'image/jpeg', `[Quét lại Trang ${targetPageNum}]`);
+      const retryDurationMs = Math.round(performance.now() - retryStartTime);
       setEngineBadge(engine);
       if (badgeInfo) setScannedModelInfo(badgeInfo);
       let effectiveSoPhieu = pageResult.soPhieu || '';
@@ -4292,6 +4540,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         previewUrl: page.fullUrl,
         status: 'done',
         itemCount: normalized.length,
+        durationMs: retryDurationMs,
       };
 
       let newPageResults = [];
@@ -4314,9 +4563,11 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             ? {
                 ...ps,
                 status: 'done',
-                detail: `Hoàn tất • ${normalized.length} dòng hàng`,
+                detail: `Hoàn tất • ${normalized.length} dòng (${formatDuration(retryDurationMs)})`,
+                rawError: '',
                 lines: normalized.length,
                 soPhieu: effectiveSoPhieu,
+                durationMs: retryDurationMs,
               }
             : ps
         );
@@ -4345,9 +4596,14 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         syncToGoogleSheet(normalized, effectiveSoPhieu || soPhieu, targetPageNum, true);
       }
 
-      showToast(`✨ Đã quét lại thành công Trang ${targetPageNum} (+${normalized.length} dòng)!`, 'success');
+      showToast(`✨ Đã quét lại thành công Trang ${targetPageNum} (+${normalized.length} dòng, ${formatDuration(retryDurationMs)})!`, 'success');
     } catch (err) {
       console.error(`Lỗi quét lại trang ${targetPageNum}:`, err);
+      const retryFailMs = Math.round(performance.now() - retryStartTime);
+
+      setPageResults((prev) =>
+        prev.map((pr) => (pr.pageNum === targetPageNum ? { ...pr, durationMs: retryFailMs, error: err.message } : pr))
+      );
 
       // Ghi nhận lỗi quét lại vào bộ đếm toàn hệ thống
       const retryErrInfo = getModelBadgeInfo(aiProvider);
@@ -4362,7 +4618,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
       setBatchProgressModal((prev) => {
         const nextStatuses = prev.pageStatuses.map((ps) =>
-          ps.pageNum === targetPageNum ? { ...ps, status: 'error', detail: `Lỗi: ${err.message}` } : ps
+          ps.pageNum === targetPageNum ? { ...ps, status: 'error', detail: `Lỗi sau ${formatDuration(retryFailMs)}: ${err.message}`, rawError: err.message, durationMs: retryFailMs } : ps
         );
         return {
           ...prev,
@@ -4371,7 +4627,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
           retryingPageNum: null,
         };
       });
-      showToast(`❌ Quét lại Trang ${targetPageNum} thất bại: ${err.message}`, 'error');
+      showToast(`❌ Quét lại Trang ${targetPageNum} thất bại sau ${formatDuration(retryFailMs)}: ${err.message}`, 'error');
     }
   };
 
@@ -4385,7 +4641,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
   };
 
   // History Operations in LocalStorage (Optimized lightweight storage to prevent QuotaExceededError on mobile)
-  const saveHistoryRecord = (id, spVal, itemsVal, pageResultsVal = [], isNew = false, modelInfoVal = null) => {
+  const saveHistoryRecord = (id, spVal, itemsVal, pageResultsVal = [], isNew = false, modelInfoVal = null, durationVal = null) => {
     const currentPR = pageResultsVal.length ? pageResultsVal : pageResults;
 
     // Remove heavy base64 / blob previewUrls from pageResults when persisting to localStorage
@@ -4397,10 +4653,12 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         status: pr.status || 'done',
         itemCount: pr.itemCount || (pr.items ? pr.items.length : 0),
         items: pr.items || [],
+        durationMs: pr.durationMs || null,
       };
     });
 
     const activeModelInfo = modelInfoVal || scannedModelInfo || null;
+    const effectiveDuration = durationVal !== null && durationVal !== undefined ? durationVal : scanDurationMs;
 
     const record = {
       id,
@@ -4411,6 +4669,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       pageResults: lightweightPageResults,
       columns: selectedColumns,
       scannedModelInfo: activeModelInfo,
+      durationMs: effectiveDuration || null,
     };
 
     setScanHistory((prev) => {
@@ -4421,6 +4680,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         // Giữ lại scannedModelInfo cũ nếu bản cập nhật không truyền vào
         if (!record.scannedModelInfo && prev[existingIdx].scannedModelInfo) {
           record.scannedModelInfo = prev[existingIdx].scannedModelInfo;
+        }
+        if (!record.durationMs && prev[existingIdx].durationMs) {
+          record.durationMs = prev[existingIdx].durationMs;
         }
         next = [...prev];
         next[existingIdx] = record;
@@ -4463,6 +4725,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     setSoPhieu(item.soPhieu || '');
     setTableItems(item.items || []);
     setPageResults(item.pageResults || []);
+    setScanDurationMs(item.durationMs || null);
     setActiveResultTab('separate');
     setResultVisible(true);
     setHistoryOpen(false);
@@ -5169,6 +5432,12 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                         <span>{formatDate(item.updatedAt || item.createdAt)}</span>
                         <span>•</span>
                         <span className="font-medium text-slate-600">{item.items?.length || 0} dòng hàng</span>
+                        {item.durationMs && (
+                          <>
+                            <span>•</span>
+                            <span className="font-mono text-slate-600 font-medium">⏱️ {formatDuration(item.durationMs)}</span>
+                          </>
+                        )}
                       </div>
                     </div>
                     <button
@@ -5292,38 +5561,96 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 </div>
               )}
 
+              {/* Single Scan Error Details Banner */}
+              {lastScanError && !isScanning && (
+                <div className="mt-3 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-950 text-xs space-y-2.5 animate-fade-in shadow-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <span className="text-red-600 mt-0.5 text-base shrink-0">⚠️</span>
+                      <div>
+                        <div className="font-bold text-red-900 text-sm">
+                          Quét ảnh không thành công {lastScanError.durationMs ? `(sau ${formatDuration(lastScanError.durationMs)})` : ''}
+                        </div>
+                        <div className="text-xs text-red-700 mt-0.5">
+                          Mô hình AI phản hồi lỗi hoặc gặp sự cố kết nối
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          copyToClipboard(lastScanError.message);
+                          showToast('Đã sao chép nội dung lỗi', 'success');
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-white hover:bg-red-100/70 border border-red-200 text-red-700 text-xs font-semibold transition-all flex items-center gap-1 shadow-2xs"
+                        title="Sao chép lỗi"
+                      >
+                        <IconCopy className="w-3.5 h-3.5" />
+                        <span>Sao chép</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLastScanError(null)}
+                        className="p-1 rounded-lg text-red-400 hover:text-red-700 hover:bg-red-100 transition-colors"
+                        title="Đóng thông báo"
+                      >
+                        <IconClose className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white/90 border border-red-200/80 text-xs font-mono text-red-900 whitespace-pre-wrap break-words leading-relaxed max-h-36 overflow-y-auto select-text shadow-2xs">
+                    {lastScanError.message}
+                  </div>
+                </div>
+              )}
+
               {/* Big Scan Button */}
-              <button
-                onClick={startScan}
-                disabled={isScanning}
-                className={`mt-4 w-full py-4 rounded-xl text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-50 transition-all ${
-                  aiProvider === 'custom'
-                    ? 'bg-gradient-to-r from-cyan-600 via-teal-600 to-cyan-700 hover:opacity-95 shadow-cyan-600/25'
-                    : 'bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-600 hover:opacity-95 shadow-blue-600/25'
-                }`}
-              >
-                {isScanning ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>
-                      Đang trích xuất bằng {
+              {isScanning ? (
+                <div className="mt-4 flex items-center gap-2">
+                  <button
+                    disabled
+                    className={`flex-1 py-4 px-3 rounded-xl text-white font-bold text-xs sm:text-sm shadow-md flex items-center justify-center gap-2 cursor-wait ${
+                      aiProvider === 'custom'
+                        ? 'bg-gradient-to-r from-cyan-700 to-teal-700'
+                        : 'bg-gradient-to-r from-blue-700 to-indigo-700'
+                    }`}
+                  >
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin shrink-0" />
+                    <span className="truncate">
+                      Đang trích xuất ({
                         aiProvider === 'custom'
-                          ? `Custom API (${customModel || 'Tùy chỉnh'})`
-                          : `Google Gemini (${GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || 'Gemini 3.6 Flash'})`
-                      }...
+                          ? `Custom: ${customModel || 'Tùy chỉnh'}`
+                          : (GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || 'Gemini 3.6 Flash')
+                      })...
                     </span>
-                  </>
-                ) : (
-                  <>
-                    <IconSparkles className="w-5 h-5" />
-                    <span>
-                      {aiProvider === 'custom'
-                        ? `Bắt Đầu Quét Bằng Custom API [${customModel || 'Tùy chỉnh'}]`
-                        : `Bắt Đầu Quét Bằng Gemini [${GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || 'Gemini 3.6 Flash'}]`}
-                    </span>
-                  </>
-                )}
-              </button>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={stopSingleScan}
+                    className="py-4 px-4 rounded-xl text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 font-bold text-xs sm:text-sm transition-colors flex items-center gap-1.5 shrink-0 shadow-sm active:scale-95"
+                    title="Ngừng quét phiếu này"
+                  >
+                    <span>⏹️ Ngừng quét</span>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={startScan}
+                  className={`mt-4 w-full py-4 rounded-xl text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 active:scale-[0.99] transition-all ${
+                    aiProvider === 'custom'
+                      ? 'bg-gradient-to-r from-cyan-600 via-teal-600 to-cyan-700 hover:opacity-95 shadow-cyan-600/25'
+                      : 'bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-600 hover:opacity-95 shadow-blue-600/25'
+                  }`}
+                >
+                  <IconSparkles className="w-5 h-5" />
+                  <span>
+                    {aiProvider === 'custom'
+                      ? `Bắt Đầu Quét Bằng Custom API [${customModel || 'Tùy chỉnh'}]`
+                      : `Bắt Đầu Quét Bằng Gemini [${GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || 'Gemini 3.6 Flash'}]`}
+                  </span>
+                </button>
+              )}
             </section>
           ) : (
             /* Empty State Workspace */
@@ -5419,6 +5746,12 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           : '📝 Tesseract OCR'
                       )}
                     </span>
+                    {scanDurationMs !== null && scanDurationMs !== undefined && (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 bg-slate-100 text-slate-700 border border-slate-200" title="Thời gian quét phiếu">
+                        <span>⏱️</span>
+                        <span>{formatDuration(scanDurationMs)}</span>
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
                     <span>Tổng {tableItems.length} dòng hàng</span>
@@ -5506,10 +5839,20 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                                 </span>
                               )}
                             </h4>
-                            <span className="text-xs text-slate-500 font-semibold">
-                              {page.status === 'error'
-                                ? 'Trang này chưa trích xuất được bảng hàng hóa'
-                                : `${page.items.length} dòng hàng của trang ${page.pageNum}`}
+                            <span className="text-xs text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap">
+                              <span>
+                                {page.status === 'error'
+                                  ? 'Trang này chưa trích xuất được bảng hàng hóa'
+                                  : `${page.items.length} dòng hàng của trang ${page.pageNum}`}
+                              </span>
+                              {page.durationMs && (
+                                <>
+                                  <span>•</span>
+                                  <span className={page.status === 'error' ? 'text-red-600 font-bold' : 'text-slate-600 font-bold'}>
+                                    ⏱️ {page.status === 'error' ? `Lỗi sau ${formatDuration(page.durationMs)}` : formatDuration(page.durationMs)}
+                                  </span>
+                                </>
+                              )}
                             </span>
                           </div>
                         </div>
@@ -5557,36 +5900,74 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
                       {/* Error Banner when this page failed */}
                       {page.status === 'error' && (
-                        <div className="p-4 rounded-2xl bg-red-50/80 border border-red-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-red-800 text-xs">
-                          <div className="flex items-start gap-2.5">
-                            <span className="text-base">⚠️</span>
-                            <div>
-                              <div className="font-bold text-sm text-red-900">
-                                AI chưa trích xuất được bảng hàng hóa ở Trang {page.pageNum}
-                              </div>
-                              <div className="text-[11px] text-red-600 font-medium mt-0.5">
-                                {page.error || 'Vui lòng kiểm tra lại ảnh hoặc bấm nút Quét Lại Trang Này ở trên.'}
+                        <div className="p-4 rounded-2xl bg-red-50/80 border border-red-200 text-red-800 text-xs space-y-2.5">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="flex items-start gap-2.5 min-w-0">
+                              <span className="text-base shrink-0 mt-0.5">⚠️</span>
+                              <div>
+                                <div className="font-bold text-sm text-red-900">
+                                  AI chưa trích xuất được bảng hàng hóa ở Trang {page.pageNum}
+                                </div>
+                                <div className="text-[11px] text-red-600 font-medium mt-0.5">
+                                  {page.error
+                                    ? `Lỗi: ${page.error.slice(0, 100)}${page.error.length > 100 ? '...' : ''}`
+                                    : 'Vui lòng kiểm tra lại ảnh hoặc bấm nút Quét Lại Trang Này ở trên.'}
+                                </div>
                               </div>
                             </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {page.error && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedCardErrors((prev) => ({ ...prev, [page.pageNum]: !prev[page.pageNum] }))
+                                  }
+                                  className="px-3 py-1.5 rounded-xl bg-white hover:bg-red-100 text-red-700 font-bold text-xs border border-red-200 transition-all shadow-2xs"
+                                >
+                                  {expandedCardErrors[page.pageNum] ? 'Thu gọn lỗi ▴' : 'Chi tiết lỗi ▾'}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => retrySingleBatchPage(page.pageNum)}
+                                disabled={batchProgressModal.retryingPageNum === page.pageNum}
+                                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50"
+                              >
+                                <IconRefresh
+                                  className={`w-3.5 h-3.5 ${
+                                    batchProgressModal.retryingPageNum === page.pageNum ? 'animate-spin' : ''
+                                  }`}
+                                />
+                                <span>
+                                  {batchProgressModal.retryingPageNum === page.pageNum
+                                    ? 'Đang quét...'
+                                    : 'Thử Quét Lại'}
+                                </span>
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            <button
-                              onClick={() => retrySingleBatchPage(page.pageNum)}
-                              disabled={batchProgressModal.retryingPageNum === page.pageNum}
-                              className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50"
-                            >
-                              <IconRefresh
-                                className={`w-3.5 h-3.5 ${
-                                  batchProgressModal.retryingPageNum === page.pageNum ? 'animate-spin' : ''
-                                }`}
-                              />
-                              <span>
-                                {batchProgressModal.retryingPageNum === page.pageNum
-                                  ? 'Đang quét...'
-                                  : 'Thử Quét Lại'}
-                              </span>
-                            </button>
-                          </div>
+                          {expandedCardErrors[page.pageNum] && page.error && (
+                            <div className="p-3 rounded-xl bg-white/90 border border-red-200 text-xs font-mono text-red-950 space-y-1.5 animate-fade-in shadow-2xs">
+                              <div className="flex items-center justify-between gap-2 border-b border-red-100 pb-1">
+                                <span className="font-sans font-bold text-red-900 text-xs uppercase tracking-wider">
+                                  Thông báo lỗi chi tiết từ AI:
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    copyToClipboard(page.error);
+                                    showToast('Đã sao chép nội dung lỗi', 'success');
+                                  }}
+                                  className="text-[11px] px-2.5 py-0.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-sans font-bold transition-all flex items-center gap-1"
+                                >
+                                  <IconCopy className="w-3.5 h-3.5" />
+                                  <span>Sao chép</span>
+                                </button>
+                              </div>
+                              <div className="max-h-36 overflow-y-auto whitespace-pre-wrap break-words leading-relaxed select-text">
+                                {page.error}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -5752,7 +6133,15 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                         <h4 className="font-extrabold text-base text-slate-900 uppercase tracking-tight">
                           Kết Quả Trang {singleTabResult.pageNum}
                         </h4>
-                        <span className="text-xs text-slate-500 font-semibold">{singleTabResult.items.length} dòng hàng</span>
+                        <span className="text-xs text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap">
+                          <span>{singleTabResult.items.length} dòng hàng</span>
+                          {singleTabResult.durationMs && (
+                            <>
+                              <span>•</span>
+                              <span className="font-mono text-slate-600 font-bold">⏱️ {formatDuration(singleTabResult.durationMs)}</span>
+                            </>
+                          )}
+                        </span>
                       </div>
                     </div>
 
@@ -6141,27 +6530,39 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       {/* Real-time Multi-Page / Multi-Image Batch Progress Dialog */}
       {batchProgressModal.active && (
         <div className="fixed inset-0 z-[600] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white w-full max-w-lg rounded-3xl p-6 border border-slate-200 shadow-modal flex flex-col gap-4 text-slate-900 animate-slide-up">
+          <div className="bg-white w-full max-w-lg rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-modal flex flex-col gap-3.5 text-slate-900 animate-slide-up">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div
                   className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                    batchProgressModal.hasError ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'
+                    batchProgressModal.isPaused
+                      ? 'bg-amber-50 text-amber-600 border border-amber-200'
+                      : batchProgressModal.hasError
+                      ? 'bg-red-50 text-red-600'
+                      : 'bg-blue-50 text-blue-600'
                   }`}
                 >
-                  <IconLayers className="w-5 h-5" />
+                  {batchProgressModal.isPaused ? (
+                    <span className="text-base">⏹️</span>
+                  ) : (
+                    <IconLayers className="w-5 h-5" />
+                  )}
                 </div>
                 <div className="min-w-0">
                   <h3 className="font-bold text-sm text-slate-900 truncate">
-                    {batchProgressModal.isCompleted
+                    {batchProgressModal.isPaused
+                      ? `Đã Ngừng Quét (${batchProgressModal.pageStatuses.filter((p) => p.status === 'done').length}/${batchProgressModal.total} Trang Xong)`
+                      : batchProgressModal.isCompleted
                       ? batchProgressModal.hasError
                         ? `Quét Xong (${batchProgressModal.pageStatuses.filter((p) => p.status === 'error').length} Trang Lỗi)`
                         : 'Quét Hoàn Tất Toàn Bộ Trang'
-                      : `Đang Quét Hàng Loạt (${batchProgressModal.current}/${batchProgressModal.total} Ảnh / Trang)`}
+                      : `Đang Quét Hàng Loạt (${batchProgressModal.pageStatuses.filter((p) => p.status === 'done').length}/${batchProgressModal.total} Trang)`}
                   </h3>
                   <p className="text-xs text-slate-500 truncate">
-                    {batchProgressModal.hasError
-                      ? 'Có trang gặp lỗi, Senpai có thể bấm "Quét lại" ngay bên dưới nha'
+                    {batchProgressModal.isPaused
+                      ? `Đã tự động lưu ${batchAccumulatedItemsRef.current?.length || 0} dòng. Có thể đổi mô hình bên dưới rồi tiếp tục.`
+                      : batchProgressModal.hasError
+                      ? 'Có trang gặp lỗi, bạn có thể bấm "Quét lại" ngay bên dưới nha'
                       : 'Tiến trình nhận dạng AI đang diễn ra theo từng ảnh/trang'}
                   </p>
                 </div>
@@ -6169,14 +6570,36 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               <div className="flex items-center gap-2 shrink-0">
                 <span
                   className={`font-mono font-extrabold text-base ${
-                    batchProgressModal.hasError ? 'text-amber-600' : 'text-blue-600'
+                    batchProgressModal.isPaused
+                      ? 'text-amber-600'
+                      : batchProgressModal.hasError
+                      ? 'text-red-600'
+                      : 'text-blue-600'
                   }`}
                 >
                   {batchProgressModal.percent}%
                 </span>
-                {batchProgressModal.isCompleted && (
+
+                {/* Nút Ngừng Quét nhanh trên header khi đang quét */}
+                {isScanning && !batchProgressModal.isPaused && (
                   <button
-                    onClick={() => setBatchProgressModal((p) => ({ ...p, active: false }))}
+                    type="button"
+                    onClick={stopBatchScan}
+                    className="px-2.5 py-1 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 text-xs font-bold flex items-center gap-1 transition-colors shadow-2xs"
+                    title="Ngừng tiến trình quét"
+                  >
+                    <span>⏹️</span>
+                    <span className="hidden sm:inline">Ngừng</span>
+                  </button>
+                )}
+
+                {/* Nút Đóng khi không trong tiến trình quét active */}
+                {!isScanning && (
+                  <button
+                    onClick={() => {
+                      setBatchProgressModal((p) => ({ ...p, active: false }));
+                      resultRef.current?.scrollIntoView({ behavior: 'smooth' });
+                    }}
                     className="p-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-all active:scale-95"
                     title="Đóng bảng tiến trình để xem kết quả"
                   >
@@ -6190,7 +6613,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             <div className="w-full h-3 rounded-full bg-slate-100 overflow-hidden">
               <div
                 className={`h-full transition-all duration-300 rounded-full ${
-                  batchProgressModal.hasError
+                  batchProgressModal.isPaused
+                    ? 'bg-amber-500'
+                    : batchProgressModal.hasError
                     ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-red-500'
                     : 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600'
                 }`}
@@ -6199,130 +6624,264 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             </div>
 
             {/* Per-Page Progress Items List */}
-            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
               {batchProgressModal.pageStatuses.map((ps) => (
                 <div
                   key={ps.pageNum}
-                  className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs transition-all ${
+                  className={`p-3 rounded-xl border flex flex-col gap-2 text-xs transition-all ${
                     ps.status === 'running'
                       ? 'bg-blue-50/80 border-blue-300 ring-2 ring-blue-500/20'
                       : ps.status === 'done'
                       ? 'bg-emerald-50/50 border-emerald-200'
                       : ps.status === 'error'
                       ? 'bg-red-50/70 border-red-200'
+                      : ps.status === 'stopped'
+                      ? 'bg-amber-50/40 border-amber-200'
                       : 'bg-slate-50 border-slate-200 opacity-60'
                   }`}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div
-                      className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[11px] shrink-0 ${
-                        ps.status === 'done'
-                          ? 'bg-emerald-600 text-white'
-                          : ps.status === 'running'
-                          ? 'bg-blue-600 text-white animate-pulse'
-                          : ps.status === 'error'
-                          ? 'bg-red-600 text-white'
-                          : 'bg-slate-200 text-slate-600'
-                      }`}
-                    >
-                      {ps.pageNum}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="font-bold text-slate-800 flex items-center gap-1.5">
-                        <span>Trang {ps.pageNum}</span>
-                        {ps.soPhieu && (
-                          <span className="font-mono text-[11px] text-blue-700 font-semibold truncate">
-                            — Số phiếu: {ps.soPhieu}
-                          </span>
-                        )}
-                      </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
                       <div
-                        className={`text-[11px] truncate ${
-                          ps.status === 'error' ? 'text-red-600 font-medium' : 'text-slate-500'
+                        className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[11px] shrink-0 ${
+                          ps.status === 'done'
+                            ? 'bg-emerald-600 text-white'
+                            : ps.status === 'running'
+                            ? 'bg-blue-600 text-white animate-pulse'
+                            : ps.status === 'error'
+                            ? 'bg-red-600 text-white'
+                            : ps.status === 'stopped'
+                            ? 'bg-amber-500 text-white'
+                            : 'bg-slate-200 text-slate-600'
                         }`}
-                        title={ps.detail}
                       >
-                        {ps.detail}
+                        {ps.pageNum}
                       </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <span>Trang {ps.pageNum}</span>
+                          {ps.soPhieu && (
+                            <span className="font-mono text-[11px] text-blue-700 font-semibold truncate">
+                              — Số phiếu: {ps.soPhieu}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <div
+                            className={`text-[11px] font-mono truncate max-w-[200px] sm:max-w-xs ${
+                              ps.status === 'error'
+                                ? 'text-red-600 font-medium cursor-pointer hover:underline'
+                                : ps.status === 'stopped'
+                                ? 'text-amber-800 font-medium'
+                                : 'text-slate-500'
+                            }`}
+                            title={ps.detail}
+                            onClick={() => {
+                              if (ps.status === 'error') {
+                                setExpandedBatchErrors((prev) => ({ ...prev, [ps.pageNum]: !prev[ps.pageNum] }));
+                              }
+                            }}
+                          >
+                            {ps.detail}
+                          </div>
+                          {ps.status === 'error' && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpandedBatchErrors((prev) => ({ ...prev, [ps.pageNum]: !prev[ps.pageNum] }));
+                              }}
+                              className="text-[10px] font-sans font-bold text-red-700 hover:text-red-900 bg-red-100 hover:bg-red-200 px-1.5 py-0.2 rounded transition-all"
+                            >
+                              {expandedBatchErrors[ps.pageNum] ? 'Thu gọn ▴' : 'Chi tiết ▾'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="shrink-0 flex items-center gap-1.5">
+                      {ps.status === 'running' && (
+                        <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                      )}
+                      {ps.status === 'done' && (
+                        <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
+                          +{ps.lines} dòng {ps.durationMs ? `• ⏱️ ${formatDuration(ps.durationMs)}` : ''}
+                        </span>
+                      )}
+                      {ps.status === 'stopped' && (
+                        <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px]">
+                          Đã dừng
+                        </span>
+                      )}
+                      {ps.status === 'error' && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 font-bold text-[10px]">
+                            {ps.durationMs ? `Lỗi sau ${formatDuration(ps.durationMs)}` : 'Lỗi'}
+                          </span>
+                          <button
+                            onClick={() => retrySingleBatchPage(ps.pageNum)}
+                            disabled={isScanning || batchProgressModal.retryingPageNum === ps.pageNum}
+                            className="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-[11px] flex items-center gap-1 shadow-sm transition-all disabled:opacity-50"
+                            title={`Quét lại Trang ${ps.pageNum}`}
+                          >
+                            {batchProgressModal.retryingPageNum === ps.pageNum ? (
+                              <>
+                                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                <span>Đang quét...</span>
+                              </>
+                            ) : (
+                              <>
+                                <IconRefresh className="w-3 h-3" />
+                                <span>Quét lại</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                      {ps.status === 'pending' && <span className="text-[10px] text-slate-400">Chờ...</span>}
                     </div>
                   </div>
 
-                  <div className="shrink-0 flex items-center gap-1.5">
-                    {ps.status === 'running' && (
-                      <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                    )}
-                    {ps.status === 'done' && (
-                      <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">
-                        +{ps.lines} dòng
-                      </span>
-                    )}
-                    {ps.status === 'error' && (
-                      <div className="flex items-center gap-1.5">
-                        <span className="px-2 py-0.5 rounded bg-red-100 text-red-800 font-bold text-[10px]">Lỗi</span>
+                  {/* Expanded Error Details Box */}
+                  {ps.status === 'error' && expandedBatchErrors[ps.pageNum] && (
+                    <div className="mt-1 p-2.5 rounded-xl bg-red-50/90 border border-red-200 text-xs text-red-950 font-mono space-y-1.5 animate-fade-in">
+                      <div className="flex items-center justify-between gap-2 border-b border-red-200/70 pb-1 font-sans">
+                        <span className="font-bold text-[11px] text-red-900 flex items-center gap-1">
+                          <span>⚠️</span>
+                          <span>Chi tiết thông báo lỗi Trang {ps.pageNum}:</span>
+                        </span>
                         <button
-                          onClick={() => retrySingleBatchPage(ps.pageNum)}
-                          disabled={isScanning || batchProgressModal.retryingPageNum === ps.pageNum}
-                          className="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-[11px] flex items-center gap-1 shadow-sm transition-all disabled:opacity-50"
-                          title={`Quét lại Trang ${ps.pageNum}`}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyToClipboard(ps.rawError || ps.detail);
+                            showToast('Đã sao chép nội dung lỗi', 'success');
+                          }}
+                          className="px-2 py-0.5 rounded text-[10px] bg-white hover:bg-red-100 border border-red-300 text-red-700 font-bold transition-all flex items-center gap-1 shadow-2xs"
+                          title="Sao chép toàn bộ thông báo lỗi"
                         >
-                          {batchProgressModal.retryingPageNum === ps.pageNum ? (
-                            <>
-                              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                              <span>Đang quét...</span>
-                            </>
-                          ) : (
-                            <>
-                              <IconRefresh className="w-3 h-3" />
-                              <span>Quét lại</span>
-                            </>
-                          )}
+                          <IconCopy className="w-3 h-3" />
+                          <span>Sao chép</span>
                         </button>
                       </div>
-                    )}
-                    {ps.status === 'pending' && <span className="text-[10px] text-slate-400">Chờ...</span>}
-                  </div>
+                      <div className="max-h-36 overflow-y-auto whitespace-pre-wrap break-words leading-relaxed text-[11px] select-text bg-white/80 p-2 rounded-lg border border-red-200/60 font-mono">
+                        {ps.rawError || ps.detail}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
 
-            {/* Footer with Batch Retry & Provider Switch when there are errors */}
-            {batchProgressModal.hasError && (
-              <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 text-xs animate-fade-in">
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-500 font-medium">Mô hình:</span>
-                  <select
-                    value={aiProvider}
-                    onChange={(e) => setAiProvider(e.target.value)}
-                    disabled={isScanning || batchProgressModal.retryingPageNum !== null}
-                    className="bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl px-2.5 py-1.5 text-xs border border-slate-300 outline-none cursor-pointer transition-all"
-                    title="Đổi nhà cung cấp AI để thử quét lại"
-                  >
-                    <option value="gemini">Google Gemini</option>
-                    <option value="custom">Tùy chỉnh (Custom API)</option>
-                  </select>
+            {/* Footer Toolbar: Khi đang quét -> Nút Ngừng Quét */}
+            {isScanning && !batchProgressModal.isPaused && (
+              <div className="pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={stopBatchScan}
+                  className="w-full py-2.5 px-4 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm active:scale-95"
+                >
+                  <span>⏹️ Ngừng Quét & Tự Động Lưu Các Phiếu Đã Xong</span>
+                </button>
+              </div>
+            )}
+
+            {/* Footer Toolbar: Khi ngừng quét HOẶC có lỗi HOẶC hoàn tất */}
+            {!isScanning && (
+              <div className="pt-3 border-t border-slate-100 flex flex-col gap-2.5 text-xs animate-fade-in">
+                {/* Khu vực Đổi mô hình AI */}
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-slate-700 font-bold text-xs">
+                    <span>⚡ Mô hình AI:</span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <select
+                      value={aiProvider}
+                      onChange={(e) => setAiProvider(e.target.value)}
+                      className="bg-white hover:bg-slate-100 text-slate-800 font-bold rounded-lg px-2.5 py-1 text-xs border border-slate-300 outline-none cursor-pointer transition-colors shadow-sm"
+                      title="Chọn nhà cung cấp AI"
+                    >
+                      <option value="gemini">Google Gemini</option>
+                      <option value="custom">Tùy chỉnh (Custom API)</option>
+                    </select>
+
+                    {aiProvider === 'gemini' && (
+                      <select
+                        value={geminiModel || 'gemini-3.6-flash'}
+                        onChange={(e) => setGeminiModel(e.target.value)}
+                        className="bg-white hover:bg-slate-100 text-slate-800 font-bold rounded-lg px-2.5 py-1 text-xs border border-slate-300 outline-none cursor-pointer transition-colors shadow-sm max-w-[190px] truncate"
+                        title="Chọn mô hình Gemini"
+                      >
+                        {GEMINI_MODELS.map((gm) => (
+                          <option key={gm.id} value={gm.id}>
+                            {gm.shortName}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+                    {aiProvider === 'custom' && customApis.length > 0 && (
+                      <select
+                        value={activeCustomApiId || ''}
+                        onChange={(e) => selectActiveCustomApi(e.target.value)}
+                        className="bg-white hover:bg-slate-100 text-slate-800 font-bold rounded-lg px-2.5 py-1 text-xs border border-slate-300 outline-none cursor-pointer transition-colors shadow-sm max-w-[190px] truncate"
+                        title="Chọn cấu hình Custom API"
+                      >
+                        {customApis.map((ca) => (
+                          <option key={ca.id} value={ca.id}>
+                            {ca.name || ca.model}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={retryAllFailedBatchPages}
-                    disabled={isScanning || batchProgressModal.retryingPageNum !== null}
-                    className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all disabled:opacity-50"
-                  >
-                    <IconRefresh className="w-3.5 h-3.5" />
-                    <span>
-                      Quét Lại Các Trang Lỗi (
-                      {batchProgressModal.pageStatuses.filter((p) => p.status === 'error').length})
-                    </span>
-                  </button>
+                {/* Các nút hành động chính */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 flex-1">
+                    {/* Nút Tiếp tục quét nếu còn trang chưa xong */}
+                    {batchProgressModal.pageStatuses.some((p) => p.status !== 'done') && (
+                      <button
+                        type="button"
+                        onClick={resumeBatchScan}
+                        className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold flex items-center justify-center gap-1.5 transition-colors shadow-sm text-xs active:scale-95"
+                      >
+                        <span>▶️ Tiếp Tục Quét</span>
+                        <span className="font-normal opacity-90">
+                          ({batchProgressModal.pageStatuses.filter((p) => p.status !== 'done').length} phiếu còn lại)
+                        </span>
+                      </button>
+                    )}
 
+                    {/* Nút Quét lại trang lỗi nếu có lỗi */}
+                    {batchProgressModal.hasError && (
+                      <button
+                        type="button"
+                        onClick={retryAllFailedBatchPages}
+                        disabled={batchProgressModal.retryingPageNum !== null}
+                        className="flex-1 sm:flex-none px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 text-xs shadow-sm active:scale-95"
+                      >
+                        <IconRefresh className="w-3.5 h-3.5" />
+                        <span>
+                          Quét Lại Các Trang Lỗi (
+                          {batchProgressModal.pageStatuses.filter((p) => p.status === 'error').length})
+                        </span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Nút Đóng & Xem Kết Quả */}
                   <button
+                    type="button"
                     onClick={() => {
                       setBatchProgressModal((p) => ({ ...p, active: false }));
                       resultRef.current?.scrollIntoView({ behavior: 'smooth' });
                     }}
-                    className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-bold transition-all"
+                    className="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-bold transition-all text-xs whitespace-nowrap active:scale-95 shadow-sm"
                   >
-                    Xem kết quả
+                    ✕ Đóng & Xem Kết Quả
                   </button>
                 </div>
               </div>
@@ -6554,6 +7113,12 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                         <span>{formatDate(item.updatedAt || item.createdAt)}</span>
                         <span>•</span>
                         <span>{item.items?.length || 0} dòng</span>
+                        {item.durationMs && (
+                          <>
+                            <span>•</span>
+                            <span className="font-mono text-slate-600 font-bold">⏱️ {formatDuration(item.durationMs)}</span>
+                          </>
+                        )}
                       </div>
                       <div className="text-[11px] text-slate-400 truncate mt-0.5">
                         {(item.items || []).slice(0, 3).map((x) => x.ten || x.soOSPO || '').filter(Boolean).join(', ')}
@@ -6989,6 +7554,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                                   apiKey: '',
                                   model: '',
                                 });
+                                setTestedCustomModels([]);
+                                setLastTestedModel(null);
                                 setIsCustomFormOpen(true);
                               }}
                               className="px-3 py-1.5 rounded-xl text-xs font-bold bg-cyan-600 hover:bg-cyan-700 text-white transition-all flex items-center gap-1 shadow-sm"
@@ -7011,6 +7578,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                                   apiKey: '',
                                   model: 'Qwen/Qwen2.5-VL-72B-Instruct',
                                 });
+                                setTestedCustomModels([]);
+                                setLastTestedModel(null);
                                 setIsCustomFormOpen(true);
                               }}
                               className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-cyan-600 text-white hover:bg-cyan-700"
@@ -7078,6 +7647,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                                       type="button"
                                       onClick={() => {
                                         setEditingCustomApi({ ...p });
+                                        setTestedCustomModels([]);
+                                        setLastTestedModel(null);
                                         setIsCustomFormOpen(true);
                                       }}
                                       className="px-2 py-1 rounded-lg text-[11px] font-bold text-slate-600 hover:text-blue-700 hover:bg-blue-50 transition-colors"
@@ -7114,6 +7685,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                               onClick={() => {
                                 setIsCustomFormOpen(false);
                                 setEditingCustomApi(null);
+                                setTestedCustomModels([]);
+                                setLastTestedModel(null);
                               }}
                               className="text-slate-400 hover:text-slate-700 text-xs font-bold px-1"
                             >
@@ -7228,6 +7801,90 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                                 </button>
                               ))}
                             </div>
+
+                            {/* Verified / Discovered Models Section from Test Connection */}
+                            {(lastTestedModel || (testedCustomModels && testedCustomModels.length > 0)) && (
+                              <div className="mt-2.5 p-3 rounded-xl bg-emerald-50/80 border border-emerald-200 text-xs space-y-2 animate-fade-in">
+                                <div className="flex items-center justify-between gap-2 border-b border-emerald-200/60 pb-1.5">
+                                  <span className="font-semibold text-emerald-950 flex items-center gap-1.5 text-[11px]">
+                                    <span>✨</span>
+                                    <span>Mô hình đã kiểm tra &amp; khả dụng từ API:</span>
+                                  </span>
+                                  {testedCustomModels.length > 0 && (
+                                    <span className="text-[10px] text-emerald-800 font-mono font-medium">
+                                      {testedCustomModels.length} mô hình
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Primary Tested Model Badge if verified */}
+                                {lastTestedModel && (
+                                  <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-white border border-emerald-300 shadow-sm">
+                                    <div className="min-w-0 flex items-center gap-1.5">
+                                      <span className="text-emerald-600 text-xs shrink-0">✅</span>
+                                      <span className="font-mono font-semibold text-xs text-slate-900 truncate">
+                                        {lastTestedModel}
+                                      </span>
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-medium shrink-0">
+                                        Đã test thành công
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingCustomApi((prev) => ({ ...prev, model: lastTestedModel }));
+                                        showToast(`✨ Đã chọn mô hình [${lastTestedModel}]`, 'success');
+                                      }}
+                                      className={`px-3 py-1 rounded-md text-xs font-semibold transition-all shrink-0 ${
+                                        editingCustomApi.model === lastTestedModel
+                                          ? 'bg-emerald-700 text-white shadow-sm'
+                                          : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+                                      }`}
+                                    >
+                                      {editingCustomApi.model === lastTestedModel ? '✓ Đang chọn' : 'Chọn luôn'}
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* List of Models returned from /models */}
+                                {testedCustomModels.length > 0 && (
+                                  <div className="space-y-1.5 pt-1">
+                                    <div className="text-[10px] text-emerald-900 font-medium flex items-center justify-between">
+                                      <span>Nhấp vào mô hình để chọn luôn:</span>
+                                      <span className="text-[9px] text-slate-500 font-normal">👁️: Ưu tiên Vision</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1 max-h-36 overflow-y-auto pr-1">
+                                      {testedCustomModels.map((m) => {
+                                        const isSelected = editingCustomApi.model === m;
+                                        const isVision = /vision|vl|qwen.*vl|llama.*vision|gpt-4|claude|gemini|pixtral/i.test(m);
+                                        return (
+                                          <button
+                                            key={m}
+                                            type="button"
+                                            onClick={() => {
+                                              setEditingCustomApi((prev) => ({ ...prev, model: m }));
+                                              showToast(`✨ Đã chọn mô hình [${m}]`, 'success');
+                                            }}
+                                            className={`px-2 py-1 rounded-md font-mono text-[10px] transition-all flex items-center gap-1 border ${
+                                              isSelected
+                                                ? 'bg-slate-900 text-white border-slate-900 shadow-sm font-semibold'
+                                                : isVision
+                                                ? 'bg-white hover:bg-emerald-100/70 text-emerald-950 border-emerald-300 font-medium'
+                                                : 'bg-white/90 hover:bg-slate-100 text-slate-700 border-slate-200'
+                                            }`}
+                                            title={`Chọn ${m}${isVision ? ' (Mô hình Vision)' : ''}`}
+                                          >
+                                            {isVision && <span className="text-[10px]">👁️</span>}
+                                            <span>{m}</span>
+                                            {isSelected && <span className="text-[10px] font-bold">✓</span>}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
 
                           {/* Footer Buttons in Form */}
@@ -7247,6 +7904,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                                 onClick={() => {
                                   setIsCustomFormOpen(false);
                                   setEditingCustomApi(null);
+                                  setTestedCustomModels([]);
+                                  setLastTestedModel(null);
                                 }}
                                 className="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200 transition-colors"
                               >

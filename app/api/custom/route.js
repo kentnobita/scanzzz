@@ -41,32 +41,57 @@ export async function POST(req) {
 
     // 1. Action: Test kết nối API Key & Base URL
     if (action === 'test') {
-      const modelsEndpoint = normalizeModelsUrl(rawBaseUrl);
-      const controller = new AbortController();
-      const timeoutTimer = setTimeout(() => controller.abort(), 12000); // 12s timeout
+      let modelList = [];
 
-      try {
-        const res = await fetch(modelsEndpoint, {
-          method: 'GET',
-          headers,
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutTimer);
-
-        if (res.ok) {
-          const data = await res.json().catch(() => ({}));
-          const modelList = Array.isArray(data.data) ? data.data.map(m => m.id || m.name || m) : [];
-          return NextResponse.json({
-            success: true,
-            message: `Kết nối thành công tới Base URL (${modelList.length > 0 ? `${modelList.length} mô hình` : 'OK'})`,
-            models: modelList.slice(0, 30),
-          });
-        }
-      } catch (err) {
-        clearTimeout(timeoutTimer);
+      // A. Cố gắng lấy danh sách model từ endpoint /models
+      const endpointsToTry = [normalizeModelsUrl(rawBaseUrl)];
+      const cleanBase = rawBaseUrl.trim().replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
+      if (!cleanBase.endsWith('/v1')) {
+        endpointsToTry.push(`${cleanBase}/v1/models`);
       }
 
-      // Nếu GET /models không hỗ trợ (nhiều provider chặn endpoint /models), thử gọi 1 ping test chat completions
+      for (const endpoint of endpointsToTry) {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 8000);
+          const res = await fetch(endpoint, {
+            method: 'GET',
+            headers,
+            signal: controller.signal,
+          });
+          clearTimeout(timer);
+
+          if (res.ok) {
+            const data = await res.json().catch(() => ({}));
+            let rawList = [];
+            if (Array.isArray(data.data)) {
+              rawList = data.data;
+            } else if (Array.isArray(data.models)) {
+              rawList = data.models;
+            } else if (Array.isArray(data)) {
+              rawList = data;
+            }
+            modelList = rawList
+              .map((m) => (typeof m === 'string' ? m : m.id || m.name || m.model))
+              .filter(Boolean);
+
+            if (modelList.length > 0) {
+              // Ưu tiên đưa các model Vision lên đầu danh sách
+              const isVision = (name) => /vision|vl|qwen.*vl|llama.*vision|gpt-4|claude|gemini|pixtral/i.test(name);
+              modelList.sort((a, b) => {
+                const va = isVision(a) ? 1 : 0;
+                const vb = isVision(b) ? 1 : 0;
+                return vb - va;
+              });
+              break;
+            }
+          }
+        } catch {
+          // Tiếp tục thử endpoint kế tiếp
+        }
+      }
+
+      // B. Nếu người dùng có nhập selectedModel, kiểm tra thực tế mô hình đó qua chat completions
       if (selectedModel) {
         const chatEndpoint = normalizeChatCompletionsUrl(rawBaseUrl);
         const chatController = new AbortController();
@@ -83,29 +108,56 @@ export async function POST(req) {
             signal: chatController.signal,
           });
           clearTimeout(chatTimer);
+
           if (testRes.ok) {
             return NextResponse.json({
               success: true,
               message: `Kết nối & xác thực thành công mô hình [${selectedModel}]!`,
+              testedModel: selectedModel,
+              models: modelList.slice(0, 80),
             });
           }
+
           const errData = await testRes.json().catch(() => ({}));
+          const errMsg = errData.error?.message || `Lỗi từ máy chủ API: ${testRes.status}`;
+
+          // Nếu model nhập bị lỗi nhưng đã lấy được danh sách model hợp lệ từ nhà cung cấp
           return NextResponse.json(
-            { error: { message: errData.error?.message || `Lỗi từ máy chủ API: ${testRes.status}` } },
-            { status: testRes.status }
+            {
+              error: { message: `Mô hình [${selectedModel}] không phản hồi (${errMsg}). Vui lòng chọn mô hình hợp lệ bên dưới!` },
+              models: modelList.slice(0, 80),
+            },
+            { status: testRes.status >= 400 && testRes.status < 500 ? testRes.status : 400 }
           );
         } catch (chatErr) {
           clearTimeout(chatTimer);
           return NextResponse.json(
-            { error: { message: `Không thể kết nối tới ${chatEndpoint}: ${chatErr.message}` } },
+            {
+              error: { message: `Không thể kết nối tới ${chatEndpoint}: ${chatErr.message}` },
+              models: modelList.slice(0, 80),
+            },
             { status: 502 }
           );
         }
       }
 
+      // C. Trường hợp người dùng chưa nhập model, nhưng API trả về danh sách models
+      if (modelList.length > 0) {
+        const isVision = (name) => /vision|vl|qwen.*vl|llama.*vision|gpt-4|claude|gemini|pixtral/i.test(name);
+        const suggestedModel = modelList.find(isVision) || modelList[0];
+        return NextResponse.json({
+          success: true,
+          message: `Kết nối thành công! Đã tìm thấy ${modelList.length} mô hình khả dụng.`,
+          testedModel: suggestedModel,
+          models: modelList.slice(0, 80),
+        });
+      }
+
+      // D. Fallback nếu không list được models và cũng chưa nhập model
       return NextResponse.json({
         success: true,
         message: 'Base URL phản hồi tốt. Hãy nhập mã Model để hoàn tất cấu hình!',
+        models: [],
       });
     }
 
