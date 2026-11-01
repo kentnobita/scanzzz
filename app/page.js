@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import {
   IconScan,
   IconCamera,
@@ -32,13 +33,19 @@ import {
   IconShare,
   IconDevicePhone,
 } from '@/components/Icons';
-import QrCodeCanvas from '@/components/QrCodeCanvas';
+// Tách các component nặng khỏi bundle chính: thư viện qrcode và donut chart chỉ cần
+// khi người dùng mở modal QR / bảng thống kê, không nên tải cùng lúc với trang quét.
+const QrCodeCanvas = dynamic(() => import('@/components/QrCodeCanvas'), {
+  ssr: false,
+  loading: () => <div className="w-full h-24 rounded-xl bg-slate-100 animate-pulse" />,
+});
 import {
   requestScreenWakeLock,
   releaseScreenWakeLock,
   startBackgroundAudioKeepAlive,
   stopBackgroundAudioKeepAlive,
   saveActiveScanSession,
+  flushActiveScanSession,
   loadActiveScanSession,
   clearActiveScanSession,
 } from '@/lib/keepAlive';
@@ -49,7 +56,10 @@ import {
   getInitialTodayScanCount,
   clearAnalyticsLogs,
 } from '@/lib/analytics';
-import ModelDistributionChart from '@/components/ModelDistributionChart';
+const ModelDistributionChart = dynamic(() => import('@/components/ModelDistributionChart'), {
+  ssr: false,
+  loading: () => <div className="w-full h-48 rounded-2xl bg-slate-100 animate-pulse" />,
+});
 
 const COLUMN_DEFS = {
   ten: { label: 'Tên, nhãn hiệu, quy cách phẩm chất vật tư, dụng cụ, sản phẩm, hàng hóa', short: 'Tên / mã hàng' },
@@ -534,9 +544,20 @@ function doGet(e) {
 export default function Home() {
   // Toast state
   const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
   const showToast = useCallback((message, type = "") => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 2600);
+    // Huỷ timer cũ trước khi đặt timer mới, tránh toast mới bị toast cũ tắt sớm
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 2600);
+  }, []);
+
+  // Dọn timer toast khi unmount
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
   }, []);
 
   // Image & Scan state
@@ -652,7 +673,18 @@ export default function Home() {
       };
     }
   });
-  const [todayScanCount, setTodayScanCount] = useState(getInitialTodayScanCount);
+  // Khởi tạo 0 để khớp HTML server-rendered (tránh hydration mismatch),
+  // sau đó đồng bộ số liệu thật từ localStorage trong useEffect khi đã mount.
+  const [todayScanCount, setTodayScanCount] = useState(0);
+  const [isClientMounted, setIsClientMounted] = useState(false);
+
+  // Đồng bộ badge đếm phiếu sau khi hydrate xong (server luôn render 0)
+  useEffect(() => {
+    setIsClientMounted(true);
+    try {
+      setTodayScanCount(getInitialTodayScanCount());
+    } catch {}
+  }, []);
 
   const lastAnalyticsFetchRef = useRef(0);
   const isAnalyticsFetchingRef = useRef(false);
@@ -1044,6 +1076,19 @@ export default function Home() {
     }
   }, [currentImageBase64, currentImageMimeType, previewSrc, pdfPages, isScanning]);
 
+  // Ghi ngay phiên làm việc khi rời trang / ẩn tab để không mất dữ liệu đang chờ debounce
+  useEffect(() => {
+    const handleFlush = () => flushActiveScanSession();
+    window.addEventListener('pagehide', handleFlush);
+    window.addEventListener('beforeunload', handleFlush);
+    document.addEventListener('visibilitychange', handleFlush);
+    return () => {
+      window.removeEventListener('pagehide', handleFlush);
+      window.removeEventListener('beforeunload', handleFlush);
+      document.removeEventListener('visibilitychange', handleFlush);
+    };
+  }, []);
+
   const installPwaApp = async () => {
     if (deferredPrompt) {
       deferredPrompt.prompt();
@@ -1361,6 +1406,16 @@ export default function Home() {
       ctx.drawImage(img, 0, 0, width, height);
       const jpegUrl = canvas.toDataURL('image/jpeg', 0.88);
 
+      // Giải phóng bộ nhớ canvas + Image ngay sau khi đã lấy được data URL
+      // (canvas lớn 2000px chiếm hàng chục MB, giữ lại sẽ gây OOM trên mobile)
+      canvas.width = 0;
+      canvas.height = 0;
+      // Gỡ toàn bộ handler TRƯỚC khi xoá src: gán img.src = '' sẽ kích hoạt
+      // sự kiện error, khiến onerror bắn toast lỗi giả dù ảnh đã đọc thành công.
+      img.onload = null;
+      img.onerror = null;
+      img.src = '';
+
       setCurrentImageBase64(jpegUrl.split(',')[1]);
       setCurrentImageMimeType('image/jpeg');
       setPreviewSrc(jpegUrl);
@@ -1372,8 +1427,13 @@ export default function Home() {
         setRawOriginalSrc(jpegUrl);
       }
     };
+    img.onerror = () => {
+      img.onload = null;
+      img.src = '';
+      showToast('❌ Không đọc được ảnh. Vui lòng thử ảnh khác.', 'error');
+    };
     img.src = dataUrl;
-  }, []);
+  }, [showToast]);
 
   // Multi-page PDF handler (with PDF.js dynamic load)
   const handlePDF = useCallback(async (file) => {
@@ -1399,7 +1459,7 @@ export default function Home() {
 
       for (let i = 1; i <= numPages; i++) {
         const page = await pdf.getPage(i);
-        
+
         // High-res scan version
         const viewport = page.getViewport({ scale: 2.0 });
         const canvas = document.createElement('canvas');
@@ -1407,6 +1467,9 @@ export default function Home() {
         canvas.height = viewport.height;
         await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
         const fullUrl = canvas.toDataURL('image/jpeg', 0.92);
+        // Giải phóng canvas ngay để không giữ đồng thời N canvas độ phân giải cao
+        canvas.width = 0;
+        canvas.height = 0;
 
         // Thumbnail version
         const thumbViewport = page.getViewport({ scale: 0.45 });
@@ -1415,6 +1478,8 @@ export default function Home() {
         thumbCanvas.height = thumbViewport.height;
         await page.render({ canvasContext: thumbCanvas.getContext('2d'), viewport: thumbViewport }).promise;
         const thumbUrl = thumbCanvas.toDataURL('image/jpeg', 0.7);
+        thumbCanvas.width = 0;
+        thumbCanvas.height = 0;
 
         pagesData.push({
           pageNum: i,
@@ -1423,6 +1488,9 @@ export default function Home() {
           base64: fullUrl.split(',')[1],
           selected: true,
         });
+
+        // Giải phóng tài nguyên trang PDF đã render
+        page.cleanup();
       }
 
       setPdfPages(pagesData);
@@ -1483,6 +1551,8 @@ export default function Home() {
           canvas.height = height;
           canvas.getContext('2d').drawImage(img, 0, 0, width, height);
           const fullUrl = canvas.toDataURL('image/jpeg', 0.92);
+          canvas.width = 0;
+          canvas.height = 0;
 
           // Thumbnail version
           const thumbCanvas = document.createElement('canvas');
@@ -1501,6 +1571,8 @@ export default function Home() {
           thumbCanvas.height = th;
           thumbCanvas.getContext('2d').drawImage(img, 0, 0, tw, th);
           const thumbUrl = thumbCanvas.toDataURL('image/jpeg', 0.7);
+          thumbCanvas.width = 0;
+          thumbCanvas.height = 0;
 
           resolve({
             pageNum,
@@ -1579,6 +1651,8 @@ export default function Home() {
             canvas.height = viewport.height;
             await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
             const fullUrl = canvas.toDataURL('image/jpeg', 0.92);
+            canvas.width = 0;
+            canvas.height = 0;
 
             const thumbViewport = page.getViewport({ scale: 0.45 });
             const thumbCanvas = document.createElement('canvas');
@@ -1586,6 +1660,8 @@ export default function Home() {
             thumbCanvas.height = thumbViewport.height;
             await page.render({ canvasContext: thumbCanvas.getContext('2d'), viewport: thumbViewport }).promise;
             const thumbUrl = thumbCanvas.toDataURL('image/jpeg', 0.7);
+            thumbCanvas.width = 0;
+            thumbCanvas.height = 0;
 
             pagesData.push({
               pageNum: pageCounter++,
@@ -1595,6 +1671,8 @@ export default function Home() {
               base64: fullUrl.split(',')[1],
               selected: true,
             });
+
+            page.cleanup();
           }
         } else {
           // Image
@@ -5053,7 +5131,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               title={cloudSyncCode ? `Đang đồng bộ cấu hình Cloud: ${cloudSyncCode}` : 'Đồng bộ cấu hình API & Google Sheet đa thiết bị'}
             >
               <IconCloud className="w-4 h-4 text-blue-400" />
-              <span className="hidden sm:inline">{cloudSyncCode ? `Mã: ${cloudSyncCode}` : 'Đồng Bộ Cloud'}</span>
+              <span className="hidden sm:inline">{isClientMounted && cloudSyncCode ? `Mã: ${cloudSyncCode}` : 'Đồng Bộ Cloud'}</span>
             </button>
 
             {/* Download Android APK Button */}
@@ -5070,7 +5148,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             </button>
 
             {/* Google Sheet indicator */}
-            {googleSheetUrl && (
+            {isClientMounted && googleSheetUrl && (
               <button
                 onClick={() => {
                   setSettingsTab('sheet');
@@ -5085,7 +5163,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             )}
 
             {/* QR Quick Share on Mobile */}
-            {cloudSyncCode && (
+            {isClientMounted && cloudSyncCode && (
               <button
                 onClick={() => setQrModalOpen(true)}
                 className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700/60"
@@ -5109,7 +5187,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 <path strokeLinecap="round" strokeLinejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
               </svg>
               <span className="hidden xl:inline text-xs font-bold text-slate-200">Thống Kê</span>
-              {todayScanCount > 0 && (
+              {isClientMounted && todayScanCount > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center border-2 border-slate-900 shadow-sm">
                   {todayScanCount}
                 </span>
@@ -5221,14 +5299,14 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               </div>
             )}
 
-            {cloudSyncCode && (
+            {isClientMounted && cloudSyncCode && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold">
                 <IconCloud className="w-3 h-3 text-blue-600" />
                 <span>Cloud: {cloudSyncCode}</span>
               </span>
             )}
 
-            {googleSheetUrl && (
+            {isClientMounted && googleSheetUrl && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold">
                 <IconSpreadsheet className="w-3 h-3 text-emerald-600" />
                 <span>Sheet đã kết nối</span>
@@ -6362,7 +6440,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
           <div className="flex items-center gap-2">
             <span className="font-bold text-slate-700">Scan Pro Max — Trích Xuất Phiếu Kho AI</span>
             <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-mono font-bold text-[10px]">
-              Phiên bản v38.0.0
+              Phiên bản v39.0.0
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -6462,7 +6540,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
                       {/* Image Thumbnail */}
                       <div className="relative w-full aspect-[3/4] bg-white rounded-xl overflow-hidden shadow-sm border border-slate-200 flex items-center justify-center">
-                        <img src={page.thumbUrl} alt={`Ảnh/Trang ${page.pageNum}`} className="w-full h-full object-contain pointer-events-none" />
+                        <img src={page.thumbUrl} alt={`Ảnh/Trang ${page.pageNum}`} loading="lazy" decoding="async" className="w-full h-full object-contain pointer-events-none" />
                         {isCurrentActive && (
                           <div className="absolute inset-0 ring-2 ring-blue-500/50 rounded-xl pointer-events-none" />
                         )}
