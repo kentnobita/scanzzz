@@ -18,6 +18,158 @@ function normalizeModelsUrl(urlStr) {
   return `${clean}/models`;
 }
 
+function parseOpenAICompatibleResponse(rawText) {
+  const trimmed = (rawText || '').trim();
+  if (!trimmed) {
+    throw new Error('Nhà cung cấp API trả về phản hồi rỗng');
+  }
+
+  // 1. Thử parse JSON chuẩn trước
+  try {
+    return JSON.parse(trimmed);
+  } catch (directErr) {
+    // 2. Nếu trả về định dạng SSE stream (các dòng "data: {...}") dù không yêu cầu stream:true (ví dụ 9router / LiteLLM / NewAPI)
+    if (/^data\s*:/m.test(trimmed)) {
+      let fullContent = '';
+      let fullReasoning = '';
+      let lastModel = '';
+      let lastUsage = null;
+      let errorFromStream = null;
+      const lines = trimmed.split(/\r?\n/);
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line.startsWith('data:')) continue;
+        const payload = line.replace(/^data:\s*/, '').trim();
+        if (!payload || payload === '[DONE]') continue;
+        try {
+          const obj = JSON.parse(payload);
+          if (obj.error) {
+            errorFromStream = obj.error?.message || JSON.stringify(obj.error);
+          }
+          if (obj.model) lastModel = obj.model;
+          if (obj.usage && typeof obj.usage === 'object') lastUsage = obj.usage;
+          const choice = obj.choices?.[0];
+          const delta = choice?.delta || choice?.message;
+          if (delta) {
+            if (typeof delta.content === 'string') fullContent += delta.content;
+            if (typeof delta.reasoning_content === 'string') fullReasoning += delta.reasoning_content;
+            else if (typeof delta.reasoning === 'string') fullReasoning += delta.reasoning;
+          }
+        } catch {
+          // Bỏ qua chunk lỗi
+        }
+      }
+
+      if (errorFromStream && !fullContent) {
+        throw new Error(errorFromStream);
+      }
+
+      if (fullContent || fullReasoning) {
+        return {
+          model: lastModel,
+          usage: lastUsage || undefined,
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: fullContent,
+                reasoning_content: fullReasoning || undefined,
+              },
+            },
+          ],
+        };
+      }
+    }
+
+    // 3. Nếu nhiều JSON objects bị nối liền nhau (NDJSON / multi-object), hoặc có ký tự rác sau object JSON chính
+    // Quét tất cả các top-level JSON objects hợp lệ trong chuỗi
+    const objects = [];
+    let depth = 0;
+    let startIdx = -1;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < trimmed.length; i++) {
+      const ch = trimmed[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch === '\\') {
+          escaped = true;
+        } else if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+      } else if (ch === '{') {
+        if (depth === 0) startIdx = i;
+        depth++;
+      } else if (ch === '}') {
+        depth--;
+        if (depth === 0 && startIdx !== -1) {
+          const candidate = trimmed.slice(startIdx, i + 1);
+          try {
+            objects.push(JSON.parse(candidate));
+          } catch {}
+          startIdx = -1;
+        }
+      }
+    }
+
+    if (objects.length === 1) {
+      return objects[0];
+    }
+
+    if (objects.length > 1) {
+      // Nếu chỉ có đúng 1 object chứa message.content hoàn chỉnh (và các object khác là metadata), trả về object đó
+      const messageObjs = objects.filter((o) => o?.choices?.[0]?.message?.content);
+      if (messageObjs.length === 1 && !objects.some((o) => o?.choices?.[0]?.delta)) {
+        const latestUsage = [...objects].reverse().find((o) => o?.usage)?.usage;
+        if (latestUsage && !messageObjs[0].usage) {
+          messageObjs[0].usage = latestUsage;
+        }
+        return messageObjs[0];
+      }
+
+      // Ngược lại nối các delta/message từ danh sách chunks theo đúng thứ tự
+      let mergedContent = '';
+      let mergedReasoning = '';
+      let mergedUsage = null;
+      for (const obj of objects) {
+        if (obj?.usage && typeof obj.usage === 'object') mergedUsage = obj.usage;
+        const choice = obj?.choices?.[0];
+        const delta = choice?.delta || choice?.message;
+        if (typeof delta?.content === 'string') mergedContent += delta.content;
+        if (typeof delta?.reasoning_content === 'string') mergedReasoning += delta.reasoning_content;
+        else if (typeof delta?.reasoning === 'string') mergedReasoning += delta.reasoning;
+      }
+      if (mergedContent || mergedReasoning) {
+        return {
+          usage: mergedUsage || undefined,
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: 'assistant',
+                content: mergedContent,
+                reasoning_content: mergedReasoning || undefined,
+              },
+            },
+          ],
+        };
+      }
+      return objects[objects.length - 1];
+    }
+
+    throw directErr;
+  }
+}
+
 export async function POST(req) {
   try {
     const body = await req.json();
@@ -241,7 +393,8 @@ export async function POST(req) {
       );
     }
 
-    const data = await res.json();
+    const rawResponseText = await res.text();
+    const data = parseOpenAICompatibleResponse(rawResponseText);
     return NextResponse.json(data);
   } catch (error) {
     console.error('Custom API Proxy Error:', error);

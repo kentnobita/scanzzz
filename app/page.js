@@ -73,267 +73,6 @@ const COLUMN_DEFS = {
 
 const DEFAULT_COLUMNS = ['ten', 'soOSPO', 'donViTinh', 'soLuongChungTu', 'soLuongThucNhap', 'soPallet', 'ghiChu'];
 
-const OPENROUTER_MODELS = [
-  {
-    id: 'qwen/qwen3.8-27b:free',
-    name: 'Qwen: Qwen3.8 27B (free)',
-    shortName: 'Qwen 3.8 27B',
-    badge: 'MỚI • Vision 27B Miễn Phí',
-    badgeColor: 'bg-violet-100 text-violet-800',
-    desc: 'Mô hình Vision 27B thế hệ mới của Qwen trên OpenRouter. Bóc tách chữ viết tay tiếng Việt và cấu trúc bảng rất tốt, ngữ cảnh 262K.',
-    supportsJsonMode: false,
-  },
-  {
-    id: 'nex-agi/nex-n2.5-pro:free',
-    name: 'Nex AGI: Nex-N2.5-Pro',
-    shortName: 'Nex-N2.5-Pro',
-    badge: 'MỚI • Siêu Chuẩn & Nhanh',
-    badgeColor: 'bg-indigo-100 text-indigo-800',
-    desc: 'Mô hình Agentic Vision thế hệ mới của Nex AGI trên OpenRouter. Tốc độ phản hồi cực nhanh (~1.5s), bóc tách cấu trúc phiếu kho và chữ viết tay xuất sắc.',
-  },
-  {
-    id: 'nex-agi/nex-n2.5-mini:free',
-    name: 'Nex AGI: Nex-N2.5-Mini',
-    shortName: 'Nex-N2.5-Mini',
-    badge: 'MỚI • Siêu Tốc',
-    badgeColor: 'bg-teal-100 text-teal-800',
-    desc: 'Bản rút gọn siêu nhẹ của Nex AGI. Phản hồi tức thì dưới 2s cho các phiếu in rõ nét và bảng biểu.',
-  },
-  {
-    id: 'dots-studio/dots-3-note-preview:free',
-    name: 'Dots Studio: Dots3-Note Preview',
-    shortName: 'Dots3-Note',
-    badge: 'MỚI • Chuyên Tài Liệu',
-    badgeColor: 'bg-cyan-100 text-cyan-800',
-    desc: 'Mô hình Vision hướng đến ghi chú và tài liệu, có ngữ cảnh 512K và hỗ trợ JSON có cấu trúc.',
-  },
-  {
-    id: 'thinkingmachines/inkling-small:free',
-    name: 'Thinking Machines: Inkling Small',
-    shortName: 'Inkling Small',
-    badge: 'MỚI • Siêu Nhanh',
-    badgeColor: 'bg-teal-100 text-teal-800',
-    desc: 'Phiên bản Vision nhỏ, tốc độ cao, hỗ trợ hình ảnh và ngữ cảnh 1M.',
-    supportsJsonMode: false,
-  },
-  {
-    id: 'thinkingmachines/inkling:free',
-    name: 'Thinking Machines: Inkling',
-    shortName: 'Inkling',
-    badge: 'MỚI • Ngữ Cảnh 1M',
-    badgeColor: 'bg-sky-100 text-sky-800',
-    desc: 'Mô hình Vision đầy đủ với ngữ cảnh lớn, phù hợp cho phiếu nhiều chi tiết.',
-    supportsJsonMode: false,
-  },
-  {
-    id: 'google/gemma-4-26b-a4b-it:free',
-    name: 'Google: Gemma 4 26B A4B',
-    shortName: 'Gemma 4 26B',
-    badge: 'MỚI • Nhẹ & Ổn Định',
-    badgeColor: 'bg-blue-100 text-blue-800',
-    desc: 'Bản Gemma Vision 26B nhẹ hơn, hỗ trợ ảnh, video và JSON có cấu trúc.',
-  },
-  {
-    id: 'google/gemma-4-31b-it:free',
-    name: 'Google Gemma 4 31B',
-    shortName: 'Gemma 4 31B',
-    badge: 'MỚI • Vision Thế Hệ 4',
-    badgeColor: 'bg-sky-100 text-sky-800',
-    desc: 'Mô hình Vision mở thế hệ thứ 4 của Google. Cửa sổ ngữ cảnh 262K, hiểu hình ảnh tài liệu phức tạp và dòng kẻ bảng.',
-  },
-  {
-    id: 'google/gemini-2.5-flash',
-    name: 'Google Gemini 2.5 Flash',
-    shortName: 'Gemini 2.5 Flash',
-    badge: 'Khuyên Dùng • Chuẩn & Nhanh',
-    badgeColor: 'bg-emerald-100 text-emerald-800',
-    desc: 'Bản Gemini Flash mới nhất trên OpenRouter. Đọc chữ viết tay tiếng Việt xuất sắc, tốc độ phản hồi nhanh và độ ổn định cao.',
-  },
-  {
-    id: 'openai/gpt-4o-mini',
-    name: 'OpenAI GPT-4o Mini',
-    shortName: 'GPT-4o Mini',
-    badge: 'Cực Kỳ Ổn Định',
-    badgeColor: 'bg-blue-100 text-blue-800',
-    desc: 'Mô hình vision nhẹ và ổn định của OpenAI, trích xuất cấu trúc bảng phiếu kho rất chuẩn xác.',
-  },
-  {
-    id: 'qwen/qwen2.5-vl-72b-instruct',
-    name: 'Qwen 2.5 VL 72B',
-    shortName: 'Qwen 2.5 VL 72B',
-    badge: 'Đỉnh Cao Chữ Viết Tay',
-    badgeColor: 'bg-purple-100 text-purple-800',
-    desc: 'Mô hình Vision 72B chuyên biệt cho tài liệu & chữ viết tay châu Á, độ chính xác nhận diện số viết tay rất cao.',
-  },
-  {
-    id: 'openrouter/free',
-    name: 'OpenRouter Auto-Router',
-    shortName: 'Auto Router',
-    badge: 'MỚI • Tự Động Điều Phối',
-    badgeColor: 'bg-amber-100 text-amber-800',
-    desc: 'Router thông minh tự động lựa chọn mô hình Vision sẵn có tối ưu tại thời điểm gửi yêu cầu.',
-  },
-];
-
-
-const KIRA_MODELS = [
-  {
-    id: 'qwen3.8-flash',
-    name: 'Qwen 3.8 Flash',
-    shortName: 'Qwen 3.8 Flash',
-    badge: 'Khuyên Dùng • Siêu Tốc 3-5s',
-    badgeColor: 'bg-emerald-100 text-emerald-800',
-    desc: 'Mô hình Vision tối ưu nhất trên Kira AI. Hỗ trợ cả hình ảnh & PDF nhiều trang, phản hồi siêu tốc và cực kỳ ổn định.',
-  },
-  {
-    id: 'qwen3.8-27b',
-    name: 'Qwen 3.8 27B',
-    shortName: 'Qwen 3.8 27B',
-    badge: 'Vision 27B Rất Tốt',
-    badgeColor: 'bg-purple-100 text-purple-800',
-    desc: 'Phiên bản Vision 27B, bóc tách chuẩn xác chữ viết tay tiếng Việt và nhận diện số lượng chi tiết.',
-  },
-  {
-    id: 'qwen3.8-max',
-    name: 'Qwen 3.8 MAX',
-    shortName: 'Qwen 3.8 MAX',
-    badge: 'Đỉnh Cao Chữ Viết Tay',
-    badgeColor: 'bg-purple-100 text-purple-800',
-    desc: 'Mô hình cao cấp nhất của Qwen, nhận diện chữ viết tay mờ hoặc nét bút bi phức tạp.',
-  },
-  {
-    id: 'deepseek-v4.1-flash',
-    name: 'DeepSeek V4.1 Flash',
-    shortName: 'DeepSeek V4.1',
-    badge: 'MỚI • MoE Siêu Tốc',
-    badgeColor: 'bg-rose-100 text-rose-800',
-    desc: 'Dòng mô hình Vision thế hệ mới của DeepSeek trên máy chủ Kira AI, bóc tách cấu trúc bảng biểu xuất sắc với giá thành cực rẻ.',
-  },
-  {
-    id: 'deepseek-v4-flash-vision-exp',
-    name: 'DeepSeek V4 Flash Vision Exp',
-    shortName: 'DeepSeek V4 Vision',
-    badge: 'Vision Thử Nghiệm',
-    badgeColor: 'bg-rose-100 text-rose-800',
-    desc: 'Bản thử nghiệm Vision của DeepSeek, chuyên bóc tách cấu trúc hình ảnh và tài liệu.',
-  },
-  {
-    id: 'glm-5.3-flash',
-    name: 'GLM 5.3 Flash',
-    shortName: 'GLM 5.3 Flash',
-    badge: 'Zhipu AI Đa Phương Thức',
-    badgeColor: 'bg-amber-100 text-amber-800',
-    desc: 'Mô hình GLM 5.3 thế hệ mới của Zhipu AI, xử lý đa phương thức và hỗ trợ phân tích chứng từ nhanh.',
-  },
-  {
-    id: 'glm-5.3-flashx',
-    name: 'GLM 5.3 Flashx',
-    shortName: 'GLM 5.3 Flashx',
-    badge: 'MỚI • Bản Nâng Cấp',
-    badgeColor: 'bg-amber-100 text-amber-800',
-    desc: 'Phiên bản tăng tốc mở rộng của GLM 5.3 Flash, tối ưu tốc độ đọc ảnh phiếu.',
-  },
-  {
-    id: 'kira-3.5-flash-pdf',
-    name: 'Kira 3.5 Flash PDF',
-    shortName: 'Kira 3.5 PDF',
-    badge: 'Chuyên Dụng PDF & Phiếu Kho',
-    badgeColor: 'bg-indigo-100 text-indigo-800',
-    desc: 'Dòng mô hình chuyên biệt được tinh chỉnh đặc thù để đọc và bóc tách tài liệu PDF, phiếu xuất nhập kho.',
-  },
-  {
-    id: 'mimo-v2.6-flash',
-    name: 'MiMo V2.6 Flash',
-    shortName: 'MiMo V2.6',
-    badge: 'MỚI • Siêu Tốc 2.5s',
-    badgeColor: 'bg-teal-100 text-teal-800',
-    desc: 'Mô hình Vision thế hệ mới siêu nhẹ, tốc độ nhận diện chỉ 2.5s với chi phí tiết kiệm.',
-  },
-  {
-    id: 'mimo-v2.5',
-    name: 'MiMo V2.5',
-    shortName: 'MiMo V2.5',
-    badge: 'Đa Phương Thức & PDF',
-    badgeColor: 'bg-teal-100 text-teal-800',
-    desc: 'Mô hình MiMo V2.5 hỗ trợ phân tích đa tài liệu hình ảnh và PDF.',
-  },
-  {
-    id: 'kimi-k3',
-    name: 'Kimi K3',
-    shortName: 'Kimi K3',
-    badge: 'MỚI • Đọc Tài Liệu & PDF Chuẩn',
-    badgeColor: 'bg-sky-100 text-sky-800',
-    desc: 'Mô hình Moonshot AI Kimi K3, khả năng trích xuất văn bản và tài liệu bảng biểu chuyên sâu.',
-  },
-  {
-    id: 'gpt-5.4-nano',
-    name: 'GPT 5.4 Nano',
-    shortName: 'GPT 5.4 Nano',
-    badge: 'OpenAI Vision Gọn Nhẹ',
-    badgeColor: 'bg-blue-100 text-blue-800',
-    desc: 'Mô hình OpenAI thế hệ 5.4 nhỏ gọn, nhận diện hình ảnh chính xác và bóc tách dữ liệu có cấu trúc.',
-  },
-  {
-    id: 'minimax-m3',
-    name: 'MiniMax M3',
-    shortName: 'MiniMax M3',
-    badge: 'MỚI • MiniMax Vision',
-    badgeColor: 'bg-violet-100 text-violet-800',
-    desc: 'Mô hình đa phương thức MiniMax M3 phân tích chi tiết hình ảnh chứng từ và bảng kê.',
-  },
-  {
-    id: 'ox-alpha',
-    name: 'Ox Alpha',
-    shortName: 'Ox Alpha',
-    badge: 'MỚI • Đa Phương Thức & PDF',
-    badgeColor: 'bg-cyan-100 text-cyan-800',
-    desc: 'Mô hình Ox Alpha hỗ trợ đọc toàn diện tài liệu, ảnh và PDF với chi phí tối ưu.',
-  },
-  {
-    id: 'kira-auto',
-    name: 'Kira Auto',
-    shortName: 'Kira Auto',
-    badge: 'Tự Động Chọn Mô Hình',
-    badgeColor: 'bg-blue-100 text-blue-800',
-    desc: 'Hệ thống tự động điều hướng request sang mô hình Vision đang có độ trễ thấp nhất và sẵn sàng nhất.',
-  },
-];
-
-const BAI_MODELS = [
-  {
-    id: 'qwen3.8-flash',
-    name: 'Qwen3.8-Flash',
-    shortName: 'Qwen 3.8 Flash',
-    badge: 'Khuyên Dùng #1 • Đọc Tay Cực Chuẩn',
-    badgeColor: 'bg-emerald-100 text-emerald-800',
-    desc: 'Mô hình Alibaba Vision thế hệ 3.8 tối ưu nhất cho phiếu kho tiếng Việt, chữ viết tay nghiêng hoặc số chứng từ mờ. Không bị suy luận nháp.',
-  },
-  {
-    id: 'qwen3.8-27b',
-    name: 'Qwen3.8-27B (Vision)',
-    shortName: 'Qwen 3.8 27B',
-    badge: 'MỚI • Vision 27B Siêu Chuẩn',
-    badgeColor: 'bg-purple-100 text-purple-800',
-    desc: 'Bản Qwen 27B Vision mạnh mẽ, nhận diện cấu trúc bảng phức tạp và chữ số viết tay khó nhằn chỉ trong ~2.5s.',
-  },
-  {
-    id: 'glm-5.3-flash',
-    name: 'GLM-5.3-Flash',
-    shortName: 'GLM 5.3 Flash',
-    badge: 'Zhipu AI Siêu Nhanh 2.9s',
-    badgeColor: 'bg-blue-100 text-blue-800',
-    desc: 'Mô hình đa phương thức thế hệ mới của Zhipu AI trên B.AI. Tốc độ rất nhanh, bóc tách cấu trúc dòng hàng và cột số lượng chuẩn.',
-  },
-  {
-    id: 'deepseek-v4.1-flash',
-    name: 'DeepSeek-V4.1-Flash',
-    shortName: 'DeepSeek V4.1',
-    badge: 'MoE 552B Siêu Tốc',
-    badgeColor: 'bg-amber-100 text-amber-800',
-    desc: 'Mô hình MoE 552B đa phương thức bản địa của DeepSeek. Đã có bộ lọc khử suy luận nháp tiếng Anh và nâng trần token.',
-  },
-];
-
 const GEMINI_MODELS = [
   {
     id: 'gemini-3.6-flash',
@@ -363,8 +102,8 @@ const GEMINI_MODELS = [
 
 const DEFAULT_FIELD_PROMPTS = {
   soPhieu: 'Đọc kỹ số phiếu/số chứng từ ở đầu phiếu, bao gồm cả số in sẵn hoặc chữ viết tay bổ sung. Giữ nguyên toàn bộ ký tự và số.',
-  ten: 'Lấy chính xác tên hàng, quy cách hoặc mã sản phẩm (đọc cả chữ viết tay tiếng Việt có dấu, chữ viết tắt như Thùng, Cuộn, Cây, Bộ, Hộp). NGUYÊN TẮC GỘP DÒNG: Nếu một mặt hàng/sản phẩm được in/viết dàn trải thành 2 dòng (ví dụ dòng trên là tên/loại bao bì, dòng dưới là kích thước/quy cách mã nhưng chỉ có chung 1 số lượng, 1 STT hoặc 1 số OS/PO) thì PHẢI GỘP thành 1 dòng hàng duy nhất (ví dụ: "PE SHOE BOX (ECO) 290*180*110mm MK-A-1"). Chỉ tách thành các dòng khác nhau khi có các số lượng/STT/mã OS/PO riêng biệt.',
-  soOSPO: 'Chỉ lấy số thuần sau khi đã ghép. Cột Số O.S/PO thường có dạng [Tháng]-[Số đơn hàng] (ví dụ: 9-697, 9-296). Quy tắc chuẩn hóa: Vế trước dấu "-" là số hiệu Tháng (từ 1 đến 12), vế sau là Số thứ tự đơn hàng trong tháng đó (không quá 5000 đơn) nên luôn có đúng 4 chữ số (nếu ít hơn 4 chữ số thì tự động bù các số 0 vào phía trước). Ghép thành dạng [Tháng][4 chữ số đơn]: ví dụ 9-697 -> 90697, 9-296 -> 90296, 9-506 -> 90506, 9-45 -> 90045, 9-5 -> 90005, 10-123 -> 100123. ĐẶC BIỆT CHÚ Ý CHỮ VIẾT TAY: Chữ viết tay số 9 ở vế tháng có nét đuôi cong xuống dưới rất dễ bị đọc nhầm thành chữ "g" hoặc "q" (ví dụ "g-297", "g-697", "q-508" thực chất đều là số 9 viết tay "9-297" -> "90297", "9-697" -> "90697"). Tuyệt đối chỉ trả về các chữ số thuần sau khi ghép, không giữ lại dấu "-" và không chứa chữ cái.',
+  ten: 'Lấy chính xác tên hàng, quy cách hoặc mã sản phẩm (đọc cả chữ viết tay tiếng Việt có dấu, chữ viết tắt như Thùng, Cuộn, Cây, Bộ, Hộp). NGUYÊN TẮC GỘP DÒNG: Nếu một mặt hàng/sản phẩm được in/viết dàn trải thành 2 dòng (dòng trên là tên/loại sản phẩm, dòng dưới là kích thước/quy cách mã nhưng chỉ có chung 1 số lượng, 1 STT hoặc 1 số OS/PO) thì PHẢI GỘP thành 1 dòng hàng duy nhất. Chỉ tách thành các dòng khác nhau khi có các số lượng/STT/mã OS/PO riêng biệt.',
+  soOSPO: 'Chỉ lấy số thuần sau khi đã ghép. Cột Số O.S/PO thường có dạng [Tháng]-[Số đơn hàng] (ví dụ: 9-697, 9-296). Quy tắc chuẩn hóa: Vế trước dấu "-" là số hiệu Tháng (từ 1 đến 12), vế sau là Số thứ tự đơn hàng trong tháng đó (không quá 5000 đơn) nên luôn có đúng 4 chữ số (nếu ít hơn 4 chữ số thì tự động bù các số 0 vào phía trước). Ghép thành dạng [Tháng][4 chữ số đơn]: ví dụ 9-697 -> 90697, 9-296 -> 90296, 9-506 -> 90506, 9-45 -> 90045, 9-5 -> 90005, 10-123 -> 100123. ĐẶC BIỆT CHÚ Ý CHỮ VIẾT TAY: Chữ viết tay số 9 ở vế tháng có nét đuôi cong xuống dưới rất dễ bị đọc nhầm thành chữ "g" hoặc "q" (ví dụ "g-697", "q-508" thực chất đều là số 9 viết tay "9-697" -> "90697"). Tuyệt đối chỉ trả về các chữ số thuần sau khi ghép, không giữ lại dấu "-" và không chứa chữ cái.',
   donViTinh: 'Lấy đơn vị tính viết trên phiếu (ví dụ: PCS, EA, KG, BOX, CÁI, THÙNG, BỘ, CUỘN, CÂY). Nếu trên phiếu không ghi đơn vị tính hoặc bị mờ/trống, mặc định luôn luôn là "pcs". Không để trống.',
   soLuongChungTu: 'Chỉ lấy số lượng theo chứng từ (chỉ trả về số thuần). Nếu có chữ viết tay sửa đổi/ghi đè lên số in, ưu tiên lấy số viết tay mới nhất.',
   soLuongThucNhap: 'Chỉ lấy số lượng thực nhập/thực xuất (chỉ trả về số thuần). Đọc kỹ các con số viết tay bằng bút bi/bút mực.',
@@ -566,10 +305,10 @@ export default function Home() {
   const [previewSrc, setPreviewSrc] = useState("");
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState({ active: false, percent: 0, text: "" });
-  const [showTesseractWarning, setShowTesseractWarning] = useState(false);
   const [engineBadge, setEngineBadge] = useState("");
   const [scannedModelInfo, setScannedModelInfo] = useState(null);
   const [scanDurationMs, setScanDurationMs] = useState(null);
+  const [scanTokenUsage, setScanTokenUsage] = useState(null); // { promptTokens, completionTokens, totalTokens, isEstimated }
   const [lastScanError, setLastScanError] = useState(null);
   const [expandedBatchErrors, setExpandedBatchErrors] = useState({});
   const [expandedCardErrors, setExpandedCardErrors] = useState({});
@@ -594,21 +333,12 @@ export default function Home() {
   const [selectedPdfIndex, setSelectedPdfIndex] = useState(0);
 
   // Settings & Storage state
-  const [aiProvider, setAiProvider] = useState('gemini'); // 'gemini' | 'openrouter' | 'kira' | 'bai'
+  const [aiProvider, setAiProvider] = useState('gemini'); // 'gemini' | 'custom'
   const [apiKey, setApiKey] = useState("");
   const [backupKeys, setBackupKeys] = useState([]);
   const [geminiModel, setGeminiModel] = useState("gemini-3.6-flash");
   const [activeGeminiKeyIndex, setActiveGeminiKeyIndex] = useState(0);
   const geminiKeyIndexRef = useRef(0);
-  const [openRouterKey, setOpenRouterKey] = useState("");
-  const [openRouterModel, setOpenRouterModel] = useState("nex-agi/nex-n2.5-pro:free");
-  const [openRouterTesting, setOpenRouterTesting] = useState(false);
-  const [kiraKey, setKiraKey] = useState("");
-  const [kiraModel, setKiraModel] = useState("qwen3.8-flash");
-  const [kiraTesting, setKiraTesting] = useState(false);
-  const [baiKey, setBaiKey] = useState("");
-  const [baiModel, setBaiModel] = useState("deepseek-v4.1-flash");
-  const [baiTesting, setBaiTesting] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [customApiKey, setCustomApiKey] = useState("");
   const [customModel, setCustomModel] = useState("");
@@ -803,11 +533,6 @@ export default function Home() {
 
   // Sync state with localStorage on mount & check URL for ?sync=CODE
   useEffect(() => {
-    if (typeof window !== 'undefined' && localStorage.getItem('preferred_ui_version') === 'v2') {
-      window.location.replace('/v2');
-      return;
-    }
-
     const key = localStorage.getItem('gemini_api_key') || '';
     setApiKey(key);
 
@@ -833,26 +558,12 @@ export default function Home() {
     }
     localStorage.removeItem('apinex_api_key');
     localStorage.removeItem('apinex_model');
-
-    const savedOrKey = localStorage.getItem('openrouter_api_key') || '';
-    setOpenRouterKey(savedOrKey);
-    let savedOrModel = localStorage.getItem('openrouter_model') || 'nex-agi/nex-n2.5-pro:free';
-    if (savedOrModel === 'google/gemini-2.0-flash-001') {
-      savedOrModel = 'google/gemini-2.5-flash';
-      localStorage.setItem('openrouter_model', savedOrModel);
-    }
-    setOpenRouterModel(savedOrModel);
-
-    const savedKiraKey = localStorage.getItem('kira_api_key') || '';
-    setKiraKey(savedKiraKey);
-    let savedKiraModel = (localStorage.getItem('kira_model') || 'qwen3.8-flash').replace(/-free$/i, '');
-    if (!savedKiraModel) savedKiraModel = 'qwen3.8-flash';
-    setKiraModel(savedKiraModel);
-
-    const savedBaiKey = localStorage.getItem('bai_api_key') || '';
-    setBaiKey(savedBaiKey);
-    const savedBaiModel = (localStorage.getItem('bai_model') || 'deepseek-v4.1-flash').toLowerCase();
-    setBaiModel(savedBaiModel);
+    localStorage.removeItem('openrouter_api_key');
+    localStorage.removeItem('openrouter_model');
+    localStorage.removeItem('kira_api_key');
+    localStorage.removeItem('kira_model');
+    localStorage.removeItem('bai_api_key');
+    localStorage.removeItem('bai_model');
 
     let savedCustomApis = [];
     try {
@@ -925,7 +636,7 @@ export default function Home() {
 
     try {
       const prompts = JSON.parse(localStorage.getItem('scan_field_prompts') || '{}');
-      if (prompts.ten && prompts.ten.includes('Không gộp hai dòng hàng thành một')) {
+      if (prompts.ten && (prompts.ten.includes('Không gộp hai dòng hàng thành một') || prompts.ten.includes('PE SHOE BOX'))) {
         delete prompts.ten;
         localStorage.setItem('scan_field_prompts', JSON.stringify(prompts));
       }
@@ -1134,13 +845,7 @@ export default function Home() {
         apiKey: apiKey.trim(),
         backupKeys,
         geminiModel: geminiModel.trim(),
-        aiProvider,
-        openRouterKey: openRouterKey.trim(),
-        openRouterModel: openRouterModel.trim(),
-        kiraKey: kiraKey.trim(),
-        kiraModel: kiraModel.trim(),
-        baiKey: baiKey.trim(),
-        baiModel: baiModel.trim(),
+        aiProvider: aiProvider === 'custom' ? 'custom' : 'gemini',
         customBaseUrl: cBaseUrl,
         customApiKey: cApiKey,
         customModel: cModel,
@@ -1232,34 +937,9 @@ export default function Home() {
         localStorage.setItem('gemini_model', m);
       }
       if (data.aiProvider) {
-        const prov = data.aiProvider === 'apinex' ? 'gemini' : data.aiProvider;
+        const prov = data.aiProvider === 'custom' ? 'custom' : 'gemini';
         setAiProvider(prov);
         localStorage.setItem('ai_provider', prov);
-      }
-      if (data.openRouterKey !== undefined) {
-        setOpenRouterKey(data.openRouterKey);
-        localStorage.setItem('openrouter_api_key', data.openRouterKey);
-      }
-      if (data.openRouterModel) {
-        const modelToSet = data.openRouterModel === 'google/gemini-2.0-flash-001' ? 'google/gemini-2.5-flash' : data.openRouterModel;
-        setOpenRouterModel(modelToSet);
-        localStorage.setItem('openrouter_model', modelToSet);
-      }
-      if (data.kiraKey !== undefined) {
-        setKiraKey(data.kiraKey);
-        localStorage.setItem('kira_api_key', data.kiraKey);
-      }
-      if (data.kiraModel) {
-        setKiraModel(data.kiraModel);
-        localStorage.setItem('kira_model', data.kiraModel);
-      }
-      if (data.baiKey !== undefined) {
-        setBaiKey(data.baiKey);
-        localStorage.setItem('bai_api_key', data.baiKey);
-      }
-      if (data.baiModel) {
-        setBaiModel(data.baiModel);
-        localStorage.setItem('bai_model', data.baiModel);
       }
       if (Array.isArray(data.customApis) && data.customApis.length > 0) {
         setCustomApis(data.customApis);
@@ -1312,8 +992,12 @@ export default function Home() {
         localStorage.setItem('scan_columns', JSON.stringify(data.selectedColumns));
       }
       if (data.fieldPrompts) {
-        setFieldPrompts(data.fieldPrompts);
-        localStorage.setItem('scan_field_prompts', JSON.stringify(data.fieldPrompts));
+        const cleanPrompts = { ...data.fieldPrompts };
+        if (cleanPrompts.ten && cleanPrompts.ten.includes('PE SHOE BOX')) {
+          cleanPrompts.ten = DEFAULT_FIELD_PROMPTS.ten;
+        }
+        setFieldPrompts({ ...DEFAULT_FIELD_PROMPTS, ...cleanPrompts });
+        localStorage.setItem('scan_field_prompts', JSON.stringify(cleanPrompts));
       }
       if (data.durationMinutes) {
         setCloudSyncDuration(data.durationMinutes);
@@ -2311,8 +1995,23 @@ export default function Home() {
 
     let text = rawText.trim();
 
-    // 1. Loại bỏ markdown code blocks
-    text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    // 1. Loại bỏ <think>...</think> (hoặc phần suy luận trước </think>) và markdown code blocks
+    text = text
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
+      .replace(/^[\s\S]*?<\/think>/i, '')
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+
+    const isPlaceholderTemplate = (p) => {
+      if (!p) return true;
+      const sp = String(p.soPhieu || '').trim().toLowerCase();
+      if (sp === 'số phiếu') return true;
+      if (Array.isArray(p.rows) && p.rows.length === 1 && Array.isArray(p.rows[0]) && String(p.rows[0][0] || '').includes('giá trị 1')) {
+        return true;
+      }
+      return false;
+    };
 
     const toFormatted = (parsed) => {
       if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
@@ -2354,6 +2053,43 @@ export default function Home() {
         const p = JSON.parse(sanitized);
         if (p && (Array.isArray(p.rows) || Array.isArray(p.items))) return toFormatted(p);
       } catch (e3) {}
+
+      // 3c. Nếu trong text có nhiều khối {...} rời nhau (ví dụ reasoning nhắc lại ví dụ {} rồi mới tới JSON chính ở cuối),
+      // quét toàn bộ các cặp ngoặc nhọn cân bằng và ưu tiên lấy khối hợp lệ CUỐI CÙNG (bỏ qua khối ví dụ mẫu)
+      const validBlocks = [];
+      let depth = 0;
+      let startIdx = -1;
+      let inStr = false;
+      let esc = false;
+      for (let i = firstBrace; i <= lastBrace; i++) {
+        const ch = text[i];
+        if (inStr) {
+          if (esc) esc = false;
+          else if (ch === '\\') esc = true;
+          else if (ch === '"') inStr = false;
+          continue;
+        }
+        if (ch === '"') inStr = true;
+        else if (ch === '{') {
+          if (depth === 0) startIdx = i;
+          depth++;
+        } else if (ch === '}') {
+          depth--;
+          if (depth === 0 && startIdx !== -1) {
+            const sub = text.substring(startIdx, i + 1);
+            try {
+              const p = JSON.parse(sub);
+              if (p && (Array.isArray(p.rows) || Array.isArray(p.items)) && !isPlaceholderTemplate(p)) {
+                validBlocks.push(p);
+              }
+            } catch {}
+            startIdx = -1;
+          }
+        }
+      }
+      if (validBlocks.length > 0) {
+        return toFormatted(validBlocks[validBlocks.length - 1]);
+      }
     }
 
     // 4. Phục hồi JSON bị cắt cụt ở đuôi (thiếu ]} hoặc ]]])
@@ -2486,518 +2222,29 @@ export default function Home() {
     return mergedList;
   }, [selectedColumns]);
 
-  // Test OpenRouter Connection
-  const testOpenRouterConnection = async () => {
-    const key = openRouterKey.trim();
-    if (!key) {
-      showToast('Vui lòng nhập API Key OpenRouter trước khi test', 'error');
-      return;
+  // Helper trích xuất hoặc ước tính lượng token sử dụng cho mọi nhà cung cấp AI (OpenAI, 9router, Anthropic, Gemini)
+  const extractTokenUsage = (data, promptText = '', responseText = '', estImageTok = 765) => {
+    const rawUsage = data?.usage || data?.usageMetadata || {};
+    let promptTok = Number(rawUsage.prompt_tokens ?? rawUsage.input_tokens ?? rawUsage.promptTokenCount ?? 0);
+    let completionTok = Number(rawUsage.completion_tokens ?? rawUsage.output_tokens ?? rawUsage.candidatesTokenCount ?? 0);
+    let totalTok = Number(rawUsage.total_tokens ?? rawUsage.totalTokenCount ?? (promptTok + completionTok));
+    let isEstimated = false;
+    if (!totalTok || totalTok <= 0) {
+      const estPromptText = Math.ceil(((promptText || '').length + 180) / 3.5);
+      promptTok = estPromptText + estImageTok;
+      completionTok = Math.max(15, Math.ceil(((responseText || '').length || 120) / 3.2));
+      totalTok = promptTok + completionTok;
+      isEstimated = true;
+    } else if (!promptTok && !completionTok) {
+      promptTok = Math.round(totalTok * 0.78);
+      completionTok = totalTok - promptTok;
     }
-    setOpenRouterTesting(true);
-    try {
-      const res = await fetch('https://openrouter.ai/api/v1/auth/key', {
-        headers: { 'Authorization': 'Bearer ' + key }
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error?.message || ('Lỗi xác thực ' + res.status));
-      }
-      const info = await res.json().catch(() => ({}));
-      const label = info.data?.label || 'Key hợp lệ';
-      showToast('✅ Kết nối OpenRouter thành công! [' + label + ']', 'success');
-    } catch (e) {
-      showToast('❌ Lỗi OpenRouter: ' + e.message, 'error');
-    } finally {
-      setOpenRouterTesting(false);
-    }
-  };
-
-  // Direct OpenRouter OCR (Supports Cost-Effective & Free Models like Nex AGI)
-  const scanClientOpenRouterWithBase64 = async (base64Data, mimeType, key, model) => {
-    // Tự động nén ảnh trên canvas nếu ảnh lớn để tăng tốc độ upload lên OpenRouter gấp 5-10 lần
-    let payloadBase64 = base64Data;
-    let payloadMime = mimeType;
-    if (base64Data && base64Data.length > 90000) {
-      try {
-        const compressed = await new Promise((resolve) => {
-          const img = new Image();
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const maxDim = 1200;
-            let w = img.width, h = img.height;
-            if (w > maxDim || h > maxDim) {
-              if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
-              else { w = Math.round((w * maxDim) / h); h = maxDim; }
-            }
-            canvas.width = w;
-            canvas.height = h;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, w, h);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
-            resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg' });
-          };
-          img.onerror = () => resolve(null);
-          img.src = `data:${mimeType};base64,${base64Data}`;
-        });
-        if (compressed?.base64) {
-          payloadBase64 = compressed.base64;
-          payloadMime = compressed.mime;
-        }
-      } catch (e) {
-        console.warn('Không thể nén ảnh cho OpenRouter:', e);
-      }
-    }
-
-    const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
-    const rules = ['soPhieu', ...selectedColumns]
-      .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
-      .join('\n');
-
-    const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
-      'YÊU CẦU BẮT BUỘC:\n' +
-      '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON.\n' +
-      '- Định dạng trả về duy nhất là chuỗi JSON:\n' +
-      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}\n\n' +
-      'Quy tắc trích xuất quan trọng:\n' +
-      '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
-      '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
-      '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
-      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1") nhưng chỉ có chung 1 bộ số lượng thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất.\n' +
-      'Hướng dẫn cột:\n' + rules + '\n\n' +
-      'ĐỊNH DẠNG TRẢ VỀ: Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
-      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
-
-    const selectedModel = model || 'nex-agi/nex-n2.5-pro:free';
-    const reqBody = {
-      model: selectedModel,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } },
-            { type: 'text', text: promptText },
-          ],
-        },
-      ],
-      temperature: 0.1,
-      max_tokens: 3500,
+    return {
+      promptTokens: promptTok,
+      completionTokens: completionTok,
+      totalTokens: totalTok,
+      isEstimated,
     };
-
-    const configuredModel = OPENROUTER_MODELS.find((entry) => entry.id === selectedModel);
-
-    // Cấu hình reasoning phù hợp với từng mô hình (tránh gửi effort: none tới ModelRun gây lỗi Provider returned error)
-    if (selectedModel.includes('qwen3.8') || selectedModel.includes('qwen-3.8')) {
-      // ModelRun của Qwen3.8 hỗ trợ low/medium/xhigh, không hỗ trợ none. Bật low để suy luận nhanh, không timeout
-      reqBody.include_reasoning = false;
-      reqBody.reasoning = { effort: 'low' };
-    } else if (configuredModel?.disableReasoning) {
-      reqBody.include_reasoning = false;
-      reqBody.reasoning = { effort: 'none' };
-    }
-
-    // Một vài model Vision miễn phí không hỗ trợ response_format. Prompt vẫn yêu
-    // cầu JSON, nhưng không gửi tham số không được nhà cung cấp hỗ trợ.
-    if (configuredModel?.supportsJsonMode !== false && !selectedModel.includes('qwen')) {
-      reqBody.response_format = { type: 'json_object' };
-    }
-
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + key.trim(),
-        'Content-Type': 'application/json',
-        'HTTP-Referer': typeof window !== 'undefined' && window.location?.origin ? window.location.origin : 'https://scanphieu.vercel.app',
-        'X-Title': 'Scan Phieu',
-      },
-      body: JSON.stringify(reqBody),
-    });
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      console.error('[OpenRouter API Error Details]:', errData);
-      let providerMessage =
-        errData.error?.message ||
-        (typeof errData.error === 'string' ? errData.error : '') ||
-        errData.message ||
-        `OpenRouter Error: ${res.status}`;
-
-      const rawDetail = errData.error?.metadata?.raw;
-      const providerName = errData.error?.metadata?.provider_name;
-
-      if (providerMessage.toLowerCase().includes('provider returned error')) {
-        const detailStr = typeof rawDetail === 'string' ? rawDetail : (rawDetail?.error?.message || rawDetail?.message || '');
-        if (detailStr) {
-          providerMessage = `Máy chủ ${providerName || 'OpenRouter'} báo lỗi: ${detailStr}`;
-        } else {
-          providerMessage = `Máy chủ (${providerName || 'ModelRun'}) của [${selectedModel}] đang quá tải hoặc tạm thời gián đoạn. Bạn có thể bấm [Quét lại] hoặc thử nex-agi/nex-n2.5-pro:free`;
-        }
-      }
-
-      const err = new Error(providerMessage);
-      err.status = res.status;
-      err.rawError = errData;
-      throw err;
-    }
-
-    const data = await res.json();
-    const msg = data.choices?.[0]?.message;
-    let text = (msg?.content || '').trim();
-    if (!text && msg?.reasoning) {
-      text = msg.reasoning.trim();
-    }
-    console.log('[OpenRouter Raw Response]:', text);
-    if (!text) {
-      throw new Error('Không nhận được dữ liệu phản hồi từ OpenRouter');
-    }
-
-    // 1. Parse JSON trực tiếp (xử lý markdown ```json ... ```)
-    const cleanText = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
-    let parsed = null;
-
-    try {
-      parsed = JSON.parse(cleanText);
-    } catch {
-      const m = cleanText.match(/\{[\s\S]*\}/);
-      if (m) {
-        try {
-          parsed = JSON.parse(m[0]);
-        } catch {}
-      }
-    }
-
-    // 2. Nếu JSON hợp lệ và có chứa mảng rows hoặc items
-    if (parsed && (Array.isArray(parsed.rows) || Array.isArray(parsed.items))) {
-      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-        parsed.items = parsed.rows
-          .filter((row) => Array.isArray(row) || (typeof row === 'object' && row !== null))
-          .map((row) => {
-            if (typeof row === 'object' && !Array.isArray(row)) return row;
-            const obj = {};
-            selectedColumns.forEach((colKey, idx) => {
-              obj[colKey] = row[idx] ?? '';
-            });
-            return obj;
-          });
-      }
-      return parsed;
-    }
-
-    // 3. Dự phòng phân tích dòng text / bullet points nếu model trả về dạng danh sách
-    let fallbackSoPhieu = '';
-    const spMatch = text.match(/(?:Số\s*phiếu|Số\s*chứng\s*từ|Số\s*XKP|Số|No\.?)[:\s]+([A-Z0-9_\-\s\/]+)/i);
-    if (spMatch) {
-      fallbackSoPhieu = spMatch[1].split('\n')[0].trim().replace(/^[:\s\-]+/, '');
-    }
-
-    const fallbackItems = [];
-    const sections = text.split(/(?:^|\n)\s*(?:\d+[\.\)]\s*(?:STT\s*\d+[:\s]*)?|STT\s*\d+[:\s]*)/i);
-    if (sections.length > 1) {
-      for (let i = 1; i < sections.length; i++) {
-        const sec = sections[i];
-        const lines = sec.split('\n').map((l) => l.trim()).filter(Boolean);
-        if (!lines.length) continue;
-        const firstLine = lines[0];
-
-        const parts = firstLine.split(',').map((p) => p.trim());
-        if (parts.length >= 3) {
-          const itemObj = {};
-          selectedColumns.forEach((col, idx) => {
-            itemObj[col] = parts[idx] ? parts[idx].replace(/^[:\s\-]+/, '') : '';
-          });
-          fallbackItems.push(itemObj);
-          continue;
-        }
-
-        let ten = firstLine.replace(/^[:\s\-]+/, '');
-        let soOSPO = '', donViTinh = '', slChungTu = '', slThucNhap = '', soPallet = '', ghiChu = '';
-        for (const l of lines) {
-          const ospoM = l.match(/(?:Số\s*O\.?S\/?PO|PO|OS)[:\s]+([^\n]+)/i);
-          if (ospoM) soOSPO = ospoM[1].trim();
-          const dvtM = l.match(/(?:ĐVT|Đơn\s*vị\s*tính)[:\s]+([^\n]+)/i);
-          if (dvtM) donViTinh = dvtM[1].trim();
-          const slctM = l.match(/(?:SL\s*chứng\s*từ|Số\s*lượng\s*chứng\s*từ)[:\s]+([^\n]+)/i);
-          if (slctM) slChungTu = slctM[1].trim();
-          const sltnM = l.match(/(?:SL\s*thực\s*nhập|Số\s*lượng\s*thực\s*nhập)[:\s]+([^\n]+)/i);
-          if (sltnM) slThucNhap = sltnM[1].trim();
-          const palM = l.match(/(?:Số\s*pallet|Pallet)[:\s]+([^\n]+)/i);
-          if (palM) soPallet = palM[1].trim();
-        }
-
-        fallbackItems.push({
-          ten: ten || '',
-          soOSPO: soOSPO || '',
-          donViTinh: donViTinh || 'pcs',
-          soLuongChungTu: slChungTu || '',
-          soLuongThucNhap: slThucNhap || '',
-          soPallet: soPallet || '',
-          ghiChu: ghiChu || '',
-        });
-      }
-    }
-
-    if (fallbackItems.length > 0) {
-      return {
-        soPhieu: fallbackSoPhieu,
-        items: fallbackItems,
-      };
-    }
-
-    throw new Error('OpenRouter chưa trích xuất được bảng hàng hóa. Vui lòng bấm Quét Lại hoặc thử chọn mô hình Nex-N2.5-Pro / Gemini 2.5 Flash.');
-  };
-
-
-  // Test Kira AI Connection
-  const testKiraConnection = async () => {
-    const key = kiraKey.trim();
-    if (!key) {
-      showToast('Vui lòng nhập API Key Kira AI (bắt đầu bằng kira_...) trước khi test', 'error');
-      return;
-    }
-    setKiraTesting(true);
-    try {
-      const res = await fetch('/api/kira', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'test', key, model: kiraModel.trim() || 'qwen3.8-max' })
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error?.message || ('Lỗi xác thực ' + res.status));
-      }
-      showToast('✅ Kết nối Kira AI thành công! Key hoạt động tốt.', 'success');
-    } catch (e) {
-      showToast('❌ Lỗi Kira AI: ' + e.message, 'error');
-    } finally {
-      setKiraTesting(false);
-    }
-  };
-
-  // Direct Kira AI OCR (supports both Free & VIP models faithfully)
-  const scanClientKiraWithBase64 = async (base64Data, mimeType, key, model) => {
-    const rawModel = model?.trim() || 'qwen3.8-flash';
-    const effectiveModel = rawModel.replace(/-free$/i, '');
-
-    // Auto-compress image to ensure fast processing and prevent payload limit / 502
-    let payloadBase64 = base64Data;
-    let payloadMime = mimeType;
-    if (base64Data && base64Data.length > 90000) {
-      try {
-        const compressed = await new Promise((resolve) => {
-          const img = new Image();
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const maxDim = 1200;
-            let w = img.width, h = img.height;
-            if (w > maxDim || h > maxDim) {
-              if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
-              else { w = Math.round((w * maxDim) / h); h = maxDim; }
-            }
-            canvas.width = w;
-            canvas.height = h;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, w, h);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.80);
-            resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg' });
-          };
-          img.onerror = () => resolve(null);
-          img.src = `data:${mimeType};base64,${base64Data}`;
-        });
-        if (compressed?.base64) {
-          payloadBase64 = compressed.base64;
-          payloadMime = compressed.mime;
-        }
-      } catch (e) {
-        console.warn('Không thể nén ảnh cho Kira AI:', e);
-      }
-    }
-
-    const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
-    const rules = ['soPhieu', ...selectedColumns]
-      .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
-      .join('\n');
-
-    const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (chữ in & viết tay).\n' +
-      'YÊU CẦU BẮT BUỘC:\n' +
-      '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON.\n' +
-      '- Định dạng trả về duy nhất là chuỗi JSON:\n' +
-      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}\n\n' +
-      'Quy tắc trích xuất quan trọng:\n' +
-      '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
-      '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
-      '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
-      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1") nhưng chỉ có chung 1 bộ số lượng thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất.\n' +
-      'Hướng dẫn cột:\n' + rules + '\n\n' +
-      'ĐỊNH DẠNG TRẢ VỀ: Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
-      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
-
-    const reqPayload = {
-      key: key.trim(),
-      model: effectiveModel,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: promptText },
-            { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } },
-          ],
-        },
-      ],
-      temperature: 0.1,
-      max_tokens: 3000,
-    };
-
-    if (effectiveModel.startsWith('gpt-')) {
-      reqPayload.response_format = { type: 'json_object' };
-    }
-
-    const res = await fetch('/api/kira', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(reqPayload),
-    });
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      const err = new Error(errData.error?.message || ('Kira AI Error: ' + res.status));
-      err.status = res.status;
-      throw err;
-    }
-
-    const data = await res.json();
-    const msg = data.choices?.[0]?.message;
-    let text = (msg?.content || '').trim();
-    if (!text && msg?.reasoning_content) {
-      text = msg.reasoning_content.trim();
-    }
-    if (!text) {
-      throw new Error('Không nhận được dữ liệu phản hồi từ Kira AI. Vui lòng thử lại.');
-    }
-
-    // 1. Parse JSON trực tiếp (xử lý khối markdown ```json ... ```)
-    const cleanText = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
-    let parsed = null;
-
-    try {
-      parsed = JSON.parse(cleanText);
-    } catch {
-      const m = cleanText.match(/\{[\s\S]*\}/);
-      if (m) {
-        try {
-          parsed = JSON.parse(m[0]);
-        } catch {}
-      }
-    }
-
-    // 2. Nếu JSON hợp lệ và có chứa mảng rows hoặc items
-    if (parsed && (Array.isArray(parsed.rows) || Array.isArray(parsed.items))) {
-      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-        parsed.items = parsed.rows
-          .filter((row) => Array.isArray(row) || (typeof row === 'object' && row !== null))
-          .map((row) => {
-            if (typeof row === 'object' && !Array.isArray(row)) return row;
-            const obj = {};
-            selectedColumns.forEach((colKey, idx) => {
-              obj[colKey] = row[idx] ?? '';
-            });
-            return obj;
-          });
-      }
-      return parsed;
-    }
-
-    // 3. Dự phòng thông minh: Nếu AI sinh text/suy luận dạng danh sách (STT 1: ..., 1. ..., bullet points)
-    // Tự động phân tích và tách thành từng dòng riêng biệt thay vì gom toàn bộ văn bản vào 1 dòng
-    let fallbackSoPhieu = '';
-    const spMatch = text.match(/(?:Số\s*phiếu|Số\s*chứng\s*từ|Số\s*XKP|Số|No\.?)[:\s]+([A-Z0-9_\-\s\/]+)/i);
-    if (spMatch) {
-      fallbackSoPhieu = spMatch[1].split('\n')[0].trim().replace(/^[:\s\-]+/, '');
-    }
-
-    const fallbackItems = [];
-    const sections = text.split(/(?:^|\n)\s*(?:\d+[\.\)]\s*(?:STT\s*\d+[:\s]*)?|STT\s*\d+[:\s]*)/i);
-    if (sections.length > 1) {
-      for (let i = 1; i < sections.length; i++) {
-        const sec = sections[i];
-        const lines = sec.split('\n').map((l) => l.trim()).filter(Boolean);
-        if (!lines.length) continue;
-        const firstLine = lines[0];
-
-        // Trường hợp các trường phân cách bằng dấu phẩy: Mã hàng, Số PO, ĐVT, SL chứng từ, SL thực nhập, Pallet
-        const parts = firstLine.split(',').map((p) => p.trim());
-        if (parts.length >= 3) {
-          const itemObj = {};
-          selectedColumns.forEach((col, idx) => {
-            itemObj[col] = parts[idx] ? parts[idx].replace(/^[:\s\-]+/, '') : '';
-          });
-          fallbackItems.push(itemObj);
-          continue;
-        }
-
-        // Trường hợp từng trường nằm ở các dòng gạch đầu dòng con
-        let ten = firstLine.replace(/^[:\s\-]+/, '');
-        let soOSPO = '', donViTinh = '', slChungTu = '', slThucNhap = '', soPallet = '', ghiChu = '';
-        for (const l of lines) {
-          const ospoM = l.match(/(?:Số\s*O\.?S\/?PO|PO|OS)[:\s]+([^\n]+)/i);
-          if (ospoM) soOSPO = ospoM[1].trim();
-          const dvtM = l.match(/(?:ĐVT|Đơn\s*vị\s*tính)[:\s]+([^\n]+)/i);
-          if (dvtM) donViTinh = dvtM[1].trim();
-          const slctM = l.match(/(?:SL\s*chứng\s*từ|Số\s*lượng\s*chứng\s*từ)[:\s]+([^\n]+)/i);
-          if (slctM) slChungTu = slctM[1].trim();
-          const sltnM = l.match(/(?:SL\s*thực\s*nhập|Số\s*lượng\s*thực\s*nhập)[:\s]+([^\n]+)/i);
-          if (sltnM) slThucNhap = sltnM[1].trim();
-          const palM = l.match(/(?:Số\s*pallet|Pallet)[:\s]+([^\n]+)/i);
-          if (palM) soPallet = palM[1].trim();
-        }
-
-        fallbackItems.push({
-          ten: ten || '',
-          soOSPO: soOSPO || '',
-          donViTinh: donViTinh || 'pcs',
-          soLuongChungTu: slChungTu || '',
-          soLuongThucNhap: slThucNhap || '',
-          soPallet: soPallet || '',
-          ghiChu: ghiChu || '',
-        });
-      }
-    }
-
-    if (fallbackItems.length > 0) {
-      return {
-        soPhieu: fallbackSoPhieu,
-        items: fallbackItems,
-      };
-    }
-
-    // 4. Nếu không thể bóc tách cấu trúc dòng hàng nào, báo lỗi rõ ràng để người dùng quét lại, tuyệt đối không gộp bừa vào 1 dòng
-    throw new Error('AI chưa trích xuất được bảng hàng hóa. Vui lòng bấm Quét Lại hoặc chọn mô hình qwen3.8-flash-free / gemini-3.8-flash.');
-  };
-
-  // Test B.AI Connection
-  const testBaiConnection = async () => {
-    const key = baiKey.trim();
-    if (!key) {
-      showToast('Vui lòng nhập API Key B.AI trước khi test', 'error');
-      return;
-    }
-    setBaiTesting(true);
-    try {
-      const res = await fetch('/api/bai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'test', key })
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error?.message || ('Lỗi xác thực ' + res.status));
-      }
-      showToast('✅ Kết nối B.AI thành công! Key hoạt động tốt.', 'success');
-    } catch (e) {
-      showToast('❌ Lỗi B.AI: ' + e.message, 'error');
-    } finally {
-      setBaiTesting(false);
-    }
   };
 
   // Hàm làm sạch giá trị từng ô OCR, loại bỏ suy luận nháp tiếng Anh (thinking leak)
@@ -3045,257 +2292,6 @@ export default function Home() {
       s = s.replace(/(?:ghi chú|actually|maybe)[\s\S]*/i, '').trim();
     }
     return s.replace(/^[:\s\-]+/, '').replace(/[:\s\-]+$/, '');
-  };
-
-  // Direct B.AI OCR (supports deepseek-v4.1-flash, glm-5.3-flash, qwen3.8-flash, hy3, mimo-v2.5)
-  const scanClientBaiWithBase64 = async (base64Data, mimeType, key, model) => {
-    const effectiveModel = (model?.trim() || 'deepseek-v4.1-flash').toLowerCase();
-
-    // Auto-compress image to ensure fast processing and prevent payload limit
-    let payloadBase64 = base64Data;
-    let payloadMime = mimeType;
-    if (base64Data && base64Data.length > 90000) {
-      try {
-        const compressed = await new Promise((resolve) => {
-          const img = new Image();
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const maxDim = 1600;
-            let w = img.width, h = img.height;
-            if (w > maxDim || h > maxDim) {
-              if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
-              else { w = Math.round((w * maxDim) / h); h = maxDim; }
-            }
-            canvas.width = w;
-            canvas.height = h;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, w, h);
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-            resolve({ base64: dataUrl.split(',')[1], mime: 'image/jpeg' });
-          };
-          img.onerror = () => resolve(null);
-          img.src = `data:${mimeType};base64,${base64Data}`;
-        });
-        if (compressed?.base64) {
-          payloadBase64 = compressed.base64;
-          payloadMime = compressed.mime;
-        }
-      } catch (e) {
-        console.warn('Không thể nén ảnh cho B.AI:', e);
-      }
-    }
-
-    const colListStr = selectedColumns.map((k, i) => (i + 1) + '.' + (COLUMN_DEFS[k]?.short || k)).join(', ');
-    const rules = ['soPhieu', ...selectedColumns]
-      .map((k) => '- ' + (k === 'soPhieu' ? 'Số phiếu' : (COLUMN_DEFS[k]?.short || k)) + ': ' + (fieldPrompts[k] || DEFAULT_FIELD_PROMPTS[k] || ''))
-      .join('\n');
-
-    const promptText = 'Chuyên gia OCR phiếu kho Việt Nam (đọc chuẩn chữ in & chữ viết tay).\n' +
-      'YÊU CẦU BẮT BUỘC:\n' +
-      '- XUẤT KẾT QUẢ JSON NGAY DÒNG ĐẦU TIÊN. Tuyệt đối không suy luận dài dòng, không giải thích bên ngoài JSON, không viết tiếng Anh hay tiếng Trung.\n' +
-      '- Định dạng trả về duy nhất là chuỗi JSON:\n' +
-      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}\n\n' +
-      'Quy tắc trích xuất quan trọng:\n' +
-      '1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).\n' +
-      '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
-      '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
-      '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1") nhưng chỉ có chung 1 bộ số lượng thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất.\n' +
-      '5. CHỮ VIẾT TAY SỐ 9: Cột O.S/PO thường có chữ số 9 viết tay đuôi cong rất dễ nhầm với chữ "g" hoặc "q" (ví dụ g-297, q-697 thực chất là 9-297, 9-697 -> ghép thành số 90297, 90697).\n' +
-      'Hướng dẫn cột:\n' + rules + '\n\n' +
-      'ĐỊNH DẠNG TRẢ VỀ: Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
-      '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
-
-    const reqPayload = {
-      key: key.trim(),
-      model: effectiveModel,
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an automated OCR parser for Vietnamese warehouse receipts. Output ONLY the raw JSON object matching the requested schema. DO NOT output internal reasoning, conversational thinking, or explanations.'
-        },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: promptText },
-            { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } },
-          ],
-        },
-      ],
-      temperature: 0.1,
-      max_tokens: 6000,
-    };
-
-    reqPayload.response_format = { type: 'json_object' };
-
-    const res = await fetch('/api/bai', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(reqPayload),
-    });
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      const err = new Error(errData.error?.message || ('B.AI Error: ' + res.status));
-      err.status = res.status;
-      throw err;
-    }
-
-    const data = await res.json();
-    const msg = data.choices?.[0]?.message;
-    let text = (msg?.content || '').trim();
-
-    // Loại bỏ tag <think>...</think> nếu có
-    if (text) {
-      text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-    }
-
-    // Nếu content rỗng, kiểm tra xem trong reasoning_content có khối JSON hoàn chỉnh không
-    if (!text && msg?.reasoning_content) {
-      const rText = msg.reasoning_content;
-      const jsonBlock = rText.match(/\{[\s\S]*"rows"[\s\S]*\}/) || rText.match(/\{[\s\S]*"items"[\s\S]*\}/);
-      if (jsonBlock) {
-        text = jsonBlock[0].trim();
-      }
-    }
-
-    if (!text) {
-      throw new Error('Không nhận được dữ liệu phản hồi từ B.AI. Vui lòng thử lại hoặc chọn mô hình Qwen3.8-Flash.');
-    }
-
-
-
-    // Parse JSON trực tiếp
-    const cleanText = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
-    let parsed = null;
-
-    try {
-      parsed = JSON.parse(cleanText);
-    } catch {
-      const m = cleanText.match(/\{[\s\S]*\}/);
-      if (m) {
-        try {
-          parsed = JSON.parse(m[0]);
-        } catch {}
-      }
-    }
-
-    if (parsed && (Array.isArray(parsed.rows) || Array.isArray(parsed.items))) {
-      let soPhieuVal = String(parsed.soPhieu || '').trim();
-      if (/maybe|actually|let's/i.test(soPhieuVal)) {
-        const q = soPhieuVal.match(/"([^"]+)"/);
-        if (q) soPhieuVal = q[1].trim();
-      }
-      parsed.soPhieu = soPhieuVal;
-
-      if (Array.isArray(parsed.rows) && !Array.isArray(parsed.items)) {
-        parsed.items = parsed.rows
-          .filter((row) => Array.isArray(row) || (typeof row === 'object' && row !== null))
-          .map((row) => {
-            if (typeof row === 'object' && !Array.isArray(row)) {
-              const cleaned = {};
-              Object.keys(row).forEach((k) => {
-                cleaned[k] = cleanOcrCell(row[k], k);
-                if (k === 'donViTinh' && !cleaned[k]) cleaned[k] = 'pcs';
-              });
-              return cleaned;
-            }
-            const obj = {};
-            selectedColumns.forEach((colKey, idx) => {
-              obj[colKey] = cleanOcrCell(row[idx], colKey);
-              if (colKey === 'donViTinh' && !obj[colKey]) obj[colKey] = 'pcs';
-            });
-            return obj;
-          });
-      } else if (Array.isArray(parsed.items)) {
-        parsed.items = parsed.items.map((item) => {
-          const cleaned = {};
-          selectedColumns.forEach((colKey) => {
-            cleaned[colKey] = cleanOcrCell(item[colKey], colKey);
-            if (colKey === 'donViTinh' && !cleaned[colKey]) cleaned[colKey] = 'pcs';
-          });
-          return cleaned;
-        });
-      }
-      return parsed;
-    }
-
-    // Dự phòng thông minh
-    let fallbackSoPhieu = '';
-    // Tránh bắt nhầm chữ "Số" trong cụm "Số phiếu" hay "Số lượng"
-    const spMatch = text.match(/(?:Số\s*phiếu|Số\s*chứng\s*từ|Số\s*XKP|No\.?|(?:Số|No)\s*[:：])\s*[:：]?\s*([A-Z0-9_\-\s\/]+)/i);
-    if (spMatch) {
-      let cand = spMatch[1].split('\n')[0].trim().replace(/^[:\s\-]+/, '');
-      if (/maybe|actually|let's/i.test(cand)) {
-        const q = cand.match(/"([^"]+)"/);
-        if (q) cand = q[1].trim();
-      }
-      // Không nhận nếu chỉ là chữ "phi" hoặc từ tiếng Việt không chứa số/mã
-      if (cand && !/^phi(?:ếu)?$/i.test(cand) && (/\d/.test(cand) || cand.length >= 3)) {
-        fallbackSoPhieu = cand;
-      }
-    }
-
-    const fallbackItems = [];
-    const sections = text.split(/(?:^|\n)\s*(?:\d+[\.\)]\s*(?:STT\s*\d+[:\s]*)?|STT\s*\d+[:\s]*)/i);
-    if (sections.length > 1) {
-      for (let i = 1; i < sections.length; i++) {
-        const sec = sections[i];
-        const lines = sec.split('\n').map((l) => l.trim()).filter(Boolean);
-        if (!lines.length) continue;
-        const firstLine = lines[0];
-        const parts = firstLine.split(',').map((p) => p.trim());
-        if (parts.length >= 3) {
-          const itemObj = {};
-          selectedColumns.forEach((col, idx) => {
-            itemObj[col] = cleanOcrCell(parts[idx], col);
-          });
-          fallbackItems.push(itemObj);
-          continue;
-        }
-
-        let ten = cleanOcrCell(firstLine, 'ten');
-        // Bỏ qua nếu dòng này là dòng rác gom nhiều mặt hàng / reasoning dump (như dòng 10 trong ảnh)
-        if (ten && (/B:\s*"[^"]+".*C:\s*"[^"]+"/i.test(firstLine) || (firstLine.match(/DO2/g) || []).length > 3 || firstLine.length > 120)) {
-          console.warn('Loại bỏ dòng reasoning dump rác:', firstLine);
-          continue;
-        }
-
-        let soOSPO = '', donViTinh = '', slChungTu = '', slThucNhap = '', soPallet = '', ghiChu = '';
-        for (const l of lines) {
-          const ospoM = l.match(/(?:Số\s*O\.?S\/?PO|PO|OS)[:\s]+([^\n]+)/i);
-          if (ospoM) soOSPO = cleanOcrCell(ospoM[1], 'soOSPO');
-          const dvtM = l.match(/(?:ĐVT|Đơn\s*vị\s*tính)[:\s]+([^\n]+)/i);
-          if (dvtM) donViTinh = cleanOcrCell(dvtM[1], 'donViTinh');
-          const slctM = l.match(/(?:SL\s*chứng\s*từ|Số\s*lượng\s*chứng\s*từ)[:\s]+([^\n]+)/i);
-          if (slctM) slChungTu = cleanOcrCell(slctM[1], 'soLuongChungTu');
-          const sltnM = l.match(/(?:SL\s*thực\s*nhập|Số\s*lượng\s*thực\s*nhập)[:\s]+([^\n]+)/i);
-          if (sltnM) slThucNhap = cleanOcrCell(sltnM[1], 'soLuongThucNhap');
-          const palM = l.match(/(?:Số\s*pallet|Pallet)[:\s]+([^\n]+)/i);
-          if (palM) soPallet = cleanOcrCell(palM[1], 'soPallet');
-        }
-
-        fallbackItems.push({
-          ten: ten || '',
-          soOSPO: soOSPO || '',
-          donViTinh: donViTinh || 'pcs',
-          soLuongChungTu: slChungTu || '',
-          soLuongThucNhap: slThucNhap || '',
-          soPallet: soPallet || '',
-          ghiChu: ghiChu || '',
-        });
-      }
-    }
-
-    if (fallbackItems.length > 0) {
-      return {
-        soPhieu: fallbackSoPhieu,
-        items: fallbackItems,
-      };
-    }
-
-    throw new Error('B.AI chưa trích xuất được bảng hàng hóa. Vui lòng bấm Quét Lại hoặc chọn mô hình DeepSeek-V4.1-Flash / Qwen3.8-Flash.');
   };
 
   // Test Custom API Connection (supports profile or active state)
@@ -3512,7 +2508,7 @@ export default function Home() {
       '2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.\n' +
       '3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).\n' +
       '4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (dòng trên ghi tên loại sản phẩm, dòng dưới ghi kích thước/quy cách mã) nhưng chỉ có chung 1 bộ số lượng thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất.\n' +
-      '5. CHỮ VIẾT TAY SỐ 9: Cột O.S/PO thường có chữ số 9 viết tay đuôi cong rất dễ nhầm với chữ "g" hoặc "q" (ví dụ vế tháng 9 viết tay g-297 thực chất là 9-297 -> ghép thành 90297).\n' +
+      '5. CHỮ VIẾT TAY SỐ 9: Cột O.S/PO thường có chữ số 9 viết tay đuôi cong rất dễ nhầm với chữ "g" hoặc "q". Hãy đọc đúng thành chữ số 9 và ghép lại thành mã số đầy đủ.\n' +
       'Hướng dẫn cột:\n' + rules + '\n\n' +
       'ĐỊNH DẠNG TRẢ VỀ: Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng giá trị theo đúng thứ tự: [' + colListStr + ']):\n' +
       '{"soPhieu":"số phiếu","rows":[["giá trị 1","giá trị 2",...]]}';
@@ -3530,7 +2526,7 @@ export default function Home() {
           role: 'user',
           content: [
             { type: 'text', text: promptText },
-            { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64, detail: 'high' } },
+            { type: 'image_url', image_url: { url: 'data:' + payloadMime + ';base64,' + payloadBase64 } },
           ],
         },
       ],
@@ -3557,33 +2553,72 @@ export default function Home() {
 
     const data = await res.json();
     const msg = data.choices?.[0]?.message;
-    let text = (msg?.content || '').trim();
+    let text = '';
+    if (Array.isArray(msg?.content)) {
+      text = msg.content
+        .map((part) => (typeof part === 'string' ? part : part?.text || part?.content || ''))
+        .join('\n')
+        .trim();
+    } else {
+      text = String(msg?.content || '').trim();
+    }
 
-    // Loại bỏ tag <think>...</think> nếu có từ các reasoning model
+    // Trích xuất hoặc ước tính lượng token sử dụng (hỗ trợ cả chuẩn OpenAI, Anthropic/9router và fallback ước tính)
+    const rawUsage = data.usage || data.usageMetadata || {};
+    let promptTok = Number(rawUsage.prompt_tokens ?? rawUsage.input_tokens ?? rawUsage.promptTokenCount ?? 0);
+    let completionTok = Number(rawUsage.completion_tokens ?? rawUsage.output_tokens ?? rawUsage.candidatesTokenCount ?? 0);
+    let totalTok = Number(rawUsage.total_tokens ?? rawUsage.totalTokenCount ?? (promptTok + completionTok));
+    let isEstimatedUsage = false;
+    if (!totalTok || totalTok <= 0) {
+      // Nếu upstream trên 9router không trả usage, ước tính sát thực tế: ~765 token cho ảnh Vision 1500px + độ dài prompt & text trả về (~3.5 ký tự/token)
+      const estPromptText = Math.ceil((promptText.length + 180) / 3.5);
+      const estImageTok = 765;
+      promptTok = estPromptText + estImageTok;
+      completionTok = Math.max(15, Math.ceil((text.length || 120) / 3.2));
+      totalTok = promptTok + completionTok;
+      isEstimatedUsage = true;
+    } else if (!promptTok && !completionTok) {
+      promptTok = Math.round(totalTok * 0.78);
+      completionTok = totalTok - promptTok;
+    }
+    const tokenUsageInfo = {
+      promptTokens: promptTok,
+      completionTokens: completionTok,
+      totalTokens: totalTok,
+      isEstimated: isEstimatedUsage,
+    };
+
+    // Loại bỏ khối suy luận (reasoning) của các reasoning model:  thinking...</think> và phần trước </think> mồ côi
+    const stripThinking = (raw) =>
+      String(raw || '')
+        .replace(/<think[\s\S]*?<\/think>/gi, '')
+        .replace(/^[\s\S]*?<\/think>/i, '')
+        .trim();
     if (text) {
-      text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      text = stripThinking(text);
     }
     if (!text && msg?.reasoning_content) {
-      text = msg.reasoning_content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      text = stripThinking(msg.reasoning_content);
     }
     if (!text && msg?.reasoning) {
-      text = msg.reasoning.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+      text = stripThinking(msg.reasoning);
     }
 
     if (!text) {
       throw new Error('Không nhận được dữ liệu phản hồi từ Custom API');
     }
 
-    // Parse JSON
+    // Parse JSON: ưu tiên bộ giải mã đa tầng robustParseOcrJson (xử lý multi-block reasoning, markdown, 9router)
     const cleanText = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
     let parsed = null;
     try {
       parsed = JSON.parse(cleanText);
     } catch {
-      const m = cleanText.match(/\{[\s\S]*\}/);
-      if (m) {
-        try { parsed = JSON.parse(m[0]); } catch {}
-      } else {
+      const recovered = robustParseOcrJson(cleanText, selectedColumns);
+      if (recovered && Array.isArray(recovered.items) && recovered.items.length > 0 && !(recovered.items.length === 1 && recovered.items[0].ten === cleanText)) {
+        parsed = recovered;
+      }
+      if (!parsed) {
         const arrMatch = cleanText.match(/\[[\s\S]*\]/);
         if (arrMatch) {
           try {
@@ -3593,6 +2628,7 @@ export default function Home() {
         }
       }
     }
+
 
     // Nếu model báo không có ảnh hoặc lỗi ảnh
     if (parsed?.error === 'NO_IMAGE') {
@@ -3640,15 +2676,8 @@ export default function Home() {
         });
       }
 
-      // Phát hiện mô hình "mù ảnh" bịa đặt dữ liệu từ ví dụ prompt (Hallucination)
-      const isHallucinatedExample = parsed.items && parsed.items.some(it => 
-        (it.ten && it.ten.includes('PE SHOE BOX') && it.ten.includes('MK-A-1')) ||
-        (it.soOSPO === '90297' && it.ten && it.ten.includes('PE SHOE BOX'))
-      );
-      if (isHallucinatedExample) {
-        throw new Error(`⚠️ Mô hình [${effectiveModel}] không đọc được ảnh (chỉ hỗ trợ Text hoặc proxy APIMix đã cắt bỏ dữ liệu ảnh). Mô hình đang tự sao chép dữ liệu ví dụ trong prompt! Vui lòng chọn mô hình Vision thực sự (như Qwen 2.5 VL, Llama 3.2 Vision, Gemini).`);
-      }
 
+      parsed.tokenUsage = tokenUsageInfo;
       return parsed;
     }
 
@@ -3709,6 +2738,7 @@ export default function Home() {
       return {
         soPhieu: fallbackSoPhieu,
         items: fallbackItems,
+        tokenUsage: tokenUsageInfo,
       };
     }
 
@@ -3767,7 +2797,7 @@ Quy tắc trích xuất quan trọng:
 1. Đọc chuẩn chữ viết tay tiếng Việt, số viết tay (phân biệt 0/O, 1/7, 2/Z, 5/S, 8/B).
 2. Ưu tiên giá trị viết tay sửa đè. Bỏ qua dòng tổng cộng.
 3. Ô không có dữ liệu để chuỗi rỗng "" (tuyệt đối không ghi ???, không tự suy diễn).
-4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (ví dụ dòng trên ghi tên loại sản phẩm như "PE SHOE BOX (ECO)", dòng dưới ghi kích thước/quy cách mã như "290*180*110mm MK-A-1", hoặc dòng trên là mã và dòng dưới là quy cách) nhưng chỉ có chung 1 bộ số lượng, 1 STT hoặc 1 mã OS/PO thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất (nối tên thành 1 chuỗi hoàn chỉnh). Tuyệt đối không tách thành 2 dòng riêng biệt nếu dòng kia không có số lượng thực tế.
+4. XỬ LÝ MẶT HÀNG 2 DÒNG: Trong phiếu kho, nếu một mặt hàng chiếm 2 dòng liên tiếp (dòng trên ghi tên loại sản phẩm, dòng dưới ghi kích thước/quy cách mã, hoặc dòng trên là mã và dòng dưới là quy cách) nhưng chỉ có chung 1 bộ số lượng, 1 STT hoặc 1 mã OS/PO thì PHẢI GỘP chúng thành 1 dòng hàng duy nhất (nối tên thành 1 chuỗi hoàn chỉnh). Tuyệt đối không tách thành 2 dòng riêng biệt nếu dòng kia không có số lượng thực tế.
 Hướng dẫn cột:
 ${rules}
 
@@ -3813,58 +2843,27 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       throw err;
     }
 
-    return robustParseOcrJson(text, selectedColumns);
-  };
-
-  const scanWithTesseract = async (base64Data, mimeType, onProgress) => {
-    if (!window.Tesseract) {
-      await new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js';
-        s.onload = resolve;
-        s.onerror = () => reject(new Error('Không thể tải Tesseract.js'));
-        document.head.appendChild(script);
-      });
+    const um = data.usageMetadata || {};
+    let gPromptTok = Number(um.promptTokenCount ?? 0);
+    let gCompTok = Number(um.candidatesTokenCount ?? 0) + Number(um.thoughtsTokenCount ?? 0);
+    let gTotalTok = Number(um.totalTokenCount ?? (gPromptTok + gCompTok));
+    let gEstimated = false;
+    if (!gTotalTok || gTotalTok <= 0) {
+      gPromptTok = Math.ceil(promptText.length / 3.5) + 516;
+      gCompTok = Math.max(15, Math.ceil(text.length / 3.2));
+      gTotalTok = gPromptTok + gCompTok;
+      gEstimated = true;
     }
-
-    const result = await window.Tesseract.recognize(
-      'data:' + mimeType + ';base64,' + base64Data,
-      'eng+vie',
-      {
-        logger: (m) => {
-          if (m.status === 'recognizing text' && m.progress) onProgress(0.3 + m.progress * 0.6);
-          else if (m.status === 'loading language traineddata') onProgress(0.1 + (m.progress || 0) * 0.2);
-        },
-      }
-    );
-    onProgress(1);
-
-    const raw = result.data.text;
-    const lines = raw.split('\n').map((s) => s.trim()).filter(Boolean);
-    const items = [];
-    let sp = '';
-
-    for (const line of lines) {
-      const m = line.match(/(?:S[oố]|XKP|NTH|No)[:\s]*([A-Z]*\s*[0-9]+)/i);
-      if (m && !sp) {
-        sp = m[1].trim();
-        continue;
-      }
-      const p = line.match(/^\d+[.\s]*(.+?)\s+(\d+)\s*$/);
-      if (p) {
-        const item = {};
-        if (selectedColumns.includes('ten')) item.ten = p[1].trim();
-        if (selectedColumns.includes('soLuongChungTu')) item.soLuongChungTu = p[2];
-        else if (selectedColumns.includes('soLuongThucNhap')) item.soLuongThucNhap = p[2];
-        items.push(item);
-      }
+    const parsedGemini = robustParseOcrJson(text, selectedColumns);
+    if (parsedGemini && typeof parsedGemini === 'object') {
+      parsedGemini.tokenUsage = {
+        promptTokens: gPromptTok,
+        completionTokens: gCompTok,
+        totalTokens: gTotalTok,
+        isEstimated: gEstimated,
+      };
     }
-    if (!items.length) {
-      const item = {};
-      if (selectedColumns.includes('ten')) item.ten = raw.substring(0, 200);
-      items.push(item);
-    }
-    return { soPhieu: sp, items };
+    return parsedGemini;
   };
 
   const getModelBadgeInfo = (provider, modelId = null) => {
@@ -3894,16 +2893,16 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       };
     }
     return {
-      engine: 'tesseract',
-      model: 'tesseract',
-      modelName: 'Tesseract OCR',
-      providerLabel: 'Offline OCR',
-      badgeText: '📝 Tesseract OCR (Offline)',
-      badgeColor: 'bg-slate-100 text-slate-800 border border-slate-200',
+      engine: 'gemini',
+      model: modelId || geminiModel || 'gemini-3.6-flash',
+      modelName: 'Gemini',
+      providerLabel: 'Google Gemini',
+      badgeText: '✨ Google Gemini',
+      badgeColor: 'bg-blue-100 text-blue-800 border border-blue-200',
     };
   };
 
-  // OCR Single Image Helper with Failover (Google Gemini 3.6 Flash & OpenRouter)
+  // OCR Single Image Helper (Google Gemini & Custom API)
   const executeOcrOnImage = async (base64Data, mimeType, progressPrefix = '', signal = null) => {
     // Cơ chế chống ngắt kết nối khi đổi tab hoặc tắt màn hình điện thoại
     const retryableOcrCall = async (fn, modelDesc = '') => {
@@ -4050,18 +3049,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       throw lastError || new Error('Không thể kết nối với Gemini AI.');
     }
 
-    // Fallback Offline Tesseract
-    setShowTesseractWarning(true);
-    const res = await scanWithTesseract(base64Data, mimeType, (p) => {
-      const pct = Math.round(p * 100);
-      setScanProgress({
-        active: true,
-        percent: pct,
-        text: `${progressPrefix} Đang nhận diện offline... ${pct}%`,
-      });
-    });
-    const badgeInfo = getModelBadgeInfo('tesseract', 'tesseract');
-    return { data: res, engine: 'tesseract', model: 'tesseract', badgeInfo };
+    // Khong con fallback OCR offline: bat buoc phai co Gemini Key hoac chuyen sang Custom API
+    // Không còn fallback OCR offline: bắt buộc phải có Gemini Key hoặc chuyển sang Custom API
+    throw new Error('Chưa cấu hình API Key Google Gemini! Vui lòng vào Cài đặt ⚙️ -> Tab API để nhập Gemini Key hoặc chuyển sang Tùy chỉnh (Custom API).');
   };
 
   // Ngừng quét đơn lẻ
@@ -4078,14 +3068,31 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     showToast('⏹️ Đã ngừng quét phiếu', 'info');
   };
 
+  // Helper cộng gộp tokenUsage của nhiều trang
+  const sumPagesTokenUsage = (pagesList) => {
+    const valid = (pagesList || []).filter((p) => p?.tokenUsage && p.tokenUsage.totalTokens > 0);
+    if (!valid.length) return null;
+    let promptTokens = 0;
+    let completionTokens = 0;
+    let totalTokens = 0;
+    let isEstimated = false;
+    for (const p of valid) {
+      promptTokens += Number(p.tokenUsage.promptTokens || 0);
+      completionTokens += Number(p.tokenUsage.completionTokens || 0);
+      totalTokens += Number(p.tokenUsage.totalTokens || 0);
+      if (p.tokenUsage.isEstimated) isEstimated = true;
+    }
+    return { promptTokens, completionTokens, totalTokens, isEstimated };
+  };
+
   // Main Single Image Scan Dispatcher
   const startScan = async () => {
     if (isScanning || !currentImageBase64) return;
     setIsScanning(true);
     setScanDurationMs(null);
+    setScanTokenUsage(null);
     setLastScanError(null);
     setScanProgress({ active: true, percent: 10, text: 'Đang chuẩn bị mô hình AI...' });
-    setShowTesseractWarning(false);
     const startTime = performance.now();
     singleScanAbortControllerRef.current = new AbortController();
 
@@ -4108,7 +3115,9 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         singleScanAbortControllerRef.current.signal
       );
       const durationMs = Math.round(performance.now() - startTime);
+      const tokenUsage = resultData?.tokenUsage || null;
       setScanDurationMs(durationMs);
+      setScanTokenUsage(tokenUsage);
       setEngineBadge(engine);
       if (badgeInfo) setScannedModelInfo(badgeInfo);
       setScanProgress({ active: true, percent: 100, text: `✅ Trích xuất thành công (${formatDuration(durationMs)})!` });
@@ -4124,6 +3133,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
           status: 'done',
           itemCount: normalizedItems.length,
           durationMs,
+          tokenUsage,
         },
       ];
 
@@ -4135,7 +3145,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       setActiveResultTab('separate');
       setResultVisible(true);
 
-      saveHistoryRecord(nextId, resultData.soPhieu || '', normalizedItems, singlePageResult, true, badgeInfo, durationMs);
+      saveHistoryRecord(nextId, resultData.soPhieu || '', normalizedItems, singlePageResult, true, badgeInfo, durationMs, tokenUsage);
 
       // Ghi nhận sự kiện quét thành công vào bộ đếm toàn hệ thống
       await logScanEvent({
@@ -4328,6 +3338,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             status: 'done',
             itemCount: normalized.length,
             durationMs: pageDurationMs,
+            tokenUsage: pageResult?.tokenUsage || null,
           };
 
           const existIdx = batchPerPageResultsRef.current.findIndex((pr) => pr.pageNum === pageNum);
@@ -4337,9 +3348,10 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             batchPerPageResultsRef.current.push(singleResult);
           }
 
-          // Cập nhật kết quả bảng bên ngoài theo thời gian thực
+          // Cập nhật kết quả bảng bên ngoài và tổng token theo thời gian thực
           setTableItems([...batchAccumulatedItemsRef.current]);
           setPageResults([...batchPerPageResultsRef.current]);
+          setScanTokenUsage(sumPagesTokenUsage(batchPerPageResultsRef.current));
 
           setBatchProgressModal((prev) => {
             const nextStatuses = prev.pageStatuses.map((ps) =>
@@ -4500,6 +3512,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     }
     batchStartTimeRef.current = performance.now();
     setScanDurationMs(null);
+    setScanTokenUsage(null);
     batchTargetPagesRef.current = targetPages;
     batchAccumulatedItemsRef.current = [];
     batchPerPageResultsRef.current = [];
@@ -4508,7 +3521,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
     setPdfModalOpen(false);
     setIsScanning(true);
-    setShowTesseractWarning(false);
 
     requestScreenWakeLock();
     startBackgroundAudioKeepAlive();
@@ -4619,12 +3631,14 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         status: 'done',
         itemCount: normalized.length,
         durationMs: retryDurationMs,
+        tokenUsage: pageResult?.tokenUsage || null,
       };
 
       let newPageResults = [];
       setPageResults((prev) => {
         const filtered = prev.filter((pr) => pr.pageNum !== targetPageNum);
         newPageResults = [...filtered, updatedPRItem].sort((a, b) => a.pageNum - b.pageNum);
+        setScanTokenUsage(sumPagesTokenUsage(newPageResults));
         return newPageResults;
       });
 
@@ -4719,7 +3733,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
   };
 
   // History Operations in LocalStorage (Optimized lightweight storage to prevent QuotaExceededError on mobile)
-  const saveHistoryRecord = (id, spVal, itemsVal, pageResultsVal = [], isNew = false, modelInfoVal = null, durationVal = null) => {
+  const saveHistoryRecord = (id, spVal, itemsVal, pageResultsVal = [], isNew = false, modelInfoVal = null, durationVal = null, tokenUsageVal = null) => {
     const currentPR = pageResultsVal.length ? pageResultsVal : pageResults;
 
     // Remove heavy base64 / blob previewUrls from pageResults when persisting to localStorage
@@ -4732,11 +3746,13 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         itemCount: pr.itemCount || (pr.items ? pr.items.length : 0),
         items: pr.items || [],
         durationMs: pr.durationMs || null,
+        tokenUsage: pr.tokenUsage || null,
       };
     });
 
     const activeModelInfo = modelInfoVal || scannedModelInfo || null;
     const effectiveDuration = durationVal !== null && durationVal !== undefined ? durationVal : scanDurationMs;
+    const effectiveTokenUsage = tokenUsageVal || sumPagesTokenUsage(lightweightPageResults) || scanTokenUsage || null;
 
     const record = {
       id,
@@ -4748,6 +3764,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       columns: selectedColumns,
       scannedModelInfo: activeModelInfo,
       durationMs: effectiveDuration || null,
+      tokenUsage: effectiveTokenUsage,
     };
 
     setScanHistory((prev) => {
@@ -4804,6 +3821,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     setTableItems(item.items || []);
     setPageResults(item.pageResults || []);
     setScanDurationMs(item.durationMs || null);
+    setScanTokenUsage(item.tokenUsage || sumPagesTokenUsage(item.pageResults) || null);
     setActiveResultTab('separate');
     setResultVisible(true);
     setHistoryOpen(false);
@@ -5028,14 +4046,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
   const saveSettings = () => {
     localStorage.setItem('gemini_api_key', apiKey.trim());
     localStorage.setItem('ai_provider', aiProvider);
-    localStorage.setItem('openrouter_api_key', openRouterKey.trim());
-    localStorage.setItem('openrouter_model', openRouterModel.trim());
     localStorage.removeItem('apinex_api_key');
     localStorage.removeItem('apinex_model');
-    localStorage.setItem('kira_api_key', kiraKey.trim());
-    localStorage.setItem('kira_model', kiraModel.trim());
-    localStorage.setItem('bai_api_key', baiKey.trim());
-    localStorage.setItem('bai_model', baiModel.trim());
     localStorage.setItem('custom_base_url', customBaseUrl.trim());
     localStorage.setItem('custom_api_key', customApiKey.trim());
     localStorage.setItem('custom_model', customModel.trim());
@@ -5294,7 +4306,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     ? availableApiCount > 0
                       ? `${availableApiCount}/${totalApiCount} API Gemini [${GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || geminiModel}] sẵn sàng • Xoay vòng Key #${activeGeminiKeyIndex + 1}`
                       : 'API Gemini đang bị giới hạn tạm thời (429)'
-                    : 'Chế độ OCR Offline (Tesseract)'}
+                    : 'Chưa cấu hình API Gemini (vào Cài đặt ⚙️ để nhập Key)'}
                 </span>
               </div>
             )}
@@ -5629,16 +4641,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 </div>
               )}
 
-              {/* Tesseract Warning */}
-              {showTesseractWarning && (
-                <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
-                  <IconInfo className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <span>
-                    Đang dùng OCR Offline. Kết quả với chữ viết tay có thể giảm độ chuẩn. Hãy nhập API key Gemini trong Cài đặt ⚙️ để nhận dạng tốt nhất.
-                  </span>
-                </div>
-              )}
-
               {/* Single Scan Error Details Banner */}
               {lastScanError && !isScanning && (
                 <div className="mt-3 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-950 text-xs space-y-2.5 animate-fade-in shadow-xs">
@@ -5797,37 +4799,35 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     <span
                       className={`px-2.5 py-0.5 rounded-full text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 ${
                         scannedModelInfo?.badgeColor ||
-                        (engineBadge === 'bai'
-                          ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                          : engineBadge === 'kira'
-                          ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                          : engineBadge === 'openrouter'
-                          ? 'bg-purple-100 text-purple-800 border border-purple-200'
-                          : engineBadge === 'groq'
-                          ? 'bg-orange-100 text-orange-800 border border-orange-200'
-                          : engineBadge === 'gemini'
-                          ? 'bg-blue-100 text-blue-800 border border-blue-200'
-                          : 'bg-amber-100 text-amber-800 border border-amber-200')
+                        (engineBadge === 'custom'
+                          ? 'bg-cyan-100 text-cyan-800 border border-cyan-200'
+                          : 'bg-blue-100 text-blue-800 border border-blue-200')
                       }`}
                     >
                       {scannedModelInfo?.badgeText || (
-                        engineBadge === 'bai'
-                          ? `✨ B.AI (${BAI_MODELS.find((m) => m.id === baiModel)?.shortName || baiModel})`
-                          : engineBadge === 'kira'
-                          ? `✨ Kira AI (${KIRA_MODELS.find((m) => m.id === kiraModel)?.shortName || kiraModel})`
-                          : engineBadge === 'openrouter'
-                          ? `✨ OpenRouter (${OPENROUTER_MODELS.find((m) => m.id === openRouterModel)?.shortName || openRouterModel})`
-                          : engineBadge === 'groq'
-                          ? `✨ Groq (${groqModel})`
-                          : engineBadge === 'gemini'
-                          ? `✨ Google Gemini (${GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || 'Gemini 3.6 Flash'})`
-                          : '📝 Tesseract OCR'
+                        engineBadge === 'custom'
+                          ? `⚙️ Custom API (${customModel || 'Custom-Model'})`
+                          : `✨ Google Gemini (${GEMINI_MODELS.find((m) => m.id === geminiModel)?.shortName || 'Gemini 3.6 Flash'})`
                       )}
                     </span>
                     {scanDurationMs !== null && scanDurationMs !== undefined && (
                       <span className="px-2.5 py-0.5 rounded-full text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 bg-slate-100 text-slate-700 border border-slate-200" title="Thời gian quét phiếu">
                         <span>⏱️</span>
                         <span>{formatDuration(scanDurationMs)}</span>
+                      </span>
+                    )}
+                    {scanTokenUsage && scanTokenUsage.totalTokens > 0 && (
+                      <span
+                        className="px-2.5 py-0.5 rounded-full text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 font-mono"
+                        title={`Tổng token sử dụng${scanTokenUsage.isEstimated ? ' (ước tính)' : ''} • Đầu vào (Ảnh + Prompt): ${scanTokenUsage.promptTokens.toLocaleString('vi-VN')} | Đầu ra (JSON): ${scanTokenUsage.completionTokens.toLocaleString('vi-VN')}`}
+                      >
+                        <span>🪙</span>
+                        <span>
+                          {scanTokenUsage.isEstimated ? '~' : ''}{scanTokenUsage.totalTokens.toLocaleString('vi-VN')} tokens
+                        </span>
+                        <span className="text-[10px] font-normal text-indigo-600">
+                          · In: {scanTokenUsage.promptTokens.toLocaleString('vi-VN')} / Out: {scanTokenUsage.completionTokens.toLocaleString('vi-VN')}
+                        </span>
                       </span>
                     )}
                   </div>
@@ -5928,6 +4928,14 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                                   <span>•</span>
                                   <span className={page.status === 'error' ? 'text-red-600 font-bold' : 'text-slate-600 font-bold'}>
                                     ⏱️ {page.status === 'error' ? `Lỗi sau ${formatDuration(page.durationMs)}` : formatDuration(page.durationMs)}
+                                  </span>
+                                </>
+                              )}
+                              {page.tokenUsage && page.tokenUsage.totalTokens > 0 && (
+                                <>
+                                  <span>•</span>
+                                  <span className="text-indigo-600 font-bold font-mono" title={`In: ${page.tokenUsage.promptTokens.toLocaleString('vi-VN')} / Out: ${page.tokenUsage.completionTokens.toLocaleString('vi-VN')}`}>
+                                    🪙 {page.tokenUsage.isEstimated ? '~' : ''}{page.tokenUsage.totalTokens.toLocaleString('vi-VN')} tokens (In: {page.tokenUsage.promptTokens.toLocaleString('vi-VN')} / Out: {page.tokenUsage.completionTokens.toLocaleString('vi-VN')})
                                   </span>
                                 </>
                               )}
@@ -7562,7 +6570,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 </div>
               )}
 
-              {/* TAB 2: API GEMINI & OPENROUTER */}
+              {/* TAB 2: API GEMINI & CUSTOM API */}
               {settingsTab === 'api' && (
                 <div className="space-y-4">
                   {/* AI Provider Switcher */}
@@ -7613,7 +6621,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           </span>
                         </div>
                         <p className="text-[11px] text-cyan-900 leading-relaxed">
-                          Lưu trữ và chuyển đổi nhanh giữa nhiều nhà cung cấp API (Groq, Together AI, RadoxAI, SiliconFlow, Ollama LAN, vLLM...). Hệ thống tự động khử reasoning, lọc dữ liệu và bóc tách bảng phiếu kho.
+                          Lưu trữ và chuyển đổi nhanh giữa nhiều nhà cung cấp API (9router, RadoxAI, Together AI, SiliconFlow, Ollama LAN, vLLM...). Hệ thống tự động khử reasoning, lọc dữ liệu và bóc tách bảng phiếu kho.
                         </p>
                       </div>
 
@@ -7803,12 +6811,11 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                             <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                               <span className="text-[10px] font-semibold text-slate-500">Gợi ý:</span>
                               {[
+                                { name: '9router', url: 'https://api.dzcloud.io.vn/v1' },
                                 { name: 'RadoxAI', url: 'https://radoxai.com/v1' },
                                 { name: 'Together AI', url: 'https://api.together.xyz/v1' },
-                                { name: 'Groq', url: 'https://api.groq.com/openai/v1' },
                                 { name: 'SiliconFlow', url: 'https://api.siliconflow.cn/v1' },
                                 { name: 'DeepSeek', url: 'https://api.deepseek.com/v1' },
-                                { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
                                 { name: 'Ollama (Local)', url: 'http://localhost:11434/v1' },
                               ].map((pr) => (
                                 <button
@@ -7863,7 +6870,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                               {[
                                 { label: 'Qwen 2.5 VL 72B', id: 'Qwen/Qwen2.5-VL-72B-Instruct' },
                                 { label: 'Llama 3.2 11B Vision', id: 'meta-llama/Llama-3.2-11B-Vision-Instruct' },
-                                { label: 'Groq Llama 3.2 Vision', id: 'llama-3.2-11b-vision-preview' },
                                 { label: 'DeepSeek Chat', id: 'deepseek-chat' },
                                 { label: 'Ollama Vision', id: 'llama3.2-vision' },
                               ].map((pm) => (
@@ -8409,71 +7415,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                           </div>
                         </label>
                       ))}
-                    </div>
-                  </div>
-
-                  {/* PHIÊN BẢN GIAO DIỆN (UI VERSION) */}
-                  <div className="pt-3 border-t border-slate-200 space-y-2.5">
-                    <div>
-                      <div className="font-bold text-xs text-slate-800 flex items-center justify-between">
-                        <span className="flex items-center gap-1.5">
-                          <IconLayers className="w-4 h-4 text-blue-600" />
-                          <span>Phiên Bản Giao Diện Hệ Thống (UI Version)</span>
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-mono">Chuyển đổi UI</span>
-                      </div>
-                      <p className="text-xs text-slate-500 leading-relaxed mt-0.5">
-                        Lựa chọn phong cách giao diện phù hợp với sở thích của bạn:
-                      </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {/* V1 (Đang kích hoạt) */}
-                      <div className="p-3.5 rounded-xl border-2 border-blue-500 bg-blue-50/40 flex flex-col justify-between">
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
-                              <span>Giao Diện V1</span>
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">Bản Gốc</span>
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-500 mt-1 leading-snug">
-                            Giao diện truyền thống kinh điển với đầy đủ hiệu ứng nổi, màu sắc gradient và thanh công cụ quen thuộc.
-                          </p>
-                        </div>
-                        <div className="mt-3 flex items-center gap-1.5 text-xs font-bold text-blue-700">
-                          <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
-                          <span>Đang sử dụng</span>
-                        </div>
-                      </div>
-
-                      {/* V2 (Bản mới) */}
-                      <div className="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition-all flex flex-col justify-between shadow-sm">
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
-                              <span>Giao Diện V2</span>
-                              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-zinc-900 text-white">Mới</span>
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-500 mt-1 leading-snug">
-                            Thiết kế phẳng tối giản chuẩn Designer, đường nét 1px thanh mảnh, siêu nhẹ và tối ưu hiệu suất.
-                          </p>
-                        </div>
-                        <div className="mt-3">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              localStorage.setItem('preferred_ui_version', 'v2');
-                              window.location.href = '/v2';
-                            }}
-                            className="w-full py-2 px-3 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-sm transition-all flex items-center justify-center gap-1.5"
-                          >
-                            <span>Chuyển sang Giao Diện V2</span>
-                            <span>✨</span>
-                          </button>
-                        </div>
-                      </div>
                     </div>
                   </div>
                 </div>

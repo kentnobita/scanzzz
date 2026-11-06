@@ -212,13 +212,7 @@ export async function POST(request) {
       geminiModel: String(body.geminiModel || 'gemini-3.6-flash').trim(),
 
       // AI Provider & các nhà cung cấp khác
-      aiProvider: (body.aiProvider === 'apinex' ? 'gemini' : (body.aiProvider || 'gemini')),
-      openRouterKey: String(body.openRouterKey || '').trim(),
-      openRouterModel: String(body.openRouterModel || 'nex-agi/nex-n2.5-pro:free').trim(),
-      kiraKey: String(body.kiraKey || '').trim(),
-      kiraModel: String(body.kiraModel || 'qwen3.8-27b-free').trim(),
-      baiKey: String(body.baiKey || '').trim(),
-      baiModel: String(body.baiModel || 'DeepSeek-V4.1-Flash').trim(),
+      aiProvider: body.aiProvider === 'custom' ? 'custom' : 'gemini',
       customBaseUrl: String(body.customBaseUrl || '').trim(),
       customApiKey: String(body.customApiKey || '').trim(),
       customModel: String(body.customModel || '').trim(),
