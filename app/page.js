@@ -508,8 +508,13 @@ export default function Home() {
   const pdfInputRef = useRef(null);
   const cameraInputRef = useRef(null);
   const backupFileInputRef = useRef(null);
+  const moreFilesInputRef = useRef(null);
   const cropCanvasRef = useRef(null);
   const resultRef = useRef(null);
+
+  // Bộ lọc / thao tác nhanh cho modal danh sách ảnh - trang phiếu khi nạp nhiều file
+  const [pdfPageQuery, setPdfPageQuery] = useState('');
+  const [pdfPageFilter, setPdfPageFilter] = useState('all'); // all | selected | unselected
 
   const maskApiKey = (key) => {
     const val = String(key || '');
@@ -1213,6 +1218,27 @@ export default function Home() {
     setPdfPages((prev) => prev.map((p) => ({ ...p, selected: selectState })));
   };
 
+  // Xoá 1 ảnh/trang khỏi danh sách chờ quét (dùng khi lỡ nạp nhầm file)
+  const removePdfPage = (index) => {
+    setPdfPages((prev) => {
+      const next = prev.filter((_, idx) => idx !== index);
+      if (next.length === 0) {
+        setPdfModalOpen(false);
+        setSelectedPdfIndex(0);
+        return [];
+      }
+      const nextIndex = Math.min(selectedPdfIndex, next.length - 1);
+      setSelectedPdfIndex(nextIndex);
+      return next;
+    });
+  };
+
+  // Đảo trạng thái chọn của các trang đang hiển thị theo bộ lọc hiện tại
+  const toggleSelectFilteredPages = (visibleIndexes, selectState) => {
+    const set = new Set(visibleIndexes);
+    setPdfPages((prev) => prev.map((p, idx) => (set.has(idx) ? { ...p, selected: selectState } : p)));
+  };
+
   const convertImageToPageItem = (file, pageNum) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -1381,6 +1407,86 @@ export default function Home() {
   const processFile = useCallback((file) => {
     handleMultipleFiles([file]);
   }, [handleMultipleFiles]);
+
+  // Nạp thêm ảnh/PDF vào danh sách đang có (không thay thế danh sách cũ)
+  const appendMoreFiles = useCallback(async (filesList) => {
+    const files = Array.from(filesList || []).filter((f) =>
+      f.type === 'application/pdf' ||
+      /\.pdf$/i.test(f.name) ||
+      f.type.startsWith('image/') ||
+      /\.(jpe?g|png|webp|bmp)$/i.test(f.name)
+    );
+    if (files.length === 0) {
+      showToast('Định dạng không hỗ trợ (chỉ nhận PDF, JPG, PNG, WEBP)', 'error');
+      return;
+    }
+
+    try {
+      setIsProcessingPdf(true);
+      showToast(`➕ Đang thêm ${files.length} ảnh/tài liệu vào danh sách...`);
+
+      let pageCounter = pdfPages.length + 1;
+      const added = [];
+
+      for (const file of files) {
+        if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+          if (!window.pdfjsLib) {
+            await new Promise((resolve, reject) => {
+              const script = document.createElement('script');
+              script.src = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+              script.onload = () => {
+                window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+                resolve();
+              };
+              script.onerror = () => reject(new Error('Không thể tải PDF.js'));
+              document.head.appendChild(script);
+            });
+          }
+          const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+          for (let p = 1; p <= pdf.numPages; p++) {
+            const page = await pdf.getPage(p);
+            const viewport = page.getViewport({ scale: 2.0 });
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+            const fullUrl = canvas.toDataURL('image/jpeg', 0.92);
+            canvas.width = 0;
+            canvas.height = 0;
+
+            const thumbViewport = page.getViewport({ scale: 0.45 });
+            const thumbCanvas = document.createElement('canvas');
+            thumbCanvas.width = thumbViewport.width;
+            thumbCanvas.height = thumbViewport.height;
+            await page.render({ canvasContext: thumbCanvas.getContext('2d'), viewport: thumbViewport }).promise;
+            const thumbUrl = thumbCanvas.toDataURL('image/jpeg', 0.7);
+            thumbCanvas.width = 0;
+            thumbCanvas.height = 0;
+
+            added.push({
+              pageNum: pageCounter++,
+              name: `${file.name} (Trang ${p})`,
+              fullUrl,
+              thumbUrl,
+              base64: fullUrl.split(',')[1],
+              selected: true,
+            });
+            page.cleanup();
+          }
+        } else {
+          added.push(await convertImageToPageItem(file, pageCounter++));
+        }
+      }
+
+      setPdfPages((prev) => [...prev, ...added]);
+      showToast(`✅ Đã thêm ${added.length} ảnh/trang. Tổng: ${pdfPages.length + added.length}`, 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('❌ Lỗi khi thêm file: ' + e.message, 'error');
+    } finally {
+      setIsProcessingPdf(false);
+    }
+  }, [pdfPages.length, showToast]);
 
   // Mobile & Smart Clipboard Paste Logic
   const pasteFromClipboard = async () => {
@@ -4110,53 +4216,40 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       )}
 
       {/* Header */}
-      <header className="sticky top-0 z-40 glass-header text-white border-b border-slate-800 shadow-card">
-        <div className="max-w-[1200px] mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-blue-500/20 border border-blue-400/40 shrink-0 bg-blue-600">
+      <header className="sticky top-0 z-40 glass-header text-white border-b border-white/10">
+        <div className="max-w-[1200px] mx-auto px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl overflow-hidden ring-1 ring-white/15 shadow-glow-blue shrink-0 bg-blue-600">
               <img src="/favicon.png" alt="Aoko" className="w-full h-full object-cover" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">Scan Pro Max</h1>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                <h1 className="text-base sm:text-lg font-extrabold tracking-tight text-white truncate">Scan Pro Max</h1>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-blue-500/15 text-blue-200 ring-1 ring-blue-400/25 shrink-0">
                   v39.0.0
                 </span>
               </div>
-              <p className="text-xs text-slate-400 hidden sm:block">Trích xuất số phiếu & danh mục hàng hóa bằng AI</p>
+              <p className="text-[11px] sm:text-xs text-slate-400 hidden sm:block truncate">Trích xuất số phiếu & danh mục hàng hóa bằng AI</p>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Cloud Sync Button */}
             <button
               onClick={() => {
                 setSettingsTab('sync');
                 setSettingsOpen(true);
               }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-200 border ${
                 cloudSyncCode
-                  ? 'bg-blue-950/80 hover:bg-blue-900/90 text-blue-300 border-blue-600/60'
-                  : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700/60'
+                  ? 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500/60 shadow-glow-blue'
+                  : 'bg-white/8 hover:bg-white/14 text-slate-200 border-white/12'
               }`}
               title={cloudSyncCode ? `Đang đồng bộ cấu hình Cloud: ${cloudSyncCode}` : 'Đồng bộ cấu hình API & Google Sheet đa thiết bị'}
             >
-              <IconCloud className="w-4 h-4 text-blue-400" />
+              <IconCloud className={`w-4 h-4 ${cloudSyncCode ? 'text-white' : 'text-blue-300'}`} />
               <span className="hidden sm:inline">{isClientMounted && cloudSyncCode ? `Mã: ${cloudSyncCode}` : 'Đồng Bộ Cloud'}</span>
-            </button>
-
-            {/* Download Android APK Button */}
-            <button
-              onClick={() => {
-                setSettingsTab('android');
-                setSettingsOpen(true);
-              }}
-              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 border border-emerald-700/60 text-xs font-bold transition-all"
-              title="Tải ứng dụng Android (.APK) cho nhân viên kho"
-            >
-              <IconDevicePhone className="w-4 h-4 text-emerald-400" />
-              <span>App Android</span>
             </button>
 
             {/* Google Sheet indicator */}
@@ -4166,10 +4259,10 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   setSettingsTab('sheet');
                   setSettingsOpen(true);
                 }}
-                className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/80 hover:bg-emerald-900/90 text-emerald-300 border border-emerald-700/60 text-xs font-bold transition-all"
+                className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/8 hover:bg-white/14 text-slate-200 border border-white/12 text-xs font-bold transition-all duration-200"
                 title="Đã kết nối Google Sheet"
               >
-                <IconSpreadsheet className="w-4 h-4 text-emerald-400" />
+                <IconSpreadsheet className="w-4 h-4 text-emerald-300" />
                 <span>Sheet</span>
               </button>
             )}
@@ -4178,10 +4271,10 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             {isClientMounted && cloudSyncCode && (
               <button
                 onClick={() => setQrModalOpen(true)}
-                className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700/60"
+                className="p-2 rounded-xl bg-white/8 hover:bg-white/14 text-slate-200 hover:text-white border border-white/12 transition-all duration-200 active:scale-95"
                 title="Hiện mã QR để quét trên điện thoại"
               >
-                <IconQrCode className="w-5 h-5 text-blue-400" />
+                <IconQrCode className="w-5 h-5 text-blue-300" />
               </button>
             )}
 
@@ -4191,16 +4284,16 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 updateAnalyticsData(analyticsPeriod, analyticsSelectedModel, true);
                 setAnalyticsModalOpen(true);
               }}
-              className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 active:scale-95 transition-all text-slate-200 hover:text-white border border-slate-700/60 relative flex items-center gap-1.5"
+              className="p-2.5 rounded-xl bg-white/8 hover:bg-white/14 active:scale-95 transition-all duration-200 text-slate-200 hover:text-white border border-white/12 relative flex items-center gap-1.5"
               title="Thống kê quét toàn hệ thống & Biểu đồ phân bổ Model"
             >
-              <svg className="w-5 h-5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg className="w-5 h-5 text-indigo-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
               </svg>
               <span className="hidden xl:inline text-xs font-bold text-slate-200">Thống Kê</span>
               {isClientMounted && todayScanCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center border-2 border-slate-900 shadow-sm">
+                <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-navy-950 shadow-sm">
                   {todayScanCount}
                 </span>
               )}
@@ -4208,19 +4301,19 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
 
             <button
               onClick={() => setHistoryOpen(true)}
-              className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 active:scale-95 transition-all text-slate-200 hover:text-white border border-slate-700/60 relative"
+              className="p-2.5 rounded-xl bg-white/8 hover:bg-white/14 active:scale-95 transition-all duration-200 text-slate-200 hover:text-white border border-white/12 relative"
               title="Lịch sử phiếu đã quét trên thiết bị này"
             >
               <IconHistory className="w-5 h-5" />
               {scanHistory.length > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center border-2 border-slate-900">
+                <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-blue-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-navy-950">
                   {scanHistory.length}
                 </span>
               )}
             </button>
             <button
               onClick={() => setSettingsOpen(true)}
-              className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 active:scale-95 transition-all text-slate-200 hover:text-white border border-slate-700/60"
+              className="p-2.5 rounded-xl bg-white/8 hover:bg-white/14 active:scale-95 transition-all duration-200 text-slate-200 hover:text-white border border-white/12"
               title="Cài đặt & Cấu hình API, Cloud Sync, Google Sheet"
             >
               <IconSettings className="w-5 h-5" />
@@ -4230,11 +4323,11 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       </header>
 
       {/* Sub-header Status Indicator Bar & Quick Provider Switcher */}
-      <div className="bg-slate-100 border-b border-slate-200/80 py-2">
-        <div className="max-w-[1200px] mx-auto px-4 flex flex-wrap items-center justify-between gap-2 text-xs">
+      <div className="sticky top-[57px] z-30 subheader-glass border-b border-slate-200/70">
+        <div className="max-w-[1200px] mx-auto px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-            {/* Quick Provider Toggle */}
-            <div className="inline-flex items-center p-0.5 bg-slate-200/80 rounded-lg text-[11px] font-semibold">
+            {/* Quick Provider Toggle — segmented control */}
+            <div className="inline-flex items-center p-1 bg-slate-100 rounded-xl text-[11px] font-bold ring-1 ring-slate-200/70">
               <button
                 type="button"
                 onClick={() => {
@@ -4242,10 +4335,10 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   localStorage.setItem('ai_provider', 'gemini');
                   showToast('Đang dùng chế độ Google Gemini');
                 }}
-                className={`px-2 py-0.5 rounded-md transition-all ${
+                className={`px-2.5 py-1 rounded-lg transition-all duration-200 ${
                   aiProvider === 'gemini'
-                    ? 'bg-blue-600 text-white shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-white text-blue-700 shadow-sm ring-1 ring-slate-200/80'
+                    : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
                 Gemini
@@ -4257,10 +4350,10 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   localStorage.setItem('ai_provider', 'custom');
                   showToast('Đang dùng chế độ Tùy chỉnh (Custom API)');
                 }}
-                className={`px-2.5 py-0.5 rounded-md transition-all ${
+                className={`px-2.5 py-1 rounded-lg transition-all duration-200 ${
                   aiProvider === 'custom'
-                    ? 'bg-cyan-600 text-white shadow-xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-cyan-600 text-white shadow-sm'
+                    : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
                 Custom API
@@ -4312,14 +4405,14 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
             )}
 
             {isClientMounted && cloudSyncCode && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 text-[10px] font-bold ring-1 ring-blue-200/70">
                 <IconCloud className="w-3 h-3 text-blue-600" />
                 <span>Cloud: {cloudSyncCode}</span>
               </span>
             )}
 
             {isClientMounted && googleSheetUrl && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 text-[10px] font-bold ring-1 ring-emerald-200/70">
                 <IconSpreadsheet className="w-3 h-3 text-emerald-600" />
                 <span>Sheet đã kết nối</span>
               </span>
@@ -4339,44 +4432,46 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         {/* Left Column (Upload Card & History Desktop Widget) */}
         <div className="desktop-left space-y-4 sm:space-y-5">
           {/* Upload Card with 4 Distinct Buttons */}
-          <section className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-subtle hover:shadow-card transition-shadow">
+          <section className="bg-white rounded-card p-4 sm:p-5 border border-hairline shadow-card hover:shadow-elevated transition-all duration-300">
             <div className="flex items-center justify-between mb-3.5 sm:mb-4">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                <IconCamera className="w-4 h-4 text-blue-600" />
+              <h2 className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500 flex items-center gap-2">
+                <span className="w-6 h-6 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <IconCamera className="w-3.5 h-3.5" />
+                </span>
                 Chọn Nguồn Tài Liệu
               </h2>
-              <span className="text-[11px] font-medium text-slate-400">PDF, JPG, PNG, WEBP</span>
+              <span className="text-[10px] font-semibold text-slate-400 tracking-wide">PDF · JPG · PNG · WEBP</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
               {/* 1. Camera Scan */}
               <button
                 onClick={openCameraScanner}
-                className="group relative flex flex-col items-start p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-500 hover:to-indigo-600 text-white shadow-md shadow-blue-600/20 active:scale-[0.98] transition-all overflow-hidden text-left"
+                className="group relative flex flex-col items-start p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-indigo-700 hover:from-blue-500 hover:to-indigo-600 text-white shadow-glow-blue hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-200 overflow-hidden text-left"
               >
                 <div className="flex items-center justify-between w-full mb-2">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white shadow-xs">
-                    <IconCamera className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-white ring-1 ring-white/25">
+                    <IconCamera className="w-4 h-4" />
                   </div>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white backdrop-blur-xs">
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-white/20 text-white backdrop-blur-sm">
                     Live
                   </span>
                 </div>
                 <span className="font-bold text-xs sm:text-sm text-white leading-tight">Quét Camera</span>
-                <span className="text-[10px] sm:text-[11px] text-blue-100/80 mt-0.5">Chụp trực tiếp từ kho</span>
+                <span className="text-[10px] sm:text-[11px] text-blue-100/85 mt-0.5">Chụp trực tiếp từ kho</span>
               </button>
 
               {/* 2. Pick Image */}
               <button
                 onClick={() => imageInputRef.current?.click()}
-                className="group relative flex flex-col items-start p-3.5 sm:p-4 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-200/90 hover:border-blue-400 shadow-xs hover:shadow-sm active:scale-[0.98] transition-all text-left"
+                className="group relative flex flex-col items-start p-3.5 sm:p-4 rounded-2xl bg-white hover:bg-blue-50/40 text-slate-800 border border-hairline hover:border-blue-300 shadow-subtle hover:shadow-card hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-200 text-left"
                 title="Chọn 1 hoặc nhiều ảnh phiếu cùng lúc (JPG, PNG, WEBP)"
               >
                 <div className="flex items-center justify-between w-full mb-2">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-50 group-hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors">
-                    <IconUpload className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 group-hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors duration-200">
+                    <IconUpload className="w-4 h-4" />
                   </div>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600">
+                  <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-500">
                     Nhiều ảnh
                   </span>
                 </div>
@@ -4388,52 +4483,52 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               <button
                 onClick={() => pdfInputRef.current?.click()}
                 disabled={isProcessingPdf}
-                className="group relative flex flex-col items-start p-3.5 sm:p-4 rounded-2xl bg-indigo-50/50 hover:bg-indigo-50/80 text-indigo-950 border border-indigo-200/70 hover:border-indigo-400 shadow-xs hover:shadow-sm active:scale-[0.98] transition-all text-left disabled:opacity-50"
+                className="group relative flex flex-col items-start p-3.5 sm:p-4 rounded-2xl bg-white hover:bg-indigo-50/40 text-slate-800 border border-hairline hover:border-indigo-300 shadow-subtle hover:shadow-card hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-200 text-left disabled:opacity-50 disabled:hover:translate-y-0"
                 title="Chọn file tài liệu PDF 1 hoặc nhiều trang"
               >
                 <div className="flex items-center justify-between w-full mb-2">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 group-hover:bg-indigo-100 text-indigo-600 flex items-center justify-center transition-colors duration-200">
                     {isProcessingPdf ? (
                       <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
                     ) : (
-                      <IconLayers className="w-4 h-4 sm:w-5 sm:h-5" />
+                      <IconLayers className="w-4 h-4" />
                     )}
                   </div>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100/80 text-indigo-700">
+                  <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-indigo-50 text-indigo-600">
                     Đa trang
                   </span>
                 </div>
-                <span className="font-bold text-xs sm:text-sm text-indigo-950 leading-tight">Chọn File PDF</span>
-                <span className="text-[10px] sm:text-[11px] text-indigo-600/75 mt-0.5">1 hoặc nhiều trang</span>
+                <span className="font-bold text-xs sm:text-sm text-slate-800 leading-tight">Chọn File PDF</span>
+                <span className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5">1 hoặc nhiều trang</span>
               </button>
 
               {/* 4. Paste Clipboard */}
               <button
                 onClick={pasteFromClipboard}
-                className="group relative flex flex-col items-start p-3.5 sm:p-4 rounded-2xl bg-cyan-50/50 hover:bg-cyan-50/80 text-cyan-950 border border-cyan-200/70 hover:border-cyan-400 shadow-xs hover:shadow-sm active:scale-[0.98] transition-all text-left"
+                className="group relative flex flex-col items-start p-3.5 sm:p-4 rounded-2xl bg-white hover:bg-cyan-50/40 text-slate-800 border border-hairline hover:border-cyan-300 shadow-subtle hover:shadow-card hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] transition-all duration-200 text-left"
                 title="Dán từ bộ nhớ tạm (Hỗ trợ cả Mobile & PC Ctrl+V)"
               >
                 <div className="flex items-center justify-between w-full mb-2">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-cyan-100 text-cyan-700 flex items-center justify-center">
-                    <IconClipboard className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <div className="w-9 h-9 rounded-xl bg-cyan-50 group-hover:bg-cyan-100 text-cyan-600 flex items-center justify-center transition-colors duration-200">
+                    <IconClipboard className="w-4 h-4" />
                   </div>
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-100/90 text-cyan-800">
+                  <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-cyan-50 text-cyan-600">
                     Mobile OK
                   </span>
                 </div>
-                <span className="font-bold text-xs sm:text-sm text-cyan-950 leading-tight">Dán Clipboard</span>
-                <span className="text-[10px] sm:text-[11px] text-cyan-700/80 mt-0.5">Dán nhanh từ bộ nhớ</span>
+                <span className="font-bold text-xs sm:text-sm text-slate-800 leading-tight">Dán Clipboard</span>
+                <span className="text-[10px] sm:text-[11px] text-slate-400 mt-0.5">Dán nhanh từ bộ nhớ</span>
               </button>
             </div>
 
             {/* Feature Badges */}
-            <div className="mt-4 p-3 bg-blue-50/70 border border-blue-100 rounded-xl space-y-1.5 text-xs text-blue-900 leading-relaxed">
-              <div className="flex items-center gap-1.5 font-bold">
-                <IconCheck className="w-3.5 h-3.5 text-blue-600" />
+            <div className="mt-4 p-3 bg-slate-50/80 border border-hairline rounded-xl space-y-1.5 text-[11px] text-slate-600 leading-relaxed">
+              <div className="flex items-start gap-2 font-semibold">
+                <IconCheck className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.5" />
                 <span>Chọn nhiều ảnh hoặc kéo thả trực tiếp nhiều file vào màn hình</span>
               </div>
-              <div className="flex items-center gap-1.5 font-bold">
-                <IconCloud className="w-3.5 h-3.5 text-blue-600" />
+              <div className="flex items-start gap-2 font-semibold">
+                <IconCloud className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.5" />
                 <span>Tự động đồng bộ cấu hình API & Google Sheet</span>
               </div>
             </div>
@@ -4479,17 +4574,19 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
           </section>
 
           {/* History Widget (Desktop Sidebar) */}
-          <section className="bg-white rounded-2xl p-5 border border-slate-200 shadow-subtle hidden lg:block">
+          <section className="bg-white rounded-card p-5 border border-hairline shadow-card hidden lg:block">
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-2">
-                <IconHistory className="w-4 h-4 text-slate-500" />
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">Lịch sử phiếu đã lưu</h3>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 font-mono">
+                <span className="w-7 h-7 rounded-lg bg-slate-100 text-slate-500 flex items-center justify-center">
+                  <IconHistory className="w-3.5 h-3.5" />
+                </span>
+                <h3 className="text-xs font-bold uppercase tracking-[0.08em] text-slate-600">Lịch sử phiếu đã lưu</h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 font-mono">
                   {scanHistory.length}/{MAX_HISTORY_ITEMS}
                 </span>
               </div>
               {scanHistory.length > 0 && (
-                <button onClick={clearAllHistory} className="text-xs text-red-600 hover:underline">
+                <button onClick={clearAllHistory} className="text-[11px] font-semibold text-red-600 hover:text-red-700 hover:underline transition-colors">
                   Xóa tất cả
                 </button>
               )}
@@ -4502,37 +4599,37 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   <div
                     key={item.id}
                     onClick={() => loadHistoryItem(item)}
-                    className="p-3 rounded-xl border border-slate-200/80 hover:border-blue-400 hover:bg-blue-50/40 cursor-pointer transition-all flex items-center justify-between gap-3 group"
+                    className="group p-3 rounded-xl border border-hairline hover:border-blue-300 hover:bg-blue-50/40 cursor-pointer transition-all duration-200 flex items-center justify-between gap-3"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="font-mono font-bold text-sm text-slate-800 truncate flex items-center gap-1.5">
                         <span>{item.soPhieu || 'Chưa có số phiếu'}</span>
                         {item.pageResults?.length > 1 && (
-                          <span className="px-1.5 py-0.2 rounded bg-blue-100 text-blue-700 text-[10px] font-bold">
-                            {item.pageResults.length} trang tách biệt
+                          <span className="px-1.5 py-0.2 rounded-md bg-blue-50 text-blue-700 text-[10px] font-bold ring-1 ring-blue-200/70">
+                            {item.pageResults.length} trang
                           </span>
                         )}
                       </div>
                       <div className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5 flex-wrap">
                         {item.scannedModelInfo && (
-                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${item.scannedModelInfo.badgeColor || 'bg-slate-100 text-slate-700'}`}>
+                          <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold ${item.scannedModelInfo.badgeColor || 'bg-slate-100 text-slate-700'}`}>
                             {item.scannedModelInfo.badgeText?.replace('✨ ', '') || item.scannedModelInfo.modelName || item.scannedModelInfo.engine}
                           </span>
                         )}
                         <span>{formatDate(item.updatedAt || item.createdAt)}</span>
-                        <span>•</span>
-                        <span className="font-medium text-slate-600">{item.items?.length || 0} dòng hàng</span>
+                        <span className="text-slate-300">•</span>
+                        <span className="font-semibold text-slate-500">{item.items?.length || 0} dòng</span>
                         {item.durationMs && (
                           <>
-                            <span>•</span>
-                            <span className="font-mono text-slate-600 font-medium">⏱️ {formatDuration(item.durationMs)}</span>
+                            <span className="text-slate-300">•</span>
+                            <span className="font-mono text-slate-500 font-medium">⏱️ {formatDuration(item.durationMs)}</span>
                           </>
                         )}
                       </div>
                     </div>
                     <button
                       onClick={(e) => deleteHistoryItem(item.id, e)}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all"
+                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all duration-200"
                       title="Xóa phiếu"
                     >
                       <IconTrash className="w-4 h-4" />
@@ -4540,7 +4637,15 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   </div>
                 ))
               ) : (
-                <div className="py-8 text-center text-xs text-slate-400">Chưa có phiếu nào được lưu</div>
+                <div className="py-10 flex flex-col items-center justify-center text-center gap-2">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-hairline flex items-center justify-center">
+                    <IconHistory className="w-5 h-5 text-slate-300" />
+                  </div>
+                  <div className="text-xs font-bold text-slate-500">Chưa có phiếu nào được lưu</div>
+                  <div className="text-[11px] text-slate-400 max-w-[200px] leading-relaxed">
+                    Quét phiếu đầu tiên, kết quả sẽ tự động lưu tại đây để tra cứu lại.
+                  </div>
+                </div>
               )}
             </div>
           </section>
@@ -4550,29 +4655,31 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
         <div className="desktop-right space-y-5">
           {/* Preview & Image Studio Card */}
           {previewSrc ? (
-            <section className="bg-white rounded-2xl p-5 border border-slate-200 shadow-subtle animate-fade-in">
+            <section className="bg-white rounded-card p-4 sm:p-5 border border-hairline shadow-card animate-fade-in">
               <div className="flex items-center justify-between mb-3.5">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
-                  <IconFileText className="w-4 h-4 text-blue-600" />
+                <h3 className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500 flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                    <IconFileText className="w-3.5 h-3.5" />
+                  </span>
                   Ảnh Xem Trước & Chỉnh Sửa
                 </h3>
                 <div className="flex items-center gap-2">
                   {pdfPages.length > 1 && (
                     <button
                       onClick={() => setPdfModalOpen(true)}
-                      className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-bold flex items-center gap-1 border border-blue-200"
+                      className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-[11px] font-bold flex items-center gap-1 ring-1 ring-blue-200/80 transition-colors duration-200"
                       title="Mở danh sách các ảnh/trang đã nạp để chọn quét hàng loạt"
                     >
                       <IconLayers className="w-3.5 h-3.5" />
                       <span>Xem & Chọn {pdfPages.length} ảnh/trang</span>
                     </button>
                   )}
-                  <span className="text-xs font-medium text-slate-500 font-mono">Đã sẵn sàng</span>
+                  <span className="text-[11px] font-semibold text-slate-400 font-mono">Đã sẵn sàng</span>
                 </div>
               </div>
 
               {/* Image Canvas Viewport */}
-              <div className="relative w-full rounded-xl overflow-hidden border border-slate-200 bg-slate-950 flex items-center justify-center min-h-[260px] max-h-[500px]">
+              <div className="relative w-full rounded-xl overflow-hidden border border-hairline bg-slate-950 flex items-center justify-center min-h-[260px] max-h-[500px] ring-1 ring-black/5">
                 <img src={previewSrc} alt="Preview" className="w-full h-full object-contain max-h-[480px]" />
 
                 {isScanning && (
@@ -4583,44 +4690,44 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               </div>
 
               {/* Segmented Image Studio Toolbar */}
-              <div className="flex flex-wrap items-center gap-2 mt-4 p-2 bg-slate-50 rounded-xl border border-slate-200/80">
+              <div className="flex flex-wrap items-center gap-1.5 mt-4 p-1.5 bg-slate-50 rounded-xl border border-hairline">
                 <button
                   onClick={() => rotatePreview(-90)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold border border-slate-200 active:scale-95 transition-all"
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-600 hover:text-slate-900 text-[11px] font-semibold border border-hairline active:scale-95 transition-all duration-150"
                 >
-                  <IconRotateLeft className="w-4 h-4" />
+                  <IconRotateLeft className="w-3.5 h-3.5" />
                   <span>Xoay trái</span>
                 </button>
                 <button
                   onClick={() => rotatePreview(90)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold border border-slate-200 active:scale-95 transition-all"
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-600 hover:text-slate-900 text-[11px] font-semibold border border-hairline active:scale-95 transition-all duration-150"
                 >
-                  <IconRotateRight className="w-4 h-4" />
+                  <IconRotateRight className="w-3.5 h-3.5" />
                   <span>Xoay phải</span>
                 </button>
                 <button
                   onClick={openCropEditor}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold border border-slate-200 active:scale-95 transition-all"
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-600 hover:text-slate-900 text-[11px] font-semibold border border-hairline active:scale-95 transition-all duration-150"
                 >
-                  <IconCrop className="w-4 h-4" />
+                  <IconCrop className="w-3.5 h-3.5" />
                   <span>Cắt góc</span>
                 </button>
                 <button
                   onClick={toggleSharpen}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold border active:scale-95 transition-all ${
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border active:scale-95 transition-all duration-150 ${
                     imageSharpened
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                      : 'bg-white hover:bg-slate-100 text-slate-600 hover:text-slate-900 border-hairline'
                   }`}
                 >
-                  <IconSparkles className="w-4 h-4" />
+                  <IconSparkles className="w-3.5 h-3.5" />
                   <span>{imageSharpened ? 'Tắt làm nét' : 'Làm nét'}</span>
                 </button>
                 <button
                   onClick={resetImageEdits}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-500 text-xs font-semibold border border-slate-200 active:scale-95 transition-all ml-auto"
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-400 hover:text-slate-600 text-[11px] font-semibold border border-hairline active:scale-95 transition-all duration-150 ml-auto"
                 >
-                  <IconRefresh className="w-4 h-4" />
+                  <IconRefresh className="w-3.5 h-3.5" />
                   <span>Đặt lại</span>
                 </button>
               </div>
@@ -4792,16 +4899,16 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
           {resultVisible && (
             <section ref={resultRef} className="space-y-6 animate-slide-up">
               {/* Results Control Header */}
-              <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-subtle space-y-4">
+              <div className="bg-white rounded-card p-4 sm:p-5 border border-hairline shadow-card space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-800">Kết quả trích xuất</h3>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <h3 className="text-sm font-extrabold tracking-tight text-slate-900 mr-1">Kết quả trích xuất</h3>
                     <span
-                      className={`px-2.5 py-0.5 rounded-full text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 ${
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all flex items-center gap-1.5 ${
                         scannedModelInfo?.badgeColor ||
                         (engineBadge === 'custom'
-                          ? 'bg-cyan-100 text-cyan-800 border border-cyan-200'
-                          : 'bg-blue-100 text-blue-800 border border-blue-200')
+                          ? 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200/80'
+                          : 'bg-blue-50 text-blue-700 ring-1 ring-blue-200/80')
                       }`}
                     >
                       {scannedModelInfo?.badgeText || (
@@ -4811,45 +4918,47 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                       )}
                     </span>
                     {scanDurationMs !== null && scanDurationMs !== undefined && (
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 bg-slate-100 text-slate-700 border border-slate-200" title="Thời gian quét phiếu">
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 bg-slate-50 text-slate-600 ring-1 ring-slate-200/80 font-mono" title="Thời gian quét phiếu">
                         <span>⏱️</span>
                         <span>{formatDuration(scanDurationMs)}</span>
                       </span>
                     )}
                     {scanTokenUsage && scanTokenUsage.totalTokens > 0 && (
                       <span
-                        className="px-2.5 py-0.5 rounded-full text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 bg-indigo-50 text-indigo-700 border border-indigo-200 font-mono"
+                        className="px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200/80 font-mono"
                         title={`Tổng token sử dụng${scanTokenUsage.isEstimated ? ' (ước tính)' : ''} • Đầu vào (Ảnh + Prompt): ${scanTokenUsage.promptTokens.toLocaleString('vi-VN')} | Đầu ra (JSON): ${scanTokenUsage.completionTokens.toLocaleString('vi-VN')}`}
                       >
                         <span>🪙</span>
                         <span>
                           {scanTokenUsage.isEstimated ? '~' : ''}{scanTokenUsage.totalTokens.toLocaleString('vi-VN')} tokens
                         </span>
-                        <span className="text-[10px] font-normal text-indigo-600">
+                        <span className="text-[10px] font-normal text-indigo-500">
                           · In: {scanTokenUsage.promptTokens.toLocaleString('vi-VN')} / Out: {scanTokenUsage.completionTokens.toLocaleString('vi-VN')}
                         </span>
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                    <span>Tổng {tableItems.length} dòng hàng</span>
-                    {isMultiPage && <span className="text-blue-600 font-bold font-mono">({pageResults.length} trang riêng biệt)</span>}
+                  <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500">
+                    <span className="px-2 py-1 rounded-lg bg-slate-50 ring-1 ring-slate-200/70">
+                      Tổng {tableItems.length} dòng hàng
+                    </span>
+                    {isMultiPage && <span className="text-blue-600 font-bold font-mono">({pageResults.length} trang)</span>}
                   </div>
                 </div>
 
                 {/* Multi-Page View Switcher */}
                 {isMultiPage && (
-                  <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-2xl overflow-x-auto">
+                  <div className="flex items-center gap-1 p-1 bg-slate-100/90 rounded-xl overflow-x-auto ring-1 ring-slate-200/60">
                     <button
                       onClick={() => setActiveResultTab('separate')}
-                      className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap shadow-sm ${
+                      className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[11px] font-bold transition-all duration-200 whitespace-nowrap ${
                         activeResultTab === 'separate'
-                          ? 'bg-blue-600 text-white shadow-blue-500/20'
-                          : 'bg-white text-slate-700 hover:bg-slate-50'
+                          ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80'
+                          : 'text-slate-500 hover:text-slate-800'
                       }`}
                     >
                       <IconLayers className="w-3.5 h-3.5" />
-                      <span>📑 Tách Riêng {pageResults.length} Trang (Độc lập)</span>
+                      <span>📑 Tách Riêng {pageResults.length} Trang</span>
                     </button>
 
                     {pageResults.map((p) => {
@@ -4859,24 +4968,26 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                         <button
                           key={p.pageNum}
                           onClick={() => setActiveResultTab(p.pageNum)}
-                          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-bold transition-all duration-200 whitespace-nowrap ${
                             isActive
                               ? isError
                                 ? 'bg-red-600 text-white shadow-sm'
-                                : 'bg-blue-600 text-white shadow-sm'
+                                : 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200/80'
                               : isError
-                              ? 'bg-red-50 hover:bg-red-100 text-red-700 border border-red-200'
-                              : 'bg-white/70 hover:bg-white text-slate-700'
+                              ? 'text-red-600 hover:bg-red-50'
+                              : 'text-slate-500 hover:text-slate-800'
                           }`}
                         >
-                          <span>{isError ? '⚠️' : '📄'} Chỉ Trang {p.pageNum}</span>
+                          <span>{isError ? '⚠️' : '📄'} Trang {p.pageNum}</span>
                           <span
                             className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
                               isActive
-                                ? 'bg-black/20 text-white'
+                                ? isError
+                                  ? 'bg-black/20 text-white'
+                                  : 'bg-slate-100 text-slate-600'
                                 : isError
-                                ? 'bg-red-200 text-red-800'
-                                : 'bg-slate-200 text-slate-700'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-slate-200/80 text-slate-600'
                             }`}
                           >
                             {isError ? 'Lỗi' : `${p.items.length} dòng`}
@@ -4894,52 +5005,48 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                   {(pageResults.length ? pageResults : [{ pageNum: 1, soPhieu, items: tableItems, previewUrl: previewSrc }]).map((page) => (
                     <div
                       key={page.pageNum}
-                      className={`bg-white rounded-3xl p-5 sm:p-6 border-2 shadow-card space-y-5 animate-fade-in ${
-                        page.status === 'error' ? 'border-red-300 ring-2 ring-red-500/20' : 'border-slate-200/90'
+                      className={`bg-white rounded-card p-4 sm:p-6 border shadow-card space-y-5 animate-fade-in transition-shadow duration-300 hover:shadow-elevated ${
+                        page.status === 'error' ? 'border-red-200 ring-1 ring-red-500/15' : 'border-hairline'
                       }`}
                     >
                       {/* Page Card Header */}
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3.5">
-                        <div className="flex items-center gap-2.5">
+                        <div className="flex items-center gap-2.5 min-w-0">
                           <div
-                            className={`w-8 h-8 rounded-xl font-bold flex items-center justify-center text-sm shadow-sm ${
-                              page.status === 'error' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'
+                            className={`w-9 h-9 rounded-xl font-extrabold flex items-center justify-center text-sm text-white shrink-0 shadow-sm ${
+                              page.status === 'error'
+                                ? 'bg-gradient-to-br from-red-600 to-red-700'
+                                : 'bg-gradient-to-br from-blue-600 to-indigo-700'
                             }`}
                           >
                             {page.pageNum}
                           </div>
-                          <div>
-                            <h4 className="font-extrabold text-base text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                          <div className="min-w-0">
+                            <h4 className="font-extrabold text-sm sm:text-base text-slate-900 tracking-tight flex items-center gap-2">
                               <span>Kết Quả Trang {page.pageNum}</span>
                               {page.status === 'error' && (
-                                <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-800 text-[10px] font-bold">
+                                <span className="px-2 py-0.5 rounded-full bg-red-50 text-red-700 text-[10px] font-bold ring-1 ring-red-200/80">
                                   Lỗi nhận diện
                                 </span>
                               )}
                             </h4>
-                            <span className="text-xs text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap">
-                              <span>
+                            <div className="text-[11px] text-slate-500 font-semibold flex items-center gap-1.5 flex-wrap mt-0.5">
+                              <span className="px-1.5 py-0.2 rounded-md bg-slate-50 ring-1 ring-slate-200/70">
                                 {page.status === 'error'
-                                  ? 'Trang này chưa trích xuất được bảng hàng hóa'
-                                  : `${page.items.length} dòng hàng của trang ${page.pageNum}`}
+                                  ? 'Chưa trích xuất được bảng hàng hóa'
+                                  : `${page.items.length} dòng hàng`}
                               </span>
                               {page.durationMs && (
-                                <>
-                                  <span>•</span>
-                                  <span className={page.status === 'error' ? 'text-red-600 font-bold' : 'text-slate-600 font-bold'}>
-                                    ⏱️ {page.status === 'error' ? `Lỗi sau ${formatDuration(page.durationMs)}` : formatDuration(page.durationMs)}
-                                  </span>
-                                </>
+                                <span className={`px-1.5 py-0.2 rounded-md font-mono ${page.status === 'error' ? 'bg-red-50 text-red-600 ring-1 ring-red-200/70' : 'bg-slate-50 text-slate-600 ring-1 ring-slate-200/70'}`}>
+                                  ⏱️ {page.status === 'error' ? `Lỗi sau ${formatDuration(page.durationMs)}` : formatDuration(page.durationMs)}
+                                </span>
                               )}
                               {page.tokenUsage && page.tokenUsage.totalTokens > 0 && (
-                                <>
-                                  <span>•</span>
-                                  <span className="text-indigo-600 font-bold font-mono" title={`In: ${page.tokenUsage.promptTokens.toLocaleString('vi-VN')} / Out: ${page.tokenUsage.completionTokens.toLocaleString('vi-VN')}`}>
-                                    🪙 {page.tokenUsage.isEstimated ? '~' : ''}{page.tokenUsage.totalTokens.toLocaleString('vi-VN')} tokens (In: {page.tokenUsage.promptTokens.toLocaleString('vi-VN')} / Out: {page.tokenUsage.completionTokens.toLocaleString('vi-VN')})
-                                  </span>
-                                </>
+                                <span className="px-1.5 py-0.2 rounded-md bg-indigo-50 text-indigo-600 font-mono ring-1 ring-indigo-200/70" title={`In: ${page.tokenUsage.promptTokens.toLocaleString('vi-VN')} / Out: ${page.tokenUsage.completionTokens.toLocaleString('vi-VN')}`}>
+                                  🪙 {page.tokenUsage.isEstimated ? '~' : ''}{page.tokenUsage.totalTokens.toLocaleString('vi-VN')}
+                                </span>
                               )}
-                            </span>
+                            </div>
                           </div>
                         </div>
 
@@ -5058,9 +5165,11 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                       )}
 
                       {/* Slip Number Ticket for this Page */}
-                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50/70 p-4 rounded-2xl border border-blue-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="flex-1">
-                          <div className="text-[11px] font-bold uppercase tracking-wider text-blue-800 flex items-center gap-2">
+                      <div className="relative overflow-hidden bg-gradient-to-br from-navy-950 via-navy-900 to-navy-800 p-4 sm:p-5 rounded-2xl ring-1 ring-white/10 shadow-elevated flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="absolute -right-10 -top-10 w-32 h-32 rounded-full bg-blue-500/15 blur-2xl pointer-events-none" />
+                        <div className="flex-1 min-w-0 relative">
+                          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-300 flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
                             <span>Số Phiếu — Trang {page.pageNum}</span>
                           </div>
                           <input
@@ -5068,50 +5177,51 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                             value={page.soPhieu || ''}
                             onChange={(e) => updatePageSoPhieu(page.pageNum, e.target.value)}
                             placeholder={`Chưa có số phiếu Trang ${page.pageNum}...`}
-                            className="font-mono text-xl font-extrabold text-blue-900 bg-transparent border-none outline-none focus:ring-0 p-0 w-full"
+                            className="font-mono text-xl sm:text-2xl font-extrabold text-white bg-transparent border-none outline-none focus:ring-0 p-0 w-full placeholder:text-slate-500 placeholder:font-semibold placeholder:text-base mt-1"
                           />
                         </div>
                         <button
                           onClick={() => copyToClipboard(page.soPhieu, `sp_p${page.pageNum}`)}
-                          className="self-start sm:self-center flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white hover:bg-blue-50 text-blue-700 font-semibold text-xs border border-blue-200 shadow-sm active:scale-95 transition-all"
+                          className="relative self-start sm:self-center flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs border border-white/15 backdrop-blur-sm active:scale-95 transition-all duration-200 shrink-0"
                         >
                           {copiedKey === `sp_p${page.pageNum}` ? (
-                            <IconCheck className="w-4 h-4 text-emerald-600" />
+                            <IconCheck className="w-4 h-4 text-emerald-400" />
                           ) : (
                             <IconCopy className="w-4 h-4" />
                           )}
-                          <span>{copiedKey === `sp_p${page.pageNum}` ? 'Đã sao chép' : `Sao chép số phiếu P.${page.pageNum}`}</span>
+                          <span>{copiedKey === `sp_p${page.pageNum}` ? 'Đã sao chép' : `Sao chép P.${page.pageNum}`}</span>
                         </button>
                       </div>
 
                       {/* Items Table for this Page with STT starting from 1 */}
                       <div>
-                        <div className="text-xs font-bold uppercase tracking-wider text-slate-600 mb-2">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 mb-2 flex items-center gap-2">
+                          <span className="w-1 h-3 rounded-full bg-blue-500" />
                           Bảng danh mục hàng hóa (Trang {page.pageNum})
                         </div>
-                        <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-                          <table className="w-full text-xs text-left border-collapse">
-                              <thead className="bg-slate-100 text-slate-600 uppercase font-bold text-[10px] border-b border-slate-200">
+                        <div className="overflow-x-auto border border-hairline rounded-2xl bg-white">
+                          <table className="data-table w-full text-xs text-left border-collapse">
+                              <thead className="bg-slate-50/95 text-slate-500 uppercase font-bold text-[10px] border-b border-hairline">
                                 <tr>
-                                  <th className="p-2.5 text-center w-10 text-[10px]">STT</th>
+                                  <th className="p-2.5 text-center w-10 text-[10px] tracking-wider">STT</th>
                                   {selectedColumns.map((k) => (
                                     <th
                                       key={k}
-                                      className={`p-2.5 whitespace-nowrap text-[10px] ${
+                                      className={`p-2.5 whitespace-nowrap text-[10px] tracking-wider ${
                                         k === 'ten' ? 'min-w-[220px] sm:min-w-[280px]' : 'min-w-[85px]'
                                       }`}
                                     >
                                       {COLUMN_DEFS[k]?.short || k}
                                     </th>
                                   ))}
-                                  <th className="p-2.5 text-center w-12 text-[10px]">Copy</th>
+                                  <th className="p-2.5 text-center w-12 text-[10px]"></th>
                                 </tr>
                               </thead>
                             <tbody className="divide-y divide-slate-100">
                               {page.items.length > 0 ? (
                                 page.items.map((item, idx) => (
-                                  <tr key={idx} className="hover:bg-blue-50/30 transition-colors">
-                                    <td className="p-2 text-center font-mono font-bold text-slate-500 bg-slate-50/50">
+                                  <tr key={idx} className="group/row transition-colors duration-150">
+                                    <td className="p-2 text-center font-mono font-bold text-slate-400 bg-slate-50/60 text-[11px]">
                                       {idx + 1}
                                     </td>
                                     {selectedColumns.map((k) => (
@@ -5122,7 +5232,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                                             value={item[k] || ''}
                                             onChange={(e) => updatePageItemCell(page.pageNum, idx, k, e.target.value)}
                                             placeholder={COLUMN_DEFS[k]?.short}
-                                            className="w-full px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 focus:border-blue-500 focus:bg-white bg-transparent font-medium text-xs text-slate-900 outline-none transition-all resize-none leading-snug break-words"
+                                            className="w-full px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 hover:bg-white focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/15 bg-transparent font-medium text-xs text-slate-900 outline-none transition-all duration-150 resize-none leading-snug break-words"
                                           />
                                         ) : (
                                           <input
@@ -5138,7 +5248,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                                               }
                                             }}
                                             placeholder={COLUMN_DEFS[k]?.short}
-                                            className="w-full px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 focus:border-blue-500 focus:bg-white bg-transparent font-mono text-xs text-slate-800 outline-none transition-all"
+                                            className="w-full px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 hover:bg-white focus:border-blue-500 focus:bg-white focus:ring-2 focus:ring-blue-500/15 bg-transparent font-mono text-xs text-slate-800 outline-none transition-all duration-150"
                                           />
                                         )}
                                       </td>
@@ -5149,7 +5259,7 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                                           const values = selectedColumns.map((k) => (item[k] || '').trim()).filter(Boolean);
                                           copyToClipboard(values.join(' | '), `p${page.pageNum}_row_${idx}`);
                                         }}
-                                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
+                                        className="p-1.5 rounded-lg text-slate-300 hover:text-blue-600 hover:bg-blue-50 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 transition-all duration-150"
                                         title="Sao chép dòng này"
                                       >
                                         {copiedKey === `p${page.pageNum}_row_${idx}` ? (
@@ -5163,8 +5273,13 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                                 ))
                               ) : (
                                 <tr>
-                                  <td colSpan={selectedColumns.length + 2} className="p-8 text-center text-slate-400">
-                                    Trang này chưa có dữ liệu hàng hóa
+                                  <td colSpan={selectedColumns.length + 2} className="p-10 text-center">
+                                    <div className="flex flex-col items-center gap-2">
+                                      <div className="w-10 h-10 rounded-xl bg-slate-50 border border-hairline flex items-center justify-center">
+                                        <IconLayers className="w-4 h-4 text-slate-300" />
+                                      </div>
+                                      <div className="text-xs font-semibold text-slate-500">Trang này chưa có dữ liệu hàng hóa</div>
+                                    </div>
                                   </td>
                                 </tr>
                               )}
@@ -5174,28 +5289,28 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                       </div>
 
                       {/* Column Quick Copy Chips for this Specific Page */}
-                      <div className="pt-2">
-                        <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                      <div className="pt-1">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 mb-2">
                           Sao chép nhanh theo cột — Trang {page.pageNum}
                         </div>
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-1.5">
                           {selectedColumns.map((k) => (
                             <button
                               key={k}
                               onClick={() => copyColumn(k, page.items, `p${page.pageNum}_`)}
-                              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-semibold text-xs border transition-all active:scale-95 ${
+                              className={`group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-semibold text-[11px] transition-all duration-200 active:scale-95 ${
                                 copiedKey === `p${page.pageNum}_col_${k}`
-                                  ? 'bg-emerald-600 text-white border-emerald-600'
-                                  : 'bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border-slate-200/80 hover:border-blue-200'
+                                  ? 'bg-emerald-600 text-white ring-1 ring-emerald-600'
+                                  : 'bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-blue-700 ring-1 ring-slate-200/70 hover:ring-blue-200'
                               }`}
                             >
                               {copiedKey === `p${page.pageNum}_col_${k}` ? (
                                 <IconCheck className="w-3.5 h-3.5" />
                               ) : (
-                                <IconCopy className="w-3.5 h-3.5 text-slate-400" />
+                                <IconCopy className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600" />
                               )}
-                              <span>{COLUMN_DEFS[k]?.short} (Trang {page.pageNum})</span>
-                              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-700 font-mono">
+                              <span>{COLUMN_DEFS[k]?.short}</span>
+                              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${copiedKey === `p${page.pageNum}_col_${k}` ? 'bg-black/15 text-white' : 'bg-slate-200/80 text-slate-600'}`}>
                                 {page.items.length}
                               </span>
                             </button>
@@ -5470,148 +5585,291 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       </footer>
 
       {/* Multi-Image / PDF Multi-Page Preview & Selection Modal */}
-      {pdfModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white w-full max-w-2xl rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-modal flex flex-col gap-4 text-slate-900 max-h-[90vh]">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <IconLayers className="w-5 h-5 text-blue-600" />
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900">
-                    Danh Sách {pdfPages.length} Ảnh / Trang Phiếu
+      {pdfModalOpen && (() => {
+        const total = pdfPages.length;
+        const selectedCount = selectedPdfPagesCount;
+        const q = pdfPageQuery.trim().toLowerCase();
+        const visible = pdfPages
+          .map((page, idx) => ({ page, idx }))
+          .filter(({ page }) => {
+            if (pdfPageFilter === 'selected' && !page.selected) return false;
+            if (pdfPageFilter === 'unselected' && page.selected) return false;
+            if (!q) return true;
+            return String(page.name || '').toLowerCase().includes(q) || String(page.pageNum).includes(q);
+          });
+        const visibleIndexes = visible.map((v) => v.idx);
+        const allVisibleSelected = visible.length > 0 && visible.every((v) => v.page.selected);
+        const allSelected = total > 0 && selectedCount === total;
+        const currentPage = pdfPages[selectedPdfIndex];
+
+        return (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in">
+          <div className="bg-white w-full max-w-5xl rounded-t-3xl sm:rounded-3xl border border-hairline shadow-modal flex flex-col gap-0 text-slate-900 h-[94vh] sm:h-auto sm:max-h-[92vh] overflow-hidden">
+
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 px-5 sm:px-6 pt-5 pb-3.5 border-b border-hairline shrink-0">
+              <div className="flex items-start gap-3 min-w-0">
+                <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center shrink-0 shadow-glow-blue">
+                  <IconLayers className="w-5 h-5" />
+                </span>
+                <div className="min-w-0">
+                  <h3 className="font-extrabold text-[15px] sm:text-base text-slate-900 leading-tight">
+                    Danh Sách {total} Ảnh / Trang Phiếu
                   </h3>
-                  <p className="text-[11px] text-slate-500">Bấm vào ô để chọn/bỏ chọn quét hàng loạt hoặc bấm "Quét riêng" từng ảnh</p>
+                  <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
+                    Bấm vào ô để chọn/bỏ chọn quét hàng loạt, hoặc bấm <strong className="text-slate-700">Quét riêng</strong> từng ảnh
+                  </p>
                 </div>
               </div>
               <button
                 onClick={() => setPdfModalOpen(false)}
-                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-700"
+                className="p-2 -mr-1 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors shrink-0"
               >
                 <IconClose className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Quick Multi-Select Controls */}
-            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-2xl border border-slate-200 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-slate-700">
-                  Đã chọn <strong className="text-blue-600 font-mono text-sm">{selectedPdfPagesCount}</strong> / {pdfPages.length} ảnh/trang
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => selectAllPdfPages(true)}
-                  className="px-3 py-1 rounded-lg bg-white hover:bg-blue-50 text-blue-600 border border-slate-200 text-xs font-semibold"
-                >
-                  Chọn tất cả
-                </button>
-                <button
-                  type="button"
-                  onClick={() => selectAllPdfPages(false)}
-                  className="px-3 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 text-xs font-semibold"
-                >
-                  Bỏ chọn hết
-                </button>
-              </div>
-            </div>
+            {/* Toolbar: counter + search + filter + bulk actions */}
+            <div className="px-5 sm:px-6 py-3 border-b border-hairline bg-slate-50/70 shrink-0 space-y-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Counter pill */}
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white border border-hairline text-[11px] font-semibold text-slate-600">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />
+                  Đã chọn
+                  <strong className="font-mono text-[13px] text-blue-700">{selectedCount}</strong>
+                  <span className="text-slate-400">/ {total}</span>
+                </div>
 
-            {/* Thumbnail Grid with Multi-Select Full Card Click */}
-            <div className="flex-1 overflow-y-auto pr-1">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {pdfPages.map((page, idx) => {
-                  const isChecked = !!page.selected;
-                  const isCurrentActive = selectedPdfIndex === idx;
-                  return (
-                    <div
-                      key={page.pageNum}
-                      onClick={() => {
-                        setSelectedPdfIndex(idx);
-                        togglePdfPageSelect(idx);
-                      }}
-                      className={`group relative p-2.5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col items-center gap-2 select-none ${
-                        isChecked
-                          ? 'border-blue-600 bg-blue-50/40 shadow-sm ring-2 ring-blue-500/20'
-                          : 'border-slate-200 hover:border-slate-300 bg-slate-50/60 opacity-60 hover:opacity-90'
+                {/* Filter segmented */}
+                <div className="flex items-center gap-0.5 p-1 rounded-lg bg-slate-200/70 text-[11px] font-semibold">
+                  {[
+                    ['all', 'Tất cả'],
+                    ['selected', 'Đã chọn'],
+                    ['unselected', 'Chưa chọn'],
+                  ].map(([val, label]) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setPdfPageFilter(val)}
+                      className={`px-2.5 py-1 rounded-md transition-all ${
+                        pdfPageFilter === val
+                          ? 'bg-white text-blue-700 shadow-sm ring-1 ring-black/5'
+                          : 'text-slate-500 hover:text-slate-700'
                       }`}
                     >
-                      {/* Checkbox badge on top-left */}
-                      <div
-                        className={`absolute top-3.5 left-3.5 z-10 w-6 h-6 rounded-lg flex items-center justify-center border transition-all ${
-                          isChecked
-                            ? 'bg-blue-600 border-blue-600 text-white shadow-md'
-                            : 'bg-white/90 border-slate-300 hover:border-blue-500 text-transparent'
-                        }`}
-                      >
-                        <IconCheck className="w-4 h-4 stroke-[3]" />
-                      </div>
+                      {label}
+                    </button>
+                  ))}
+                </div>
 
-                      {/* Image Thumbnail */}
-                      <div className="relative w-full aspect-[3/4] bg-white rounded-xl overflow-hidden shadow-sm border border-slate-200 flex items-center justify-center">
-                        <img src={page.thumbUrl} alt={`Ảnh/Trang ${page.pageNum}`} loading="lazy" decoding="async" className="w-full h-full object-contain pointer-events-none" />
-                        {isCurrentActive && (
-                          <div className="absolute inset-0 ring-2 ring-blue-500/50 rounded-xl pointer-events-none" />
-                        )}
-                      </div>
+                {/* Search */}
+                <div className="relative flex-1 min-w-[140px]">
+                  <input
+                    type="text"
+                    value={pdfPageQuery}
+                    onChange={(e) => setPdfPageQuery(e.target.value)}
+                    placeholder="Tìm theo tên file / số trang..."
+                    className="w-full pl-8 pr-2.5 py-1.5 rounded-lg border border-hairline bg-white text-[11px] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 transition-all"
+                  />
+                  <svg className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="m20 20-3.5-3.5" strokeLinecap="round" />
+                  </svg>
+                </div>
 
-                      {/* Label & Actions */}
-                      <div className="w-full flex items-center justify-between px-1">
-                        <span className="font-bold text-xs text-slate-800 flex items-center gap-1 min-w-0">
-                          <span className="truncate" title={page.name || `Ảnh ${page.pageNum}`}>
-                            {page.name ? page.name : `Ảnh ${page.pageNum}`}
-                          </span>
-                          {isChecked && <span className="text-[10px] text-blue-600 font-bold shrink-0">(Đã chọn)</span>}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            selectSinglePdfPage(idx);
-                          }}
-                          className="text-[11px] text-blue-600 hover:underline font-bold px-1.5 py-0.5 rounded hover:bg-blue-100/50 shrink-0"
-                        >
-                          Quét riêng
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+                {/* Bulk actions */}
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => (visible.length === total ? selectAllPdfPages(!allSelected) : toggleSelectFilteredPages(visibleIndexes, !allVisibleSelected))}
+                    className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-blue-50 text-blue-700 border border-hairline text-[11px] font-bold transition-colors"
+                  >
+                    {allVisibleSelected ? 'Bỏ chọn' : 'Chọn tất cả'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moreFilesInputRef.current?.click()}
+                    className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-hairline text-[11px] font-bold transition-colors flex items-center gap-1"
+                  >
+                    <IconUpload className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Thêm file</span>
+                  </button>
+                </div>
               </div>
             </div>
 
-            {/* Actions */}
-            <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div className="text-xs text-slate-500 truncate max-w-[240px]">
-                Đang xem: <strong>{pdfPages[selectedPdfIndex]?.name || `Ảnh/Trang ${pdfPages[selectedPdfIndex]?.pageNum}`}</strong>
-              </div>
+            {/* Thumbnail Grid */}
+            <div className="flex-1 min-h-0 overflow-y-auto px-5 sm:px-6 py-4">
+              {visible.length === 0 ? (
+                <div className="h-full min-h-[220px] flex flex-col items-center justify-center text-center gap-2">
+                  <span className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center">
+                    <IconLayers className="w-6 h-6" />
+                  </span>
+                  <p className="text-xs font-bold text-slate-700">Không có ảnh/trang nào khớp bộ lọc</p>
+                  <p className="text-[11px] text-slate-500">Thử đổi bộ lọc hoặc xoá từ khoá tìm kiếm</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3">
+                  {visible.map(({ page, idx }) => {
+                    const isChecked = !!page.selected;
+                    const isCurrentActive = selectedPdfIndex === idx;
+                    return (
+                      <div
+                        key={`${page.pageNum}-${idx}`}
+                        onClick={() => {
+                          setSelectedPdfIndex(idx);
+                          togglePdfPageSelect(idx);
+                        }}
+                        className={`group relative rounded-xl border-2 cursor-pointer transition-all flex flex-col overflow-hidden select-none ${
+                          isChecked
+                            ? 'border-blue-600 bg-blue-50/40 shadow-sm'
+                            : 'border-hairline hover:border-slate-300 bg-white opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        {/* Thumbnail */}
+                        <div className="relative w-full aspect-[3/4] bg-slate-100 overflow-hidden">
+                          <img
+                            src={page.thumbUrl}
+                            alt={`Ảnh/Trang ${page.pageNum}`}
+                            loading="lazy"
+                            decoding="async"
+                            className="w-full h-full object-contain pointer-events-none"
+                          />
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+                          {/* Checkbox badge */}
+                          <div
+                            className={`absolute top-1.5 left-1.5 z-10 w-5 h-5 rounded-md flex items-center justify-center border transition-all ${
+                              isChecked
+                                ? 'bg-blue-600 border-blue-600 text-white shadow-md'
+                                : 'bg-white/90 border-slate-300 text-transparent'
+                            }`}
+                          >
+                            <IconCheck className="w-3 h-3 stroke-[3]" />
+                          </div>
+
+                          {/* Page number badge */}
+                          <div className="absolute top-1.5 right-1.5 z-10 px-1.5 py-0.5 rounded-md bg-slate-900/75 text-white text-[10px] font-mono font-bold backdrop-blur-sm">
+                            #{page.pageNum}
+                          </div>
+
+                          {/* Active ring */}
+                          {isCurrentActive && (
+                            <div className="absolute inset-0 ring-2 ring-inset ring-blue-500 pointer-events-none" />
+                          )}
+
+                          {/* Hover overlay actions */}
+                          <div className="absolute inset-x-0 bottom-0 p-1.5 flex items-center gap-1 bg-gradient-to-t from-slate-900/85 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                selectSinglePdfPage(idx);
+                              }}
+                              className="flex-1 px-1.5 py-1 rounded-md bg-white/95 hover:bg-white text-blue-700 text-[10px] font-bold transition-colors"
+                            >
+                              Quét riêng
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removePdfPage(idx);
+                              }}
+                              className="w-6 h-6 rounded-md bg-white/95 hover:bg-red-50 text-red-600 flex items-center justify-center transition-colors"
+                              title="Xoá khỏi danh sách"
+                            >
+                              <IconTrash className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Footer label */}
+                        <div className="px-2 py-1.5 border-t border-hairline bg-white/80">
+                          <div className="flex items-center gap-1 min-w-0">
+                            <span className="truncate text-[11px] font-semibold text-slate-800" title={page.name || `Ảnh ${page.pageNum}`}>
+                              {page.name || `Ảnh ${page.pageNum}`}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between mt-0.5">
+                            <span className={`text-[10px] font-bold ${isChecked ? 'text-blue-600' : 'text-slate-400'}`}>
+                              {isChecked ? 'Đã chọn' : 'Chưa chọn'}
+                            </span>
+                            {isCurrentActive && (
+                              <span className="text-[10px] font-bold text-indigo-600">Đang xem</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Add more tile */}
+                  <button
+                    type="button"
+                    onClick={() => moreFilesInputRef.current?.click()}
+                    className="rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-400 hover:bg-blue-50/40 transition-all flex flex-col items-center justify-center gap-1.5 min-h-[140px] text-slate-400 hover:text-blue-600"
+                  >
+                    <span className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center">
+                      <IconUpload className="w-4 h-4" />
+                    </span>
+                    <span className="text-[11px] font-bold">Thêm ảnh / PDF</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Footer actions */}
+            <div className="px-5 sm:px-6 py-3.5 border-t border-hairline bg-white shrink-0">
+              <div className="text-[11px] text-slate-500 truncate mb-2.5">
+                Đang xem:{' '}
+                <strong className="text-slate-800">
+                  {currentPage?.name || `Ảnh/Trang ${currentPage?.pageNum ?? '-'}`}
+                </strong>
+              </div>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                 <button
                   onClick={() => selectSinglePdfPage(selectedPdfIndex)}
-                  className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition-all active:scale-95"
+                  disabled={!currentPage}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition-all active:scale-95 disabled:opacity-40"
                 >
                   Quét 1 Ảnh Đang Xem
                 </button>
 
                 <button
                   onClick={() => startBatchPdfScan()}
-                  disabled={selectedPdfPagesCount === 0}
-                  className={`flex-1 sm:flex-none px-5 py-2.5 rounded-xl text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-40 ${
+                  disabled={selectedCount === 0}
+                  className={`flex-1 px-5 py-2.5 rounded-xl text-white font-bold text-xs shadow-sm flex items-center justify-center gap-1.5 transition-all active:scale-95 disabled:opacity-40 ${
                     aiProvider === 'custom'
                       ? 'bg-gradient-to-r from-cyan-600 to-teal-600 hover:opacity-95'
                       : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-95'
                   }`}
                 >
-                  <IconSparkles className="w-4 h-4" />
-                  <span>
-                    Quét {selectedPdfPagesCount} Ảnh/Trang ({getActiveProviderLabel()})
+                  <IconSparkles className="w-4 h-4 shrink-0" />
+                  <span className="truncate">
+                    Quét {selectedCount} Ảnh/Trang ({getActiveProviderLabel()})
                   </span>
                 </button>
               </div>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
+
+      {/* Hidden input: nạp thêm ảnh/PDF vào danh sách đang có */}
+      <input
+        ref={moreFilesInputRef}
+        type="file"
+        className="hidden"
+        accept="image/*,.pdf,application/pdf"
+        multiple
+        onChange={(e) => {
+          if (e.target.files && e.target.files.length > 0) {
+            appendMoreFiles(e.target.files);
+          }
+          e.target.value = '';
+        }}
+      />
 
       {/* Real-time Multi-Page / Multi-Image Batch Progress Dialog */}
       {batchProgressModal.active && (
@@ -6356,16 +6614,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 Cột Trích Xuất
               </button>
               <button
-                onClick={() => setSettingsTab('prompts')}
-                className={`pb-2 px-3 border-b-2 whitespace-nowrap transition-all ${
-                  settingsTab === 'prompts'
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                Gợi Ý Prompt
-              </button>
-              <button
                 onClick={() => setSettingsTab('view')}
                 className={`pb-2 px-3 border-b-2 whitespace-nowrap transition-all ${
                   settingsTab === 'view'
@@ -6374,16 +6622,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 }`}
               >
                 Giao Diện
-              </button>
-              <button
-                onClick={() => setSettingsTab('android')}
-                className={`pb-2 px-3 border-b-2 whitespace-nowrap transition-all flex items-center gap-1 ${
-                  settingsTab === 'android'
-                    ? 'border-blue-600 text-blue-600 font-bold'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <span>Cài Đặt App 📱</span>
               </button>
             </div>
 
@@ -7343,42 +7581,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 </div>
               )}
 
-              {/* TAB 5: PROMPTS CUSTOMIZATION */}
-              {settingsTab === 'prompts' && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-slate-500 text-[11px]">
-                      Ghi hướng dẫn riêng cho từng trường để Gemini đọc đúng định dạng đặc thù của doanh nghiệp.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setFieldPrompts(DEFAULT_FIELD_PROMPTS)}
-                      className="text-blue-600 hover:underline font-semibold whitespace-nowrap text-xs"
-                    >
-                      Dùng mặc định
-                    </button>
-                  </div>
-
-                  <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
-                    {['soPhieu', ...selectedColumns].map((key) => (
-                      <div key={key} className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-800">{key === 'soPhieu' ? 'Số phiếu' : COLUMN_DEFS[key]?.short}</span>
-                          <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-semibold">{key}</span>
-                        </div>
-                        <textarea
-                          rows={2}
-                          value={fieldPrompts[key] || ''}
-                          onChange={(e) => setFieldPrompts((prev) => ({ ...prev, [key]: e.target.value }))}
-                          placeholder="Nhập hướng dẫn OCR cho trường này..."
-                          className="w-full p-2 text-xs rounded-lg border border-slate-200 bg-white font-sans outline-none focus:border-blue-500"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* TAB 6: VIEW MODE */}
               {settingsTab === 'view' && (
                 <div className="space-y-4">
@@ -7420,103 +7622,6 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                 </div>
               )}
 
-              {/* TAB 7: PWA & ANDROID APP (.APK) */}
-              {settingsTab === 'android' && (
-                <div className="space-y-4">
-                  {/* Top Intro Card */}
-                  <div className="p-4 bg-gradient-to-r from-blue-50 via-indigo-50 to-teal-50 rounded-2xl border border-blue-200 space-y-2">
-                    <div className="flex items-center gap-2 text-slate-900 font-extrabold text-sm">
-                      <IconDevicePhone className="w-5 h-5 text-blue-600" />
-                      <span>Cài Đặt Ứng Dụng Đa Nền Tảng (PWA & Android APK)</span>
-                    </div>
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      Cả 2 phương án đều kết nối trực tiếp vào hệ thống, <strong>tự động đồng bộ 100% thời gian thực</strong> (API Key, Cấu hình Cột & Google Sheet) với máy tính qua Cloud.
-                    </p>
-                  </div>
-
-                  {/* PHƯƠNG ÁN 1: PWA */}
-                  <div className="p-4 bg-white rounded-2xl border-2 border-blue-200 shadow-sm space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-extrabold text-xs flex items-center justify-center">1</span>
-                        <span className="font-extrabold text-sm text-slate-900">Phương Án 1: Cài Đặt Trực Tiếp (PWA)</span>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold">
-                        Khuyên Dùng • Cài Ngay
-                      </span>
-                    </div>
-
-                    <p className="text-[11px] text-slate-600 leading-relaxed">
-                      Cài đặt trực tiếp từ trình duyệt trên điện thoại Android/iPhone/Máy tính. Chạy toàn màn hình, mượt mà như App tải từ Store, không cần tải file cài đặt.
-                    </p>
-
-                    <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
-                      <button
-                        onClick={installPwaApp}
-                        className="w-full sm:w-auto px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all active:scale-95"
-                      >
-                        <IconDevicePhone className="w-4 h-4" />
-                        <span>📲 {isPwaInstalled ? 'Đã Cài Đặt Ứng Dụng (Mở App)' : 'Cài Đặt Ứng Dụng Ngay (PWA)'}</span>
-                      </button>
-                    </div>
-
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-600 space-y-1">
-                      <div><strong>• Trên Android (Chrome):</strong> Bấm nút trên hoặc chọn menu <strong>⋮</strong> ➔ chọn <em>"Cài đặt ứng dụng"</em> hoặc <em>"Thêm vào MH chính"</em>.</div>
-                      <div><strong>• Trên iPhone (Safari):</strong> Bấm nút <strong>Chia sẻ (Share)</strong> ➔ chọn <em>"Thêm vào MH chính (Add to Home Screen)"</em>.</div>
-                    </div>
-                  </div>
-
-                  {/* PHƯƠNG ÁN 2: ANDROID APK */}
-                  <div className="p-4 bg-white rounded-2xl border border-slate-200 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-extrabold text-xs flex items-center justify-center">2</span>
-                        <span className="font-extrabold text-sm text-slate-900">Phương Án 2: File Cài Đặt Android Native (.APK)</span>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
-                        Capacitor Native
-                      </span>
-                    </div>
-
-                    <p className="text-[11px] text-slate-600 leading-relaxed">
-                      Dành cho các dòng máy Android phát nội bộ cho nhân viên kho. Đóng gói độc lập, tích hợp sâu phần cứng Camera & Flashlight.
-                    </p>
-
-                    <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
-                      <a
-                        href="https://github.com/kentnobita/scanzzz/releases/latest/download/ScanPhieuKho-v39.apk"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full sm:w-auto px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all active:scale-95"
-                      >
-                        <IconUpload className="w-4 h-4 rotate-180" />
-                        <span>📥 Tải File Cài Đặt Android (ScanPhieuKho-v39.apk)</span>
-                      </a>
-
-                      <a
-                        href="https://github.com/kentnobita/scanzzz/releases"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full sm:w-auto px-4 py-3 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 border border-slate-300 transition-all"
-                      >
-                        <IconExternalLink className="w-3.5 h-3.5" />
-                        <span>Xem Tất Cả Bản Phát Hành</span>
-                      </a>
-                    </div>
-                  </div>
-
-                  {/* UNIVERSAL SYNC EXPLANATION */}
-                  <div className="p-3.5 bg-slate-900 text-slate-200 rounded-2xl space-y-2 text-[11px]">
-                    <div className="font-bold text-white flex items-center gap-2">
-                      <IconCloud className="w-4 h-4 text-blue-400" />
-                      <span>Cơ Chế Đồng Bộ Đa Nền Tảng:</span>
-                    </div>
-                    <p className="text-slate-300 leading-relaxed">
-                      Bất kể bạn dùng <strong>Web Máy Tính</strong>, <strong>App PWA Điện Thoại</strong> hay <strong>App Android APK</strong>: Chỉ cần nhập cùng <strong>Mã Đồng Bộ Cloud</strong> (ví dụ <code>{cloudSyncCode || 'KHO-01'}</code>) hoặc quét mã QR, mọi API Key Gemini và cấu hình Google Sheet sẽ tự động đồng bộ ngay lập tức!
-                    </p>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Footer Buttons */}
@@ -7813,22 +7918,24 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
       {/* Floating Toast Notification */}
       {toast && (
         <div
-          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[700] px-5 py-3 rounded-full text-xs font-bold text-white shadow-modal animate-fade-in flex items-center gap-2 ${
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[700] pl-1.5 pr-5 py-1.5 rounded-full text-xs font-bold text-white shadow-modal animate-fade-in flex items-center gap-2.5 ring-1 ring-white/15 ${
             toast.type === 'success'
               ? 'bg-emerald-600'
               : toast.type === 'error'
               ? 'bg-red-600'
-              : 'bg-slate-900'
+              : 'bg-navy-900'
           }`}
         >
-          {toast.type === 'success' ? (
-            <IconCheck className="w-4 h-4 text-white" />
-          ) : toast.type === 'error' ? (
-            <IconClose className="w-4 h-4 text-white" />
-          ) : (
-            <IconInfo className="w-4 h-4 text-white" />
-          )}
-          <span>{toast.message}</span>
+          <span className="w-7 h-7 rounded-full bg-white/15 flex items-center justify-center shrink-0">
+            {toast.type === 'success' ? (
+              <IconCheck className="w-4 h-4 text-white" />
+            ) : toast.type === 'error' ? (
+              <IconClose className="w-4 h-4 text-white" />
+            ) : (
+              <IconInfo className="w-4 h-4 text-white" />
+            )}
+          </span>
+          <span className="pr-1">{toast.message}</span>
         </div>
       )}
     </div>

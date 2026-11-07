@@ -21,12 +21,31 @@ module.exports = {
           900: '#1e3a8a',
           950: '#172554',
         },
+        // Corporate navy scale dùng cho header, sidebar, thẻ chứng từ
+        navy: {
+          50: '#f4f6fb',
+          100: '#e6ebf5',
+          200: '#c9d4e8',
+          300: '#9db0d3',
+          400: '#6b84b8',
+          500: '#4a649c',
+          600: '#364d80',
+          700: '#2a3d68',
+          800: '#1d2c4d',
+          900: '#111c33',
+          950: '#0b1220',
+        },
+        // Canvas & surface
+        canvas: '#f5f7fa',
+        surface: '#ffffff',
+        hairline: '#e6eaf0',
       },
       animation: {
         'scan-laser': 'scanLaser 2.2s ease-in-out infinite alternate',
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         'fade-in': 'fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards',
         'slide-up': 'slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+        'shimmer': 'shimmer 1.6s linear infinite',
       },
       keyframes: {
         scanLaser: {
@@ -42,12 +61,24 @@ module.exports = {
           from: { opacity: '0', transform: 'translateY(100%)' },
           to: { opacity: '1', transform: 'translateY(0)' },
         },
+        shimmer: {
+          from: { backgroundPosition: '-200% 0' },
+          to: { backgroundPosition: '200% 0' },
+        },
       },
       boxShadow: {
-        'subtle': '0 1px 3px 0 rgb(0 0 0 / 0.05), 0 1px 2px -1px rgb(0 0 0 / 0.05)',
-        'card': '0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05)',
-        'elevated': '0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.04)',
-        'modal': '0 25px 50px -12px rgb(0 0 0 / 0.25)',
+        'subtle': '0 1px 2px 0 rgb(15 23 42 / 0.04)',
+        'card': '0 2px 4px -1px rgb(15 23 42 / 0.04), 0 8px 24px -8px rgb(15 23 42 / 0.08)',
+        'elevated': '0 4px 8px -2px rgb(15 23 42 / 0.06), 0 16px 40px -12px rgb(15 23 42 / 0.12)',
+        'modal': '0 24px 64px -16px rgb(15 23 42 / 0.28)',
+        'glow-blue': '0 0 0 1px rgb(37 99 235 / 0.12), 0 8px 24px -8px rgb(37 99 235 / 0.35)',
+        'inner-hairline': 'inset 0 1px 0 0 rgb(255 255 255 / 0.06)',
+      },
+      borderRadius: {
+        'card': '20px',
+      },
+      transitionTimingFunction: {
+        'smooth': 'cubic-bezier(0.16, 1, 0.3, 1)',
       },
     },
   },
