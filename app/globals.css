@@ -1,0 +1,193 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --canvas: #f5f7fa;
+    --navy-900: #111c33;
+    --navy-950: #0b1220;
+    --hairline: #e6eaf0;
+  }
+
+  html,
+  body {
+    @apply bg-canvas text-slate-900 font-sans min-h-screen antialiased;
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100vw;
+    -webkit-tap-highlight-color: transparent;
+    padding-bottom: env(safe-area-inset-bottom, 24px);
+  }
+
+  /* Số liệu luôn canh đều cột (tabular) cho bảng & số phiếu */
+  .font-mono,
+  input.font-mono,
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Touch scrolling */
+  .overflow-x-auto,
+  .overflow-y-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Ẩn scrollbar cho các dải tab/cuộn ngang trên mobile */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+
+  /* Focus ring đồng bộ toàn hệ thống */
+  button:focus-visible,
+  a:focus-visible,
+  [role='button']:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgb(37 99 235 / 0.4);
+  }
+
+  /* Selection */
+  ::selection {
+    background: rgb(37 99 235 / 0.18);
+  }
+}
+
+/* ============ Layout primitives ============ */
+
+/* Header navy gradient + glass */
+.glass-header {
+  background: linear-gradient(135deg, #0b1220 0%, #111c33 55%, #16233d 100%);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  box-shadow: inset 0 -1px 0 0 rgb(255 255 255 / 0.06);
+}
+
+/* Sub-header sáng, mờ nhẹ */
+.subheader-glass {
+  background: rgb(255 255 255 / 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* ============ Scanner visuals ============ */
+
+.scan-laser-line {
+  background: linear-gradient(180deg, rgba(59, 130, 246, 0) 0%, rgba(59, 130, 246, 0.8) 50%, rgba(96, 165, 250, 1) 100%);
+  box-shadow: 0 0 16px 2px rgba(59, 130, 246, 0.6);
+}
+
+/* Corner Reticles for Camera Scanner */
+.reticle-corner {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-color: #60a5fa;
+  pointer-events: none;
+}
+.reticle-top-left {
+  top: -2px;
+  left: -2px;
+  border-top-width: 3px;
+  border-left-width: 3px;
+  border-top-left-radius: 8px;
+}
+.reticle-top-right {
+  top: -2px;
+  right: -2px;
+  border-top-width: 3px;
+  border-right-width: 3px;
+  border-top-right-radius: 8px;
+}
+.reticle-bottom-left {
+  bottom: -2px;
+  left: -2px;
+  border-bottom-width: 3px;
+  border-left-width: 3px;
+  border-bottom-left-radius: 8px;
+}
+.reticle-bottom-right {
+  bottom: -2px;
+  right: -2px;
+  border-bottom-width: 3px;
+  border-right-width: 3px;
+  border-bottom-right-radius: 8px;
+}
+
+/* ============ Skeleton loading ============ */
+
+.skeleton {
+  background-image: linear-gradient(90deg, #eef1f6 0%, #e2e8f0 40%, #eef1f6 80%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+  border-radius: 8px;
+}
+
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+
+/* ============ Table polish ============ */
+
+.data-table tbody tr:nth-child(even) {
+  background-color: rgb(248 250 252 / 0.55);
+}
+.data-table tbody tr:hover {
+  background-color: rgb(37 99 235 / 0.045);
+}
+.data-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* ============ View Mode overrides ============ */
+body.view-mobile .desktop-grid {
+  display: block !important;
+  max-width: 560px !important;
+  padding: 12px !important;
+}
+body.view-mobile .desktop-left,
+body.view-mobile .desktop-right {
+  width: 100% !important;
+  position: static !important;
+}
+
+body.view-desktop .desktop-grid {
+  display: grid !important;
+  grid-template-columns: 360px minmax(0, 1fr) !important;
+  gap: 24px !important;
+  max-width: 1200px !important;
+  padding: 24px !important;
+  margin: 0 auto !important;
+}
+body.view-desktop .desktop-left {
+  position: sticky !important;
+  top: 86px !important;
+}

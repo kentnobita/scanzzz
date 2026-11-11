@@ -1,0 +1,11 @@
+node_modules/
+.next/
+out/
+.env
+.env.local
+.env.*.local
+.agents/
+.data/
+*.zip
+.temp_chatgpt_bundle/
+skills-lock.json

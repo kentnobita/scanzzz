@@ -1,0 +1,24 @@
+# Koyeb Service Configuration for Scan Pro Max Backend
+app: scan-phieu-api
+services:
+  - name: api
+    type: web
+    git:
+      repository: github.com/kentnobita/scanzzz
+      branch: main
+      workdir: backend
+    build:
+      type: dockerfile
+      dockerfile: Dockerfile
+    instance:
+      type: free
+    ports:
+      - port: 8000
+        path: /
+    env:
+      - key: PORT
+        value: "8000"
+      - key: ENVIRONMENT
+        value: "production"
+      - key: ALLOWED_ORIGINS
+        value: "https://*.vercel.app,http://localhost:3000"
