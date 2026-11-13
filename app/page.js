@@ -337,6 +337,7 @@ export default function Home() {
   const [apiKey, setApiKey] = useState("");
   const [backupKeys, setBackupKeys] = useState([]);
   const [geminiModel, setGeminiModel] = useState("gemini-3.6-flash");
+  const [geminiModelChecking, setGeminiModelChecking] = useState(false);
   const [activeGeminiKeyIndex, setActiveGeminiKeyIndex] = useState(0);
   const geminiKeyIndexRef = useRef(0);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
@@ -380,6 +381,7 @@ export default function Home() {
   const [selectedColumns, setSelectedColumns] = useState(DEFAULT_COLUMNS);
   const [fieldPrompts, setFieldPrompts] = useState(DEFAULT_FIELD_PROMPTS);
   const [viewMode, setViewMode] = useState('auto');
+  const [uiTheme, setUiTheme] = useState('classic');
   const [scanHistory, setScanHistory] = useState([]);
 
   // Toàn hệ thống Analytics & Donut Chart (Reset 05:00 GMT+7)
@@ -651,6 +653,9 @@ export default function Home() {
     const mode = localStorage.getItem('view_mode') || 'auto';
     setViewMode(mode);
     applyViewMode(mode);
+    const savedTheme = localStorage.getItem('ui_theme') || 'classic';
+    setUiTheme(savedTheme);
+    applyUiTheme(savedTheme);
 
     try {
       const localHist = JSON.parse(localStorage.getItem('scan_history') || '[]');
@@ -823,6 +828,11 @@ export default function Home() {
     document.body.classList.remove('view-mobile', 'view-desktop');
     if (mode === 'mobile') document.body.classList.add('view-mobile');
     if (mode === 'desktop') document.body.classList.add('view-desktop');
+  };
+
+  const applyUiTheme = (theme) => {
+    document.body.classList.remove('theme-classic', 'theme-ocean', 'theme-midnight', 'theme-sunset');
+    document.body.classList.add(`theme-${theme || 'classic'}`);
   };
 
   // Cloud Sync Functions: API & Google Sheets Configuration
@@ -4112,6 +4122,31 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     }
   };
 
+  const checkGeminiModel = async () => {
+    const key = getGeminiApiKeys()[0];
+    const model = geminiModel.trim().replace(/^models\//, '');
+    if (!key) {
+      showToast('Vui lòng nhập API key Gemini trước', 'error');
+      return;
+    }
+    if (!model) {
+      showToast('Vui lòng nhập Model ID Gemini', 'error');
+      return;
+    }
+    setGeminiModelChecking(true);
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}?key=${encodeURIComponent(key)}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error?.message || `HTTP ${res.status}`);
+      const methods = Array.isArray(data.supportedGenerationMethods) ? data.supportedGenerationMethods.join(', ') : 'generateContent';
+      showToast(`✅ Model ${model} khả dụng (${methods})`, 'success');
+    } catch (err) {
+      showToast(`❌ Model ${model} không khả dụng: ${err.message}`, 'error');
+    } finally {
+      setGeminiModelChecking(false);
+    }
+  };
+
   const testGoogleSheetConnection = async () => {
     const url = googleSheetUrl.trim();
     if (!url) {
@@ -4166,6 +4201,8 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
     localStorage.setItem('scan_field_prompts', JSON.stringify(fieldPrompts));
     localStorage.setItem('view_mode', viewMode);
     applyViewMode(viewMode);
+    localStorage.setItem('ui_theme', uiTheme);
+    applyUiTheme(uiTheme);
 
     // If sync code is active, auto push API + Sheet settings to cloud
     if (cloudSyncCode) {
@@ -6142,18 +6179,13 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                     </select>
 
                     {aiProvider === 'gemini' && (
-                      <select
-                        value={geminiModel || 'gemini-3.6-flash'}
-                        onChange={(e) => setGeminiModel(e.target.value)}
-                        className="bg-white hover:bg-slate-100 text-slate-800 font-bold rounded-lg px-2.5 py-1 text-xs border border-slate-300 outline-none cursor-pointer transition-colors shadow-sm max-w-[190px] truncate"
-                        title="Chọn mô hình Gemini"
-                      >
-                        {GEMINI_MODELS.map((gm) => (
-                          <option key={gm.id} value={gm.id}>
-                            {gm.shortName}
-                          </option>
-                        ))}
-                      </select>
+                      <input
+                        value={geminiModel}
+                        onChange={(e) => { setGeminiModel(e.target.value); localStorage.setItem('gemini_model', e.target.value.trim()); }}
+                        className="bg-white hover:bg-slate-100 text-slate-800 font-bold rounded-lg px-2.5 py-1 text-xs border border-slate-300 outline-none transition-colors shadow-sm w-[180px]"
+                        placeholder="Model ID Gemini"
+                        title="Nhập Model ID Gemini"
+                      />
                     )}
 
                     {aiProvider === 'custom' && customApis.length > 0 && (
@@ -7264,45 +7296,26 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
                         </p>
                       </div>
 
-                      {/* Gemini Models Selector */}
+                      {/* Gemini Model ID */}
                       <div className="space-y-2">
-                        <label className="font-bold text-slate-700 block text-xs">Chọn Mô Hình Gemini Ưu Tiên</label>
-                        <div className="grid grid-cols-1 gap-2">
-                          {GEMINI_MODELS.map((m) => {
-                            const isSelected = geminiModel === m.id;
-                            return (
-                              <button
-                                key={m.id}
-                                type="button"
-                                onClick={() => {
-                                  setGeminiModel(m.id);
-                                  localStorage.setItem('gemini_model', m.id);
-                                  showToast(`Đã chọn mô hình ${m.name}`);
-                                }}
-                                className={`p-3 rounded-xl border text-left transition-all flex items-start justify-between gap-3 ${
-                                  isSelected
-                                    ? 'border-blue-500 bg-blue-50/60 ring-2 ring-blue-200'
-                                    : 'border-slate-200 hover:border-slate-300 bg-white'
-                                }`}
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className="font-bold text-slate-900 text-xs">{m.name}</span>
-                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${m.badgeColor}`}>
-                                      {m.badge}
-                                    </span>
-                                  </div>
-                                  <p className="text-[11px] text-slate-500 leading-relaxed">{m.desc}</p>
-                                </div>
-                                <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
-                                  isSelected ? 'border-blue-600 bg-blue-600' : 'border-slate-300'
-                                }`}>
-                                  {isSelected && <span className="w-1.5 h-1.5 bg-white rounded-full" />}
-                                </div>
-                              </button>
-                            );
-                          })}
+                        <label className="font-bold text-slate-700 block text-xs">Model ID Gemini</label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            value={geminiModel}
+                            onChange={(e) => { setGeminiModel(e.target.value); localStorage.setItem('gemini_model', e.target.value.trim()); }}
+                            placeholder="Ví dụ: gemini-2.5-flash"
+                            className="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 font-mono text-xs outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={checkGeminiModel}
+                            disabled={geminiModelChecking}
+                            className="px-3 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold whitespace-nowrap disabled:opacity-50"
+                          >
+                            {geminiModelChecking ? 'Đang kiểm tra...' : 'Kiểm tra model'}
+                          </button>
                         </div>
+                        <p className="text-[11px] text-slate-400">Nhập chính xác Model ID từ danh sách Models của API key. Không còn giới hạn trong danh sách model cố định.</p>
                       </div>
 
                       {/* Primary Key Input (Supports pasting multiple keys) */}
@@ -7574,9 +7587,46 @@ Trả về đúng JSON thuần với mảng "rows" (mỗi dòng là 1 mảng gi�
               )}
 
               {/* TAB 6: VIEW MODE */}
-              {settingsTab === 'view' && (
-                <div className="space-y-4">
-                  <div>
+               {settingsTab === 'view' && (
+                 <div className="space-y-4">
+                   <div>
+                     <label className="font-bold text-slate-800 text-xs block mb-1">Kiểu giao diện</label>
+                     <p className="text-slate-500 text-xs leading-relaxed mb-2.5">
+                       Chọn màu sắc và phong cách hiển thị cho ứng dụng. Thay đổi sẽ được lưu trên thiết bị này.
+                     </p>
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                       {[
+                         ['classic', '🧊 Classic', 'Sáng, sạch và cân bằng'],
+                         ['ocean', '🌊 Ocean', 'Xanh dịu, hiện đại'],
+                         ['midnight', '🌙 Midnight', 'Tối, dễ nhìn ban đêm'],
+                         ['sunset', '🌅 Sunset', 'Ấm áp, nổi bật'],
+                       ].map(([val, title, desc]) => (
+                         <label
+                           key={val}
+                           className={`p-3 rounded-xl border flex items-center gap-3 cursor-pointer transition-all theme-preview-${val} ${
+                             uiTheme === val ? 'ring-2 ring-blue-500 border-blue-400' : 'border-slate-200'
+                           }`}
+                         >
+                           <input
+                             type="radio"
+                             name="uiThemeOption"
+                             value={val}
+                             checked={uiTheme === val}
+                             onChange={(e) => {
+                               setUiTheme(e.target.value);
+                               applyUiTheme(e.target.value);
+                             }}
+                             className="w-4 h-4 accent-blue-600 shrink-0"
+                           />
+                           <div>
+                             <div className="font-bold text-sm">{title}</div>
+                             <div className="text-[11px] opacity-75 mt-0.5">{desc}</div>
+                           </div>
+                         </label>
+                       ))}
+                     </div>
+                   </div>
+                   <div>
                     <label className="font-bold text-slate-800 text-xs block mb-1">
                       Bố Cục Hiển Thị
                     </label>

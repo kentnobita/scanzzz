@@ -168,6 +168,38 @@
 }
 
 /* ============ View Mode overrides ============ */
+/* ============ User-selectable UI themes ============ */
+body.theme-classic { background: #f5f7fa; }
+body.theme-ocean { background: #ecfeff; }
+body.theme-sunset { background: #fff7ed; }
+body.theme-midnight { background: #0f172a; color: #e2e8f0; }
+
+body.theme-ocean .bg-white { background-color: #f8feff !important; }
+body.theme-ocean .border-hairline { border-color: #bae6fd !important; }
+body.theme-ocean .bg-canvas { background-color: #ecfeff !important; }
+body.theme-sunset .bg-white { background-color: #fffdfa !important; }
+body.theme-sunset .border-hairline { border-color: #fed7aa !important; }
+body.theme-midnight .bg-white,
+body.theme-midnight section.bg-white,
+body.theme-midnight .bg-slate-50 { background-color: #1e293b !important; }
+body.theme-midnight .border-hairline,
+body.theme-midnight .border-slate-200,
+body.theme-midnight .border-slate-100 { border-color: #334155 !important; }
+body.theme-midnight .text-slate-900,
+body.theme-midnight .text-slate-800,
+body.theme-midnight .text-slate-700 { color: #e2e8f0 !important; }
+body.theme-midnight .text-slate-600,
+body.theme-midnight .text-slate-500,
+body.theme-midnight .text-slate-400 { color: #94a3b8 !important; }
+body.theme-midnight input,
+body.theme-midnight textarea,
+body.theme-midnight select { background-color: #0f172a !important; color: #e2e8f0 !important; border-color: #475569 !important; }
+
+.theme-preview-classic { background: #fff; color: #0f172a; }
+.theme-preview-ocean { background: #ecfeff; color: #155e75; }
+.theme-preview-midnight { background: #1e293b; color: #e2e8f0; border-color: #334155; }
+.theme-preview-sunset { background: #fff7ed; color: #9a3412; }
+
 body.view-mobile .desktop-grid {
   display: block !important;
   max-width: 560px !important;
